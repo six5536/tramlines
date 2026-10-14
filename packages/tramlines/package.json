@@ -1,0 +1,47 @@
+{
+  "name": "@six5536/tramlines",
+  "version": "0.2.0",
+  "description": "Checks documents against a schema: the launcher of the prebuilt tramlines binary.",
+  "homepage": "https://github.com/six5536/tramlines#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/six5536/tramlines.git",
+    "directory": "packages/tramlines"
+  },
+  "bugs": {
+    "url": "https://github.com/six5536/tramlines/issues"
+  },
+  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "markdown",
+    "schema",
+    "validation",
+    "cli"
+  ],
+  "bin": {
+    "tramlines": "bin/tramlines.js"
+  },
+  "files": [
+    "bin/",
+    "lib/"
+  ],
+  "license": "Elastic-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@six5536/tramlines-linux-x64": "0.2.0",
+    "@six5536/tramlines-linux-arm64": "0.2.0",
+    "@six5536/tramlines-darwin-x64": "0.2.0",
+    "@six5536/tramlines-darwin-arm64": "0.2.0",
+    "@six5536/tramlines-win32-x64": "0.2.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

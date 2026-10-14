@@ -1,0 +1,30 @@
+[package]
+name = "tramlines"
+description = "Checks documents against a tramlines schema, from the command line."
+version.workspace = true
+readme.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "tramlines"
+path = "src/main.rs"
+
+[dependencies]
+tramlines-md.workspace = true
+clap = { workspace = true }
+clap_complete.workspace = true
+clap_mangen.workspace = true
+jmespath.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+boon.workspace = true
+insta.workspace = true

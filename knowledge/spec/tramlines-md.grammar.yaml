@@ -1,0 +1,554 @@
+grammar: tramlines-md
+base: tramlines
+version: "0.1"
+doc: >
+  The markdown format grammar of tramlines. It defines what the body of a markdown
+  document of one kind must contain: its headings, blocks, and units. It names the core
+  grammar with `base` and adds to it.
+
+# sokf:begin schema
+schema:
+  doc: >
+    In a markdown document, a unit is a heading, a paragraph, an item, a row, or a line of
+    a fence. The body is the document's sections, in heading order, and the preamble
+    before the first heading.
+  at-least-one-of:
+    - preamble
+    - sections
+  keys:
+    preamble:
+      type: object
+      of: preamble
+      doc: >
+        The content between the frontmatter and the first heading. Content there is an
+        error when no preamble is declared. A document with no headings is all preamble.
+    sections:
+      type: list
+      of: section
+      doc: >
+        The document's headings, in document order. A heading that no entry matches is an
+        error unless an open region admits it. A heading more than one level deeper than
+        the heading before it is an error. The engine reports an ordered schema whose
+        entries skip a level on the schema.
+    sections-ordered:
+      type: boolean
+      doc: >
+        Set to `false` to accept the declared sections in any order. When absent, the
+        sections must follow the listed order, and a section out of place is an error that
+        names the first such heading.
+    sections-prohibited:
+      type: list
+      of: prohibited-heading
+      doc: Headings that are banned inside open regions.
+# sokf:end schema
+  # sokf:begin section
+  section:
+    common: true
+    doc: >
+      One heading of the document. A section is required unless it sets `optional`, and
+      occurs once unless it sets `repeat`. Its body runs to the next heading of any level.
+      Nesting is by level, never by containment, except that a section that declares
+      `parent` lies inside its parent. When an exact heading and a varying heading both
+      match, the exact heading wins.
+    keys:
+      heading:
+        type: text-or-rule
+        of: heading
+        required: true
+        doc: >
+          The heading. It is the exact text, `{ from: <key> }` for the frontmatter value,
+          or a `heading` rule for a heading that varies or captures a key. A string
+          contains no hole. Write a heading that varies as a template, and give the
+          template an example.
+      renamed-from:
+        type: string-or-list
+        doc: >
+          Former heading text, beside an exact heading. The engine reports a heading that
+          has an old text, and its repair rewrites the heading.
+      rule-id:
+        type: string
+        format: slug
+        doc: >
+          The name by which other rules reference this section. It must be unique within
+          the schema.
+      level:
+        type: integer
+        required: true
+        enum: [1, 2, 3, 4, 5, 6]
+        doc: The heading depth.
+      optional:
+        type: boolean
+        doc: >
+          Set to `true` to let the section be absent. When absent, the section is
+          required.
+      repeat:
+        type: boolean
+        doc: >
+          Set to `true` to let the heading occur more than once. When absent, it occurs
+          once.
+      headings-open:
+        type: boolean
+        doc: >
+          Set to `true` to accept undeclared headings of this level or deeper after this
+          section, up to the next declared heading. Only document-scope rules apply to
+          their bodies, and `sections-prohibited` still applies.
+      subheadings-open:
+        type: boolean
+        doc: >
+          Set to `true` to act as `headings-open` does, but only for undeclared headings
+          deeper than this level.
+      for-each-key-of:
+        type: string-or-list
+        format: rule-id
+        doc: >
+          Requires one occurrence of this section for each key that the referenced rule
+          captured, each key once. A list of rules pairs with the keys that any of them
+          captured, and a key that two of them captured needs one occurrence. The engine reads the key of each occurrence by the
+          heading's `key`, which the heading must declare. The referenced rule must
+          capture a key. A missing occurrence and an orphan are each an error that names
+          the key. Under a `parent`, the keys are those captured inside the same
+          occurrence of the parent.
+      parent:
+        type: string
+        format: rule-id
+        doc: >
+          The section that this one lies inside. The parent must have a smaller `level`
+          and be listed before this section, with only its own subsections between them.
+          Each occurrence must follow an occurrence of the parent, before the next heading
+          of the parent's level or higher. `optional` and `repeat` count within each
+          occurrence of the parent. A body still runs to the next heading.
+      number-from-parent:
+        type: boolean
+        requires:
+          - parent
+        doc: >
+          Set to `true` when the heading must begin with the number of its parent's
+          heading, a dot, and a number, such as `4.2.1` under `4.2`. A number is the text
+          before the first space: digits separated by dots. A parent heading with no
+          number is an error.
+      blocks:
+        type: list
+        of: block
+        doc: >
+          The body, as an ordered list of blocks. When absent, the body is one prose block
+          of one or more paragraphs. `[]` means an empty body. The body must be exactly
+          these blocks, in order unless `blocks-ordered` is `false`.
+      blocks-ordered:
+        type: boolean
+        doc: >
+          Set to `false` to accept the declared blocks in any order. When absent, the
+          blocks must appear in the declared order.
+      only:
+        type: map
+        of: string-or-list
+        doc: >
+          Maps lifecycle dimensions to states. The rule applies when the document's state
+          is in the set for every dimension named. When absent, the rule always applies.
+          The engine reports on the schema a dimension or state that the lifecycle doesn't
+          declare, or `only` without a lifecycle.
+      guidance:
+        type: string
+        doc: >
+          What an example can't show about this section. The engine writes it into the
+          scaffold before the section's heading.
+      examples:
+        type: list
+        of: string
+        doc: >
+          Further occurrences of a section that declares `repeat: true`. Each is the whole
+          markdown text of one occurrence: a heading of the section's level, its body, and
+          any sections inside it. The scaffold writes the occurrence that it derives from
+          the rules, then each text, in order and unchanged. A section that declares
+          `for-each-key-of` occurs once for each key of another rule: the scaffold writes
+          the occurrence of the first key from the rules, the occurrence of each later key
+          from the next text, and the occurrences that remain after the last text from
+          the rules. The engine checks each text as part of the scaffold.
+  # sokf:end section
+  # sokf:begin heading
+  heading:
+    doc: >
+      A section's heading as a unit rule. It defines the heading's shape, the key that it
+      captures, and an example of the heading. A repeated section is cited by its key.
+    exactly-one-of:
+      - text
+      - template
+      - pattern
+    keys:
+      text:
+        type: text
+        doc: "The exact heading text, or `{ from: <key> }` for the frontmatter value."
+      template:
+        type: string
+        doc: The heading written with typed holes where it varies, matched whole.
+      pattern:
+        type: string
+        format: regex
+        doc: >
+          A regular expression that the heading must match, for what a template can't express. Write
+          `^` and `$` to bind the ends.
+      key:
+        type: string
+        doc: >
+          The hole of the template, or the named group of the pattern, whose capture is
+          the section's key.
+      unique:
+        type: string
+        enum:
+          - document
+        requires:
+          - key
+        doc: The scope within which the key is unique. When absent, the scope is `document`.
+      key-derives-from:
+        type: object
+        of: key-derivation
+        requires:
+          - key
+        doc: >
+          Where the key's prefix must come from. The engine splits the key at the first
+          separator, and the prefix must be one that the derivation allows.
+      example:
+        type: string
+        doc: A heading of the kind that the template or the pattern requires.
+  # sokf:end heading
+  # sokf:begin preamble
+  preamble:
+    common: true
+    doc: >
+      The content before the first heading. A preamble has no heading, level, or repeat,
+      only blocks.
+    keys:
+      blocks:
+        type: list
+        of: block
+        doc: The preamble's blocks, as for a section's `blocks`.
+      blocks-ordered:
+        type: boolean
+        doc: As for a section's `blocks-ordered`.
+      guidance:
+        type: string
+        doc: >
+          What an example can't show about the preamble. The engine writes it into the
+          scaffold before the preamble.
+  # sokf:end preamble
+  # sokf:begin block
+  block:
+    common: true
+    doc: >
+      One part of a body, read from the document's CommonMark blocks. Consecutive
+      paragraphs form one prose block, and a paragraph of images only forms an image
+      block. A block has a kind and units: the paragraphs of prose or a blockquote, the
+      items of a list, the rows of a table, or the repetitions of a group. `each` applies
+      one unit rule to every unit. `sequence` applies one rule per position and fixes the
+      count. Otherwise, `min` and `max` bound the count. Generated blocks, region
+      interiors, footnote definitions, and HTML comments are exempt from matching. Every
+      rule reads the text with its generated anchors removed. The engine reports on the
+      schema a key that doesn't apply to the block's kind.
+    keys:
+      kind:
+        type: string
+        required: true
+        enum:
+          - prose
+          - bullet-list
+          - numbered-list
+          - table
+          - code
+          - blockquote
+          - image
+          - html
+          - thematic-break
+          - references
+          - group
+        doc: >
+          The kind of block. A `prose` block is paragraphs. A `bullet-list` or
+          `numbered-list` block is items. A `table` block is a GFM table. A `code` block
+          is a tagged fence. A `blockquote` block is quoted paragraphs. An `image` block
+          is a paragraph of images only. An `html` block is an HTML block. A
+          `thematic-break` block is a horizontal rule. A `references` block is link
+          reference definitions outside the generated block. A `group` block is a
+          repeating sequence of blocks.
+      optional:
+        type: boolean
+        doc: Set to `true` to let the block be absent. When absent, the block is required.
+      repeat:
+        type: boolean
+        doc: >
+          Set to `true` to let the block occur more than once in a row. When absent, it
+          occurs once.
+      min:
+        type: integer
+        doc: The minimum number of units. When absent, the minimum is one.
+      max:
+        type: integer
+        doc: The maximum number of units. When absent, there is no upper bound.
+      each:
+        type: object
+        of: unit
+        doc: A rule that every unit must satisfy.
+      sequence:
+        type: list
+        of: unit
+        doc: >
+          One rule per unit, by position. The count is the length of the sequence unless
+          an entry is optional or repeats. A unit must satisfy both `each` and the rule
+          for its position.
+      rules:
+        type: list
+        of: unit
+        doc: >
+          The grammar of the block's units, an alternative to `each` and `sequence`. An
+          entry with a shape and no `select-pattern` is a production. A production takes
+          the units that its shape matches, and each unit goes to the first such entry in
+          order. An entry with a `select-pattern` takes the units that the guard selects
+          and checks them. If it states only a guard and a count, it counts those units
+          and takes nothing. An entry with neither takes every unit. `min` and `max` bound
+          what each entry took or counted. A unit that no entry takes is an error unless
+          `units-open` is set. The engine reports it against the production that it
+          follows furthest.
+      units-open:
+        type: boolean
+        requires:
+          - rules
+        doc: >
+          Set to `true` to accept a unit that no entry of `rules` takes. When absent, such
+          a unit is an error.
+      lang:
+        type: string-or-list
+        requires:
+          kind: code
+        doc: >
+          The tag or tags that the fence must have, or `any`. A code block requires this
+          key. An untagged fence is always an error.
+      fence:
+        type: integer
+        requires:
+          kind: code
+        doc: >
+          The minimum number of backticks in the fence. When absent, the minimum is three.
+      columns:
+        type: list
+        of: string
+        requires:
+          kind: table
+        doc: >
+          The header row, in order. A table block requires this key. A differing header is
+          an error.
+      columns-open:
+        type: boolean
+        requires:
+          kind: table
+        doc: Set to `true` to accept further columns after the declared ones.
+      source-pattern:
+        type: string
+        format: regex
+        requires:
+          kind: [image]
+        doc: >
+          A regular expression that each image path must match. The engine matches an image in the
+          host's reference scheme by what the host reports that it shows, and any other
+          image as written.
+      inline-html:
+        type: boolean
+        doc: >
+          Set to `true` to accept inline HTML in this block's units. When absent, any HTML
+          other than a comment is an error.
+      blocks:
+        type: list
+        of: block
+        requires:
+          kind: group
+        doc: The blocks of one repetition of the group.
+      rule-id:
+        type: string
+        format: slug
+        doc: >
+          The name by which other rules reference this block. Its keys are the keys that
+          its units capture, except the keys of a unit rule that declares its own
+          `rule-id`.
+      only:
+        type: map
+        of: string-or-list
+        doc: As for a section's `only`.
+      example:
+        type: string-or-list
+        doc: >
+          The text of one of this block's units, or a list of such texts. The engine uses
+          it for every unit whose rule has no text or example of its own. A list gives
+          those units in order, as the list of a unit rule does.
+      guidance:
+        type: string
+        doc: >
+          What an example can't show about this block. The engine writes it into the
+          scaffold before the block.
+  # sokf:end block
+  # sokf:begin unit
+  unit:
+    common: true
+    doc: >
+      A rule on one unit of a block: a paragraph, an item, a row, a line of a fence, or a
+      repetition of a group. The engine matches a paragraph with its lines joined by one
+      space, and a line of a fence without its indent. It matches an item's own text.
+      Anything more that the item contains, such as a nested list or a fence, must match
+      the rule's `blocks`. A rule has at most one shape: `text`, `template`, `pattern`, or
+      the `format` that it binds.
+    keys:
+      text:
+        type: text
+        doc: >
+          The text that the unit must equal: a string, or `{ from: <key> }` for the
+          frontmatter value. It applies to a paragraph, an item, or a line.
+      template:
+        type: string
+        doc: The unit's text written with typed holes where it varies, matched whole.
+      pattern:
+        type: string
+        format: regex
+        doc: >
+          A regular expression that the unit's text must match, for what a template can't express.
+          Write `^` and `$` to bind the ends.
+      format:
+        type: string
+        format: format-name
+        doc: The name of a line format that the unit's text must match.
+      key:
+        type: string
+        doc: >
+          The hole of the template, the named group of the pattern, or the hole or group
+          of every shape of the format, whose capture is the unit's key. The key must be
+          unique within its scope by its slug, and the slug names the key's generated
+          anchor. Don't declare `key` beside a format that captures a key.
+      key-derives-from:
+        type: object
+        of: key-derivation
+        doc: >
+          Where the key's prefix must come from. The engine splits the key at the first
+          separator, and the prefix must be one that the derivation allows.
+      key-optional:
+        type: boolean
+        doc: >
+          Set to `true` to treat a unit that contains no key as plain rather than as an
+          error. The key is the rule's own `key` or the one that its `format` declares.
+          The engine reports a rule that has neither. When absent, a unit with no key is
+          an error.
+      key-repeats:
+        type: boolean
+        doc: >
+          Set to `true` to let the rule capture one key on several units, and a key that
+          another rule captures, as a list that names the owner of each item names one
+          owner many times. Each capture by this rule refers to the key, which a capture by
+          a rule without `key-repeats` defines where there is one. When absent, a second
+          capture of a key is an error.
+      unique:
+        type: string
+        enum:
+          - document
+        doc: >
+          The scope within which the key is unique. When absent, the scope is `document`.
+          The engine reports a clash on both documents, and names the key and the other
+          document.
+      rule-id:
+        type: string
+        format: slug
+        doc: >
+          The name by which other rules reference this rule. The keys that it captures
+          belong to it, not to the enclosing block.
+      for-each-key-of:
+        type: string-or-list
+        format: rule-id
+        doc: >
+          Requires one unit that captures each key that the referenced rule captured, each
+          key once, as a section's `for-each-key-of` pairs headings with keys. A list of
+          rules pairs with the keys that any of them captured, each key once. This rule
+          must capture a key, by `key` or by its format, and so must the referenced rule.
+          A missing key and an orphan are each an error that names the key. When the
+          section declares a `parent`, the keys are those captured inside the same
+          occurrence of the parent. Otherwise, they are the keys of the document. The
+          engine reports a missing key even where the block that would contain it is
+          absent.
+      prohibited-patterns:
+        type: list
+        of: prohibition
+        doc: Patterns that the unit's text must not match, each with its message.
+      optional:
+        type: boolean
+        doc: >
+          In a sequence, set to `true` to let this position be absent. When absent, the
+          position is required.
+      repeat:
+        type: boolean
+        doc: >
+          In a sequence, set to `true` to let this position occur more than once. When
+          absent, it occurs at most once.
+      blocks:
+        type: list
+        of: block
+        doc: >
+          The blocks that a list item contains beyond its own text. Each block is required
+          in every item unless it sets `optional`. When absent, an item contains nothing
+          beyond its text.
+      lines:
+        type: list
+        of: unit
+        doc: >
+          The grammar of the content lines of a code or `html` block, as `rules` is the
+          grammar of a block's units. Each line, without its indent, is a unit of its own.
+          Blank lines don't count. A line that no rule takes is an error unless
+          `lines-open` is set. A rule here can't contain `lines` or `blocks`. A key
+          captured from a line belongs to the line rule's own `rule-id`, or else to the
+          enclosing block's. A rule that contains `lines` can also state an `example`.
+          That example is the whole fence: the scaffold copies it, and these rules read
+          its keys out of it.
+      lines-open:
+        type: boolean
+        requires:
+          - lines
+        doc: >
+          Set to `true` to accept a line that no rule of `lines` takes. When absent, such
+          a line is an error.
+      select-pattern:
+        type: string
+        format: regex
+        doc: >
+          Under `rules` or `lines`, a regular expression that selects the units or lines that this rule
+          governs by their text, for a rule that picks them by something other than its
+          shape. A rule that states only a guard and a count counts what it matches and
+          takes nothing.
+      min:
+        type: integer
+        doc: >
+          Under `rules` or `lines`, the fewest units or lines that the rule may take or
+          count. A rule that declares `select-pattern` must state `min`, because it has no
+          default. Write `min: 0` to govern such units without requiring one. When absent
+          on a rule without a guard, the minimum is one.
+      max:
+        type: integer
+        doc: >
+          Under `rules` or `lines`, the most units or lines that the rule may take or
+          count. When absent, there is no upper bound.
+      example:
+        type: string-or-list
+        doc: >
+          The text of a unit that this rule governs, or a list of such texts. A rule that
+          binds a format and states no example of its own uses the format's example. The
+          engine checks each text of a list against the rule, and a failure quotes the
+          first. The scaffold writes one unit for each text of a list, in order, and
+          copies of the last text while `min` demands more, but never more units than the
+          `max` of the rule or of the block. A rule under `rules` writes its list even
+          with `min: 0`. In a `sequence`, a position that declares `repeat` writes the
+          whole list, and any other position writes the first text. In a `code` block,
+          each text is one fence, so the block declares `repeat: true`.
+  # sokf:end unit
+  # sokf:begin prohibited-heading
+  prohibited-heading:
+    common: true
+    doc: One heading that is banned inside open regions.
+    keys:
+      heading:
+        type: string
+        required: true
+        doc: The exact heading text.
+      only:
+        type: map
+        of: string-or-list
+        doc: As for a section's `only`.
+  # sokf:end prohibited-heading

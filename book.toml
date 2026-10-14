@@ -1,0 +1,17 @@
+# The documentation site. `npm run docs:build` writes its source into
+# target/book-src from docs/, the README and the specifications, then builds
+# the site into target/book.
+[book]
+title = "tramlines"
+description = "Check Markdown documents against a schema written in YAML."
+language = "en"
+src = "target/book-src"
+
+[build]
+build-dir = "target/book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/six5536/tramlines"
+site-url = "/tramlines/"
+no-section-label = true

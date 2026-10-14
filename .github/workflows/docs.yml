@@ -1,0 +1,66 @@
+name: Docs
+
+# Publishes the documentation site to GitHub Pages, built from one tag: the
+# release calls it with the tag it published, and it can be run by hand to
+# publish a past tag again, such as after a fix to its docs is tagged.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The tag to build the site from.
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The tag to build the site from, such as v0.1.0.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer one waits for the one in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: rust@1.96 cargo-binstall cargo:mdbook cargo:lychee
+
+      - name: Build the site
+        env:
+          # Links to the knowledge store go to GitHub at the same tag.
+          DOCS_REF: ${{ inputs.ref }}
+        run: npm run docs:build
+
+      - name: Check its links
+        run: npm run docs:check
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/book
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

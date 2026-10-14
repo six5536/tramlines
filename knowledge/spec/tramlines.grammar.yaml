@@ -1,0 +1,398 @@
+grammar: tramlines
+version: "0.1"
+doc: >
+  The core grammar of tramlines. It defines the vocabulary that a schema of any format
+  uses, in two parts: `meta`, the vocabulary that every grammar file is written in, and
+  `schema`, the keys and rule maps that every format shares. A format grammar names this
+  grammar with `base` and adds what only its format has: keys, rule maps, values of an
+  enum, the block kinds that a key requires, text to a `doc`, and the constraint groups of
+  a rule map. A host extension names the format grammar with `extends` and can only add
+  keys, rule maps, values of an enum, the block kinds that a key requires, text to a
+  `doc`, and sections of its own. Every schema is YAML 1.2 core schema. The engine reports
+  an anchor, alias, or tag on the schema. Every key is kebab-case.
+
+meta:
+  doc: >
+    The vocabulary that this grammar is written in. The engine reports a schema that
+    contains a key, type, or format that the grammar doesn't define. A `text` value is
+    either a string or `{ from: <frontmatter key> }`. With `from`, the value of the
+    frontmatter key stands in for the string, and its line breaks read as one space. The
+    frontmatter decides: a repair rewrites the body to match it, and the body of a new
+    document takes its values from the frontmatter of that document. A
+    `text-or-rule` value is either a `text` or one instance of the rule map that `of`
+    names.
+  types:
+    - string
+    - integer
+    - boolean
+    - list
+    - map
+    - object
+    - string-or-list
+    - string-or-map
+    - text
+    - text-or-rule
+  keys:
+    type:
+      doc: The type of the value, one of the types listed above.
+    of:
+      doc: >
+        The shape of a list's items, a map's values, or an object's instance. It is a
+        type, a scalar format, or the name of a rule map under `schema`. With `object`,
+        the value is one instance of the rule map. With `map`, the value is a keyed map of
+        instances. With `list`, the value is a list of instances.
+    required:
+      doc: >
+        Set to `true` to require the key in every schema. When absent, a schema can omit
+        the key.
+    enum:
+      doc: The values that the key accepts.
+    format:
+      doc: >
+        A scalar shape or a reference. The shapes are `regex`, a regular expression in the Rust
+        dialect, and `slug`, lowercase letters and digits joined by single hyphens. A
+        reference must resolve. The references are `rule-id`, a rule in the same schema,
+        and `format-name`, a format in the shared registry or in the schema's `formats`.
+    requires:
+      doc: >
+        What must accompany this key. As a list, it names the keys that must be present
+        beside this one. As a `kind`, it names the kinds that the enclosing block must be
+        one of.
+    exactly-one-of:
+      doc: Exactly one of the listed keys must be present.
+    at-least-one-of:
+      doc: At least one of the listed keys must be present.
+    common:
+      doc: >
+        On a rule map, set to `true` to accept the `rule-common` keys. When absent, the
+        rule map doesn't accept them.
+    doc:
+      doc: What the key means, written for the reader of an error.
+
+# sokf:begin schema
+schema:
+  doc: >
+    What a schema can state about the documents that it governs. A schema is strict by
+    default: whatever it declares is required, whatever it doesn't declare is rejected,
+    and each requirement is exclusive. You relax a rule only with a key that you write on
+    purpose. A key that ends in `-open` opens a set that is otherwise rejected, and
+    `optional` and `repeat` loosen a count. Regular expressions use the Rust dialect, with no
+    lookaround or backreferences, and aren't anchored. The shape of one unit, such as a
+    line or a frontmatter value, is exactly one of these: `text`, the text itself;
+    `template`, the text with typed holes `${name:type}` where it varies, matched whole;
+    or `pattern`, a regular expression. Every shape reads the unit's text squashed, with each run of
+    whitespace read as one space. Each rule has an `example`, which is text of the kind
+    that the rule requires. The engine checks the example against the
+    rule, shows it with every failure that the rule raises, and writes it into the
+    scaffold. The scaffold is the document that the schema derives and that a new document
+    starts from. A rule that declares a template or a pattern must have an example. For
+    what an example can't show, use `guidance`. The engine writes guidance into the
+    scaffold before the part that it governs, and no failure prints it.
+  keys:
+    line-limit:
+      type: integer
+      required: true
+      doc: >
+        The most lines that a document can have. A longer document is an error, and you
+        split it. A value of zero or less sets no limit.
+    guidance:
+      type: string
+      doc: >
+        What the schema states that no example can show. The engine writes it into the
+        scaffold after the sentence that every scaffold opens with. No failure prints it.
+    lifecycle:
+      type: list
+      of: lifecycle-dimension
+      doc: >
+        The states that the documents of the schema move through, with one entry per dimension, in
+        order. Each dimension is a required frontmatter enum. Don't repeat it under
+        `frontmatter`. A dimension is what `only` can name. The engine derives one
+        scaffold for each combination of states.
+    frontmatter:
+      type: map
+      of: frontmatter-constraint
+      doc: >
+        The frontmatter keys, with one entry per key. A declared key is required unless it
+        sets `optional`. The engine never rejects the keys that the host reserves. Declare
+        a reserved key to require it or to narrow its value. An undeclared key that is
+        neither reserved nor a lifecycle key is an error unless `frontmatter-open` is set.
+    frontmatter-open:
+      type: boolean
+      doc: >
+        Set to `true` to accept undeclared frontmatter keys. When absent, an undeclared
+        key that isn't reserved or a lifecycle key is an error.
+    prohibited-patterns:
+      type: list
+      of: prohibition
+      doc: >
+        Patterns that no body line may match, each with the message that states its rule. Fenced blocks, code spans, and the interiors
+        of regions are excluded. A unit rule and a format take the same key, which then
+        applies to the text that they govern instead.
+    formats:
+      type: map
+      of: format
+      doc: >
+        Line formats local to the schema, in the shape of the shared registry. The nearest
+        layer wins: an entry here replaces an entry of the same name in a farther layer
+        entirely.
+    types:
+      type: map
+      of: string-or-list
+      doc: >
+        Hole types local to the schema, in the shape of the shared registry. Each entry
+        has a slug as its name and, as its value, either a regular expression with no anchor and no
+        capture group or a list of literal choices. The nearest layer wins by name, and
+        the engine compiles every format that the schema sees against the result. The
+        built-in types are reserved: `text` (`.+`), `word`, `int`, `slug`, and `seq`.
+    examples:
+      type: list
+      of: example
+      doc: >
+        Complete documents that satisfy this schema. The engine checks each one as it
+        checks any other document, at the states that its own frontmatter gives, so a
+        marker in an example is an error. Examples show what a document of the type looks
+        like, and the engine never copies them.
+  rule-common:
+    doc: "Keys that every rule map with `common: true` accepts."
+    keys:
+      severity:
+        type: string
+        enum:
+          - error
+          - warn
+        doc: >
+          How the engine reports a failure of the rule: `error` reports an error, and
+          `warn` reports a warning. A rule inside this one, such as a block's unit rule,
+          takes this severity unless it declares its own. When absent, the rule takes the
+          severity of the rule it sits in, and a failure of a rule in no other is an error.
+# sokf:end schema
+  # sokf:begin frontmatter-constraint
+  frontmatter-constraint:
+    common: true
+    doc: >
+      What a schema can state about one frontmatter key. The key is required unless it
+      sets `optional`.
+    keys:
+      const:
+        type: string
+        doc: The value must equal this.
+      template:
+        type: string
+        doc: >
+          The value written with typed holes where it varies, matched whole. On `id`, the
+          template can contain only the holes that the engine fills in a new document. A
+          `${:seq}` hole is unique within the kind, and the template can contain at most
+          one. A `${:slug}` hole is one or more slug words. A `${<key>}` hole has no type
+          and is named for a lifecycle key whose states are slugs. It contains the
+          document's state for that key. Replacing each hole with `x` must yield a slug,
+          and only `seq-width` can sit beside the template.
+      pattern:
+        type: string
+        format: regex
+        doc: A regular expression that the value must match, for what a template can't express.
+      enum:
+        type: list
+        of: string
+        doc: The allowed values. The value must be one of them.
+      format:
+        type: string
+        enum:
+          - url
+          - slug
+        doc: >
+          The format that the value must have. `url` requires an absolute URL. `slug`
+          requires lowercase letters and digits joined by single hyphens.
+      seq-width:
+        type: integer
+        requires:
+          - template
+        doc: >
+          On `id`, the number of digits of the `seq` hole. When absent, the width is
+          three.
+      list:
+        type: boolean
+        doc: >
+          Set to `true` when the value is a list. Then `const`, `pattern`, `enum`, and
+          `format` apply to every element, and `min` and `max` bound the number of
+          elements. A scalar where a list is declared, or a list where none is declared,
+          is an error.
+      min:
+        type: integer
+        requires:
+          - list
+        doc: The minimum number of elements. When absent, there is no lower bound.
+      max:
+        type: integer
+        requires:
+          - list
+        doc: The maximum number of elements. When absent, there is no upper bound.
+      optional:
+        type: boolean
+        doc: Set to `true` to let the key be absent. When absent, the key is required.
+      only:
+        type: map
+        of: string-or-list
+        doc: Maps lifecycle dimensions to states, as on every rule that takes `only`.
+      example:
+        type: string
+        doc: The key's value, or one element of it when `list` is declared.
+      guidance:
+        type: string
+        doc: >
+          What an example can't show about this key. The engine writes it into the
+          scaffold as a YAML comment line before the key.
+  # sokf:end frontmatter-constraint
+  # sokf:begin lifecycle-dimension
+  lifecycle-dimension:
+    doc: One ordered dimension of a lifecycle.
+    keys:
+      key:
+        type: string
+        format: slug
+        required: true
+        doc: The frontmatter key that contains the state.
+      states:
+        type: list
+        of: string
+        required: true
+        doc: The states, in lifecycle order. The key's value must be one of them.
+      guidance:
+        type: string
+        doc: >
+          What the states mean. The engine writes it into the scaffold as a YAML comment
+          line before the key.
+  # sokf:end lifecycle-dimension
+  # sokf:begin example
+  example:
+    doc: >
+      One complete document that satisfies the schema at its own lifecycle states. The
+      engine checks it as it checks any other document, and reports a marker in it on the
+      schema.
+    keys:
+      document:
+        type: string
+        required: true
+        doc: The complete document.
+  # sokf:end example
+  # sokf:begin format
+  format:
+    doc: >
+      One named line grammar, in a schema's `formats` or in a registry. A format has
+      either one shape and its example, or `variants`, and each variant has a shape and
+      an example.
+      The engine shows an example beside every failure of its shape. An entry replaces the
+      entry of the same name in a farther layer entirely, unless it declares `patch`.
+    exactly-one-of:
+      - text
+      - template
+      - pattern
+      - variants
+    keys:
+      patch:
+        type: boolean
+        doc: >
+          Set to `true` when this entry states only how it differs from the entry of the
+          same name in a farther layer. The engine merges the two by JSON Merge Patch (RFC
+          7386). A key stated here replaces the farther one, an omitted key is inherited,
+          a key set to null is dropped, and a list replaces the farther list entirely. The
+          keys below apply to the merged entry, so a patch contains only what it changes.
+          The engine reports a patch that shadows no farther entry on the schema. When
+          absent, the entry replaces the farther entry entirely.
+      text:
+        type: string
+        doc: The text that every bound line must equal.
+      template:
+        type: string
+        doc: The line written with typed holes where it varies, matched whole.
+      pattern:
+        type: string
+        format: regex
+        doc: A regular expression that every bound line must match, for what a template can't express.
+      key:
+        type: string
+        doc: >
+          The hole or named group, present in every shape of the format, whose capture is
+          the line's key.
+      variants:
+        type: map
+        of: format-variant
+        doc: >
+          The named shapes of the format, in the order in which a line tries them. A line
+          conforms when one of them matches. When none matches, the failure names the
+          variant that the line follows furthest, the place where the line fails, and that
+          variant's example. The example of each variant must match only its own variant.
+      prohibited-patterns:
+        type: list
+        of: prohibition
+        doc: Patterns that no bound line may match, checked after the shape, each with its message.
+      example:
+        type: string
+        doc: >
+          One conforming line, for a format with one shape. In a format with variants,
+          each variant has its own example.
+  # sokf:end format
+  # sokf:begin prohibition
+  prohibition:
+    doc: >
+      One banned pattern and the message that states its rule. A finding gives the
+      message and the span that the pattern matched, and a scaffold writes the message
+      after the guidance of the part that the pattern governs.
+    keys:
+      pattern:
+        type: string
+        format: regex
+        required: true
+        doc: The regular expression that no governed text may match.
+      message:
+        type: string
+        required: true
+        doc: >
+          One sentence that states the rule as a fact about the part, in the voice of the
+          document, such as "An interface's summary contains no modal verb."
+  # sokf:end prohibition
+  # sokf:begin format-variant
+  format-variant:
+    doc: One named shape of a variant format.
+    exactly-one-of:
+      - text
+      - template
+      - pattern
+    keys:
+      text:
+        type: string
+        doc: The text that a line of this variant equals.
+      template:
+        type: string
+        doc: The line written with typed holes where it varies, matched whole.
+      pattern:
+        type: string
+        format: regex
+        doc: A regular expression that a line of this variant matches.
+      example:
+        type: string
+        required: true
+        doc: One conforming line that matches only this variant.
+  # sokf:end format-variant
+  # sokf:begin key-derivation
+  key-derivation:
+    doc: >
+      Where the prefixes of a `key-derives-from` come from, and the separator that ends
+      them.
+    exactly-one-of:
+      - rule
+      - from
+    keys:
+      rule:
+        type: string
+        format: rule-id
+        doc: The rule whose keys are the allowed prefixes.
+      from:
+        type: string
+        doc: The frontmatter key whose value is the only allowed prefix.
+      separator:
+        type: string
+        required: true
+        doc: >
+          The literal text that ends the prefix. The engine splits the key at its first
+          occurrence.
+  # sokf:end key-derivation

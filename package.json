@@ -1,0 +1,28 @@
+{
+  "name": "@six5536/tramlines-workspace",
+  "private": true,
+  "description": "tramlines: checks documents against a schema, shipped as prebuilt binaries for npm and crates.io.",
+  "workspaces": [
+    "packages/tramlines"
+  ],
+  "scripts": {
+    "build": "cargo build --workspace",
+    "build:all": "npm run build:linux-x64 && npm run build:linux-arm64 && npm run build:darwin-x64 && npm run build:darwin-arm64",
+    "build:linux-x64": "rustup target add x86_64-unknown-linux-musl && mise exec -- cargo zigbuild --release --target x86_64-unknown-linux-musl -p tramlines && install -m 0755 target/x86_64-unknown-linux-musl/release/tramlines packages/tramlines-linux-x64/bin/tramlines",
+    "build:linux-arm64": "rustup target add aarch64-unknown-linux-musl && mise exec -- cargo zigbuild --release --target aarch64-unknown-linux-musl -p tramlines && install -m 0755 target/aarch64-unknown-linux-musl/release/tramlines packages/tramlines-linux-arm64/bin/tramlines",
+    "build:darwin-x64": "rustup target add x86_64-apple-darwin && mise exec -- cargo zigbuild --release --target x86_64-apple-darwin -p tramlines && install -m 0755 target/x86_64-apple-darwin/release/tramlines packages/tramlines-darwin-x64/bin/tramlines",
+    "build:darwin-arm64": "rustup target add aarch64-apple-darwin && mise exec -- cargo zigbuild --release --target aarch64-apple-darwin -p tramlines && install -m 0755 target/aarch64-apple-darwin/release/tramlines packages/tramlines-darwin-arm64/bin/tramlines",
+    "dev": "cargo run -p tramlines --",
+    "lint": "cargo clippy --workspace",
+    "fmt": "cargo fmt --all",
+    "docs:build": "node scripts/docs-build.mjs && mdbook build",
+    "docs:serve": "node scripts/docs-build.mjs && mdbook serve --open",
+    "docs:check": "lychee --offline --include-fragments --no-progress --exclude-path target/book/404.html 'target/book/**/*.html'",
+    "smoke": "node scripts/release-smoke.mjs",
+    "smoke:launcher": "node scripts/launcher-smoke.mjs",
+    "verify-version": "node scripts/verify-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}

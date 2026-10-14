@@ -1,0 +1,10 @@
+# The public mirror holds two knowledge stores: the specifications of
+# tramlines, with the schemas that govern them, and the documentation site.
+# The source keeps the markers that cite the contracts of tramlines' own
+# development, whose documents this repository doesn't hold, so sokf doesn't
+# check markers here.
+[knowledge]
+roots = ["/knowledge", "/docs"]
+
+[markers]
+check = "off"

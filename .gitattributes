@@ -1,0 +1,3 @@
+# Text files keep LF line endings on every platform: the embedded grammars,
+# the generated pages and the test snapshots are compared byte for byte.
+* text=auto eol=lf

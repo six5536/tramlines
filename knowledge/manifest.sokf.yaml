@@ -1,0 +1,4 @@
+sokf: "0.6"
+name: tramlines
+scope: ncoderz
+description: "tramlines: the specifications, architecture, contracts, designs and issues of a schema engine that checks documents against a schema."

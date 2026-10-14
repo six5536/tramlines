@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+# The sokf submodule is a separate workspace, built only to validate the knowledge.
+exclude = ["submodules"]
+members = [
+  "crates/app/*",
+  "crates/lib/*",
+]
+# Without this a bare `cargo build` fails with "the workspace has no members".
+default-members = [
+  "crates/app/tramlines",
+  "crates/lib/tramlines-core",
+  "crates/lib/tramlines-md",
+]
+
+[workspace.package]
+version = "0.2.0"
+authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
+edition = "2024"
+rust-version = "1.96.0"
+readme = "README.md"
+license = "Elastic-2.0"
+repository = "https://github.com/six5536/tramlines"
+homepage = "https://github.com/six5536/tramlines"
+keywords = ["markdown", "schema", "validation", "cli"]
+categories = ["command-line-utilities", "text-processing"]
+
+[workspace.dependencies]
+# External dependencies (alphabetical)
+clap = { version = "4.6", features = ["derive"] }
+clap_complete = "4.6"
+clap_mangen = "0.3"
+comrak = { version = "0.55", default-features = false }
+globset = "0.4"
+ignore = "0.4"
+jmespath = "0.5"
+regex = "1.13"
+rusqlite = { version = "0.40", features = ["bundled"] }
+saphyr = "0.1"
+saphyr-parser = "0.1"
+schemars = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+thiserror = "2.0"
+toml = "1.1"
+toml_edit = "0.25"
+
+# Dev dependencies
+assert_cmd = "2.2"
+insta = "1.47"
+boon = "0.6"
+proptest = "1.11"
+
+# Internal crates
+tramlines-core = { path = "crates/lib/tramlines-core", version = "0.2.0" }
+tramlines-md = { path = "crates/lib/tramlines-md", version = "0.2.0" }
+
+# Optimize release builds for size
+[profile.release]
+opt-level = "z"  # optimize aggressively for size
+strip = true  # strip debug info and symbols
+lto = true  # full link-time optimization across all crates
+panic = "abort"  # no unwinding overhead
+codegen-units = 1  # single codegen unit → better optimization
+
+[profile.test]
+opt-level = 0
+debug = 0
+split-debuginfo = "unpacked"  # For macOS
+
+# Optimize the dependencies of tests, not the workspace crates: the parsers
+# and regexes run fast under the tests and proptests, built once, while a
+# change to a workspace crate still rebuilds fast.
+[profile.test.package."*"]
+opt-level = 2
