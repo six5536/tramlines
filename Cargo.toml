@@ -14,7 +14,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
 edition = "2024"
 rust-version = "1.96.0"
@@ -52,8 +52,8 @@ boon = "0.6"
 proptest = "1.11"
 
 # Internal crates
-tramlines-core = { path = "crates/lib/tramlines-core", version = "0.2.0" }
-tramlines-md = { path = "crates/lib/tramlines-md", version = "0.2.0" }
+tramlines-core = { path = "crates/lib/tramlines-core", version = "0.2.1" }
+tramlines-md = { path = "crates/lib/tramlines-md", version = "0.2.1" }
 
 # Optimize release builds for size
 [profile.release]

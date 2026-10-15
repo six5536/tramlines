@@ -2,6 +2,10 @@
 
 This file records the notable changes of each release of tramlines. git-cliff writes the notes of each release from the commits of the release, and the notes of 0.2.0, the first public release, describe all that tramlines does. While tramlines is pre-1.0, a minor version might contain breaking changes.
 
+## [0.2.1] - 2026-10-15
+
+This release changes nothing in tramlines. Its crates and packages are the first that the public repository publishes to crates.io and npm through trusted publishing, with no stored token.
+
 ## [0.2.0] - 2026-10-15
 
 This release is the first public release of tramlines. It publishes the crates `tramlines-core`, `tramlines-md`, and `tramlines` to crates.io, and the npm packages `@six5536/tramlines` and `@six5536/tramlines-<platform>` to npm.
