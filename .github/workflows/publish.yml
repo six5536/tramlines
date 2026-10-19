@@ -238,13 +238,30 @@ jobs:
           fi
           echo "$actual"
 
+      # A crate or a package whose version is already on its registry is
+      # left out, as the publish steps skip it, because a dry run refuses a
+      # published version too, and a run again after a half-failed release
+      # would stop here.
       - name: Dry-run every publish before doing any of them
         run: |
-          cargo publish --workspace --locked --dry-run
-          for pkg in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
-            npm publish "./packages/tramlines-$pkg" --dry-run --tag "$NPM_TAG"
+          exclude=""
+          for crate in tramlines-core tramlines-md tramlines; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' -A 'tramlines-publish (github.com/six5536/tramlines)' \
+              "https://crates.io/api/v1/crates/$crate/$VERSION")"
+            if [ "$status" = 200 ]; then exclude="$exclude --exclude $crate"; fi
           done
-          npm publish ./packages/tramlines --dry-run --tag "$NPM_TAG"
+          if [ "$(echo $exclude | wc -w)" -lt 6 ]; then
+            cargo publish --workspace --locked --dry-run $exclude
+          fi
+          for dir in packages/tramlines-linux-x64 packages/tramlines-linux-arm64 packages/tramlines-darwin-x64 \
+                     packages/tramlines-darwin-arm64 packages/tramlines-win32-x64 packages/tramlines; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already published"
+            else
+              npm publish "./$dir" --dry-run --tag "$NPM_TAG"
+            fi
+          done
 
       - name: Authenticate to crates.io with trusted publishing
         if: env.HAS_CARGO_TOKEN != 'true'
@@ -313,14 +330,14 @@ jobs:
             stage="dist/stage/tramlines-$VERSION-$pkg"
             mkdir -p "$stage"
             install -m 0755 "artifacts/tramlines-$pkg/tramlines" "$stage/tramlines"
-            cp README.md LICENSE CHANGELOG.md "$stage/"
+            cp README.md LICENSE "$stage/"
             tar -czf "dist/out/tramlines-$VERSION-$pkg.tar.gz" -C dist/stage "tramlines-$VERSION-$pkg"
           done
           # Windows ships a .zip, the archive form its users expect.
           stage="dist/stage/tramlines-$VERSION-win32-x64"
           mkdir -p "$stage"
           install -m 0755 "artifacts/tramlines-win32-x64/tramlines.exe" "$stage/tramlines.exe"
-          cp README.md LICENSE CHANGELOG.md "$stage/"
+          cp README.md LICENSE "$stage/"
           (cd dist/stage && zip -qr "../out/tramlines-$VERSION-win32-x64.zip" "tramlines-$VERSION-win32-x64")
           # The JSON Schema of a schema, which editors read to check its keys.
           # sokf-implements: CLI-15_AC-3

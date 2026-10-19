@@ -20,4 +20,4 @@ cargo build --locked -p tramlines
 
 The specifications and the grammars are in `knowledge/spec/`, and the build embeds the grammars into the crates. The documentation site's pages are in `docs/`, and `npm run docs:build` builds the site with mdBook.
 
-`.github/workflows/publish.yml` is the release: it builds the five binaries, smoke-tests them, publishes the crates to crates.io and the packages to npm, creates the GitHub release with the notes that the tag's message carries, and deploys the documentation site. `CHANGELOG.md` holds the notes of every release.
+`.github/workflows/publish.yml` is the release: it builds the five binaries, smoke-tests them, publishes the crates to crates.io and the packages to npm, creates the GitHub release with the notes that the tag's message carries, and deploys the documentation site. The GitHub releases hold the notes of every release: they are the project's changelog.
