@@ -29,6 +29,33 @@ const MD_SCHEMA_KEYS: &[&str] = &[
     "sections-prohibited",
 ];
 
+/// The keys of `unit` the markdown format grammar declares, and the
+/// `rule-common` keys of the core grammar.
+const UNIT_KEYS: &[&str] = &[
+    "severity",
+    "text",
+    "template",
+    "pattern",
+    "format",
+    "key",
+    "key-derives-from",
+    "key-optional",
+    "key-repeats",
+    "unique",
+    "rule-id",
+    "for-each-key-of",
+    "prohibited-patterns",
+    "optional",
+    "repeat",
+    "blocks",
+    "lines",
+    "lines-open",
+    "select-pattern",
+    "min",
+    "max",
+    "example",
+];
+
 /// Lower a schema that passed `validate_schema`: the schema, with every
 /// semantic refusal the generic check cannot see, whether or not there is
 /// one. `dialect` names the host's region kind.
@@ -69,6 +96,7 @@ pub fn lower(
         dialect: *dialect,
         severity: Severity::Error,
         unloaded,
+        units: 0,
     };
     l.findings = findings;
     let schema = l.schema(yaml, formats);
@@ -78,12 +106,14 @@ pub fn lower(
 /// The lowering of a markdown schema: the core lowering, the dialect that
 /// names a host's region kind, the `severity` of the rule being lowered,
 /// which the rules inside it take unless they declare their own, and the
-/// formats the schema declares that did not load.
+/// formats the schema declares that did not load, and the number of unit
+/// rules lowered so far, which gives each its `index`.
 struct MdLowerer<'a> {
     core: Lowerer<'a>,
     dialect: Dialect,
     severity: Severity,
     unloaded: HashSet<String>,
+    units: usize,
 }
 
 impl<'a> Deref for MdLowerer<'a> {
@@ -379,6 +409,7 @@ impl MdLowerer<'_> {
             fence: usize_of(node, "fence").unwrap_or(3),
             columns: node.get("columns").and_then(|c| c.as_str_or_list()),
             columns_open: bool_of(node, "columns-open"),
+            example_columns: node.get("example-columns").and_then(|c| c.as_str_or_list()),
             source_pattern: self.regex(node, "source-pattern"),
             inline_html: bool_of(node, "inline-html"),
             blocks,
@@ -392,6 +423,9 @@ impl MdLowerer<'_> {
 
     /// One unit rule, at the position that decides which keys it may carry.
     fn unit(&mut self, node: &Spanned, pos: UnitPos) -> Unit {
+        // sokf-implements: MD-2_AC-10
+        let index = self.units;
+        self.units += 1;
         let select = self.regex(node, "select-pattern");
         let guarded = matches!(pos, UnitPos::Guarded | UnitPos::Line);
         // sokf-implements: TLMD_91
@@ -500,6 +534,10 @@ impl MdLowerer<'_> {
             select,
             examples,
             example_list,
+            // sokf-implements: TL_9
+            // sokf-implements: MD-2_AC-9
+            extensions: extensions(node, UNIT_KEYS),
+            index,
         }
     }
 }
@@ -544,4 +582,27 @@ fn ordered(node: &Spanned, key: &str) -> bool {
 /// The items of the sequence `key` of `node`, where it holds one.
 fn seq<'a>(node: &'a Spanned, key: &str) -> Option<&'a [Spanned]> {
     node.get(key).and_then(|s| s.as_seq())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UNIT_KEYS;
+    use crate::grammar::load_grammar;
+
+    #[test]
+    fn the_unit_keys_are_the_keys_of_the_grammar() {
+        let grammar = load_grammar().expect("the grammar loads");
+        let unit = grammar.rule("unit").expect("the grammar has `unit`");
+        let mut declared: Vec<&str> = grammar
+            .rule_common
+            .keys
+            .iter()
+            .chain(&unit.keys)
+            .map(|(k, _)| k.as_str())
+            .collect();
+        let mut known = UNIT_KEYS.to_vec();
+        declared.sort_unstable();
+        known.sort_unstable();
+        assert_eq!(known, declared);
+    }
 }

@@ -315,11 +315,16 @@ fn pairing(c: &mut Checker<'_>, captures: &[Capture], p: &Pairer<'_>, section: &
     }
 }
 
-/// Each key whose rule derives it has a prefix the named rule captured or
-/// the named frontmatter key holds (TL_32 and TL_33:
-/// the derivation sits beside the key it constrains).
+/// Each key whose rule derives it starts with a prefix the named rule
+/// captured or the named frontmatter key holds, followed by the separator
+/// (TL_32 and TL_33: the derivation sits beside the key it constrains). A
+/// prefix can contain the separator, so the key is matched against each
+/// prefix rather than split; a key that no prefix starts is described by
+/// the text before its last separator, because a prefix can contain the
+/// separator and the key's own tail, such as `1`, rarely does.
 // sokf-implements: TL_33
 // sokf-implements: TL_32
+// sokf-implements: TL_126
 fn derivations(c: &mut Checker<'_>, captures: &[Capture]) {
     let sections = c.sections.clone();
     for cap in captures {
@@ -327,10 +332,15 @@ fn derivations(c: &mut Checker<'_>, captures: &[Capture]) {
             continue;
         };
         let prefixes = prefixes(c, captures, derivation);
-        let prefix = cap.key.split_once(&derivation.separator).map(|(p, _)| p);
+        if derivation
+            .prefix_of(&cap.key, prefixes.iter().map(String::as_str))
+            .is_some()
+        {
+            continue;
+        }
+        let prefix = cap.key.rsplit_once(&derivation.separator).map(|(p, _)| p);
         let message = match prefix {
-            Some(p) if prefixes.iter().any(|q| q == p) => None,
-            Some(p) => Some(match &derivation.source {
+            Some(p) => match &derivation.source {
                 DerivationSource::Rule(r) => format!(
                     "key `{}` derives from `{p}`, which rule `{r}` did not capture",
                     cap.key
@@ -347,17 +357,15 @@ fn derivations(c: &mut Checker<'_>, captures: &[Capture]) {
                         cap.key
                     ),
                 },
-            }),
-            None => Some(format!(
+            },
+            None => format!(
                 "key `{}` has no `{}` separator to derive from",
                 cap.key, derivation.separator
-            )),
+            ),
         };
-        if let Some(m) = message {
-            c.located(At::capture(cap, &sections), |c| {
-                c.error(Some(cap.line), "TL_33", m);
-            });
-        }
+        c.located(At::capture(cap, &sections), |c| {
+            c.error(Some(cap.line), "TL_33", message);
+        });
     }
 }
 

@@ -10,6 +10,64 @@ order: 20
 
 These errors concern the line formats that a schema can use. They also cover a line that lacks the key captured by its rule or format. Section 5 of the core specification defines them. [A separate page][sokf:errors-examples] lists the errors for the examples of a schema.
 
+## TL_128
+
+Two formats files of the pack layer define one format or one type, and the host's own formats file doesn't define it in full ([TL_128][sokf:tramlines:tramlines-spec#tl_128]).
+
+### Message
+
+```text
+<file>:<line>: error[TL_128]: format `<name>` is defined in both `<first file>` and `<file>` of the pack layer; define it in full in the host's layer to choose one
+<file>: error[TL_128]: type `<name>` is defined in both `<first file>` and `<file>` of the pack layer; define it in full in the host's layer to choose one
+```
+
+### Cause
+
+A program that uses tramlines as a library can add a pack layer of formats between its own formats file and the shared formats, built from the formats files of several packs. The files of the pack layer have no order of their own, so no file wins when two of them define one name. The engine reads the files in the order of their paths, keeps the entry of the first, and reports the error on the later file, at the line of the format. The second message is for a type, which has no line. An entry of the program's own formats file that declares `patch` settles no clash, because the engine merges it onto the entry of the first file. `tramlines validate` has no pack layer, so the command never reports this error.
+
+### Fix
+
+Define the format or the type in full, without `patch`, in the program's own formats file, the host's layer, to choose the entry that every schema sees. Or remove the name from one of the packs.
+
+### Example in a program
+
+[Embed the engine in a Rust program][sokf:how-to-embed-the-engine] shows a program that builds a pack layer from two files of two packs, `home` and `work`, which both define the format `task`:
+
+**`packs/home/formats.yaml`**
+
+```yaml
+registry:
+  task:
+    template: 'TODO ${}'
+    example: TODO buy milk
+```
+
+**`packs/work/formats.yaml`**
+
+```yaml
+registry:
+  task:
+    template: 'TODO ${}'
+    example: TODO buy milk
+```
+
+The program reports the format of the later file:
+
+```text
+/packs/work/formats.yaml:3: error[TL_128]: format `task` is defined in both `/packs/home/formats.yaml` and `/packs/work/formats.yaml` of the pack layer; define it in full in the host's layer to choose one
+```
+
+Define the format in the program's own formats file, and the program reports no error. Every schema then sees this entry:
+
+**`formats.yaml`**
+
+```yaml
+registry:
+  task:
+    template: 'TODO ${}'
+    example: TODO buy milk
+```
+
 ## TL_40
 
 A format with one shape declares no `example` ([TL_40][sokf:tramlines:tramlines-spec#tl_40]).
@@ -467,7 +525,9 @@ $ tramlines validate --schema tasks.yaml tasks.md
 
 [sokf:errors-examples]: /docs/reference/errors-examples.md
 [sokf:errors-examples#tl_65]: /docs/reference/errors-examples.md#tl_65
+[sokf:how-to-embed-the-engine]: /docs/how-to/embed-the-engine.md
 [sokf:tramlines:tramlines-spec#tl_110]: /knowledge/spec/tramlines-spec.md#tl_110
+[sokf:tramlines:tramlines-spec#tl_128]: /knowledge/spec/tramlines-spec.md#tl_128
 [sokf:tramlines:tramlines-spec#tl_40]: /knowledge/spec/tramlines-spec.md#tl_40
 [sokf:tramlines:tramlines-spec#tl_41]: /knowledge/spec/tramlines-spec.md#tl_41
 [sokf:tramlines:tramlines-spec#tl_43]: /knowledge/spec/tramlines-spec.md#tl_43

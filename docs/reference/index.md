@@ -4,6 +4,7 @@
 - [Errors: kinds of block][sokf:errors-block-kinds] - The errors that tramlines reports for what a block of each kind declares and contains, such as the tag of a code block or the header of a table, and how to fix each one.
 - [Errors: blocks][sokf:errors-blocks] - The errors that tramlines reports for the blocks of a section, their order, and the number of units in each block, and how to fix each one.
 - [Errors: the command][sokf:errors-command] - The errors that stop `tramlines validate` before it checks a document, and how to fix each one.
+- [Errors: lists of examples][sokf:errors-example-lists] - The errors that tramlines reports for the `examples` of a section, and for an `example` written as a list.
 - [Errors: examples and guidance][sokf:errors-examples] - The errors that tramlines reports for the examples of a schema, and for guidance that repeats an example.
 - [Errors: formats][sokf:errors-formats-and-examples] - The errors that tramlines reports for the line formats of a schema, and how to fix each one.
 - [Errors: frontmatter][sokf:errors-frontmatter] - The errors that tramlines reports for the frontmatter of a document, and how to fix each one.
@@ -28,6 +29,7 @@
 [sokf:errors-block-kinds]: /docs/reference/errors-block-kinds.md
 [sokf:errors-blocks]: /docs/reference/errors-blocks.md
 [sokf:errors-command]: /docs/reference/errors-command.md
+[sokf:errors-example-lists]: /docs/reference/errors-example-lists.md
 [sokf:errors-examples]: /docs/reference/errors-examples.md
 [sokf:errors-formats-and-examples]: /docs/reference/errors-formats-and-examples.md
 [sokf:errors-frontmatter]: /docs/reference/errors-frontmatter.md

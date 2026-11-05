@@ -53,6 +53,15 @@ A document opens with frontmatter when its first line is `---`. The body is Comm
 - <a id="tlmd_8"></a>TLMD_8 [ubiquitous]: the engine SHALL record the position of every code span of a body.
 - <a id="tlmd_9"></a>TLMD_9 [invariant]: FOR ANY line, the engine SHALL produce a masked line with the length and the line number of the original, and change no byte outside a recorded span.
 
+A body link that begins with `/` names a path from the root of the repository. The path of a link that is no URL is its text before the first `?` or `#`. A trailing `/` marks a path that names a directory, as it does in a shell, and the host, which reads the repository, checks that mark.
+
+- <a id="tlmd_201"></a>TLMD_201 [event]: WHEN the path of a `/`-rooted body link has a character other than `/`, ends with one or more `/` characters, and has no empty, `.`, or `..` segment before them, the engine SHALL classify the link as the repository path without those characters, marked as a path that names a directory.
+- <a id="tlmd_202"></a>TLMD_202 [event]: WHEN the path of a `/`-rooted body link does not end with `/` and has no empty, `.`, or `..` segment, the engine SHALL classify the link as a repository path that is not marked as naming a directory.
+- <a id="tlmd_203"></a>TLMD_203 [unwanted]: IF the path of a `/`-rooted body link has a character other than `/` and has an empty, `.`, or `..` segment before any trailing `/` characters, THEN the engine SHALL classify the link as an invalid repository path.
+- <a id="tlmd_204"></a>TLMD_204 [event]: WHEN a body link names a `/`-rooted path that ends with `/` and has a fragment, the engine SHALL strip the `/` characters before the fragment and keep the fragment.
+- <a id="tlmd_214"></a>TLMD_214 [event]: WHEN the path of a body link is made only of `/` characters, the engine SHALL classify the link as the root of the repository, marked as a path that names a directory.
+- <a id="tlmd_215"></a>TLMD_215 [event]: WHEN a body link that is no URL has a `?` before any `#`, the engine SHALL leave out of the link's path the query, the text from that `?` to the `#` or the end, and keep the fragment.
+
 ## 3. Dialect and markers
 
 The engine has three markers of its own, each in the namespace `<ns>` of the dialect:
@@ -120,6 +129,7 @@ A section declares its body as an ordered list of blocks, each of one kind with 
 - <a id="tlmd_43"></a>TLMD_43 [unwanted]: IF a fence has no tag, or a tag that the `lang` of its block does not list, THEN the engine SHALL report a finding.
 - <a id="tlmd_145"></a>TLMD_145 [unwanted]: IF a fence has fewer backticks than the `fence` of its block, THEN the engine SHALL report a finding that names both numbers.
 - <a id="tlmd_44"></a>TLMD_44 [unwanted]: IF the header row of a table differs from the declared `columns`, beyond further columns that `columns-open` accepts, THEN the engine SHALL report a finding.
+- <a id="tlmd_207"></a>TLMD_207 [unwanted]: IF a table block declares `example-columns` that names no column, or declares it beside a non-empty `columns` or without `columns-open: true`, THEN the engine SHALL report a finding on the schema that names the key.
 - <a id="tlmd_45"></a>TLMD_45 [unwanted]: IF a unit contains HTML other than a comment and its block does not set `inline-html`, THEN the engine SHALL report a finding.
 - <a id="tlmd_46"></a>TLMD_46 [ubiquitous]: the engine SHALL match the path of an image or the target of a region against a `source-pattern` by what the host reports that it shows where the path is in the scheme of the host, and as written otherwise.
 - <a id="tlmd_163"></a>TLMD_163 [unwanted]: IF the path of an image or the target of a region does not match the `source-pattern` of its block, THEN the engine SHALL report a finding that names the path and the pattern.
@@ -151,6 +161,13 @@ A section declares its body as an ordered list of blocks, each of one kind with 
 - <a id="tlmd_67"></a>TLMD_67 [unwanted]: IF no position claims a block that a position refused, THEN the engine SHALL report why the last position that tried the block refused it.
 - <a id="tlmd_68"></a>TLMD_68 [event]: WHEN a block of a kind that no later position declares appears before the block that a position declares, the engine SHALL move the position past it, as a block that no position claims.
 - <a id="tlmd_169"></a>TLMD_169 [unwanted]: IF the block of a position that is no group and does not declare `optional` stands after a block that a later position declares, and no later position declares the block of the position, THEN the engine SHALL report a finding that names the block, and check the block against its position.
+- <a id="tlmd_209"></a>TLMD_209 [unwanted]: IF a block fails by shape, as [TLMD_225](#tlmd_225) defines, the position that claims it whatever it reports, and has the shape, as [TLMD_224](#tlmd_224) defines, of an earlier optional position that is no group and claimed no block, THEN the engine SHALL report the finding of [TLMD_169](#tlmd_169) as an error at the block, and check the block against that earlier position.
+- <a id="tlmd_210"></a>TLMD_210 [event]: WHEN the engine reports a block under [TLMD_209](#tlmd_209), the engine SHALL offer the block after it to the position that the block failed.
+- <a id="tlmd_211"></a>TLMD_211 [invariant]: FOR ANY section that fixes the order of its blocks and any blocks of its body, the engine SHALL report an error against the blocks exactly where it reports one without [TLMD_209](#tlmd_209) and [TLMD_210](#tlmd_210).
+- <a id="tlmd_224"></a>TLMD_224 [ubiquitous]: the engine SHALL count a block as having the shape of a position for [TLMD_209](#tlmd_209) only where a unit rule of the position declares a template, a pattern, or a format, and the text of each unit of the block matches the template or the pattern, and a shape of the format, of one such unit rule.
+- <a id="tlmd_225"></a>TLMD_225 [ubiquitous]: the engine SHALL count a block as failing a position by shape for [TLMD_209](#tlmd_209) only where a unit rule of the position declares a template, a pattern, or a format, and the text of a unit of the block has the shape of no such unit rule, whatever the bans, the keys, and the counts of the position report.
+- <a id="tlmd_226"></a>TLMD_226 [event]: WHEN the block of [TLMD_209](#tlmd_209) is a run that the positions divide, the engine SHALL read as the block the longest run of units at the start of the run, as the run stood before the failed position took it, that each have the shape of the earlier position, within its `max`, and offer the rest of the run to the failed position.
+- <a id="tlmd_227"></a>TLMD_227 [event]: WHEN a position that declares `repeat` takes a block under [TLMD_209](#tlmd_209), the engine SHALL keep the position as one that claimed no block for the blocks after it.
 - <a id="tlmd_69"></a>TLMD_69 [unwanted]: IF a position meets a block of another kind and no block of its own kind follows, THEN the engine SHALL name the expected kind and the found kind in one finding.
 - <a id="tlmd_70"></a>TLMD_70 [unwanted]: IF a finding names the found kind, THEN the engine SHALL claim that block for the position that named it.
 - <a id="tlmd_71"></a>TLMD_71 [unwanted]: IF a repetition of a group fails where the group needs it to reach its `min`, where no later position takes its opening block, or where the group's own rule accepted its opening block, THEN the engine SHALL report why that repetition failed and claim its blocks for the group.
@@ -220,6 +237,9 @@ The engine checks a document against a schema at the states of the document. The
 - <a id="tlmd_112"></a>TLMD_112 [ubiquitous]: the engine SHALL exclude a code span that opens on one line and closes on a later one.
 - <a id="tlmd_113"></a>TLMD_113 [ubiquitous]: the engine SHALL ask the host what an image in the scheme of the host shows, and what the target of a region names, to match a `source-pattern`.
 - <a id="tlmd_174"></a>TLMD_174 [ubiquitous]: the engine SHALL check a document against the rules that its host adds, after its own rules, and treat each finding and each gate of the host as its own.
+- <a id="tlmd_212"></a>TLMD_212 [optional]: WHERE the host asks for the units that the unit rules accept, the engine SHALL return in the output of a check, for each paragraph, item, and table row that a unit rule takes and whose text has the template or the pattern of the rule and a shape of its format, whatever the bans of the rule and of the format report, the first and the last line of the unit, the place of the rule among the unit rules of the schema, and the `rule-id` of the rule where it declares one.
+- <a id="tlmd_213"></a>TLMD_213 [event]: WHEN the engine releases a position, the engine SHALL discard the records of [TLMD_212](#tlmd_212) of the units that the position took.
+- <a id="tlmd_228"></a>TLMD_228 [event]: WHEN a position that refused a block keeps the block with the findings of its refusal, as [TLMD_62](#tlmd_62) and [TLMD_67](#tlmd_67) state, the engine SHALL keep the records of [TLMD_212](#tlmd_212) of the units that the position took.
 
 ## 9. Scaffolds
 
@@ -229,7 +249,11 @@ A schema derives one scaffold for each combination of its lifecycle states. The 
 - <a id="tlmd_115"></a>TLMD_115 [ubiquitous]: the engine SHALL write into a scaffold no text that neither the schema fixes nor an example states.
 - <a id="tlmd_116"></a>TLMD_116 [unwanted]: IF a scaffold needs a part whose text neither the schema fixes nor an example states, THEN the engine SHALL report a finding on the schema that names the rule that demands the part.
 - <a id="tlmd_154"></a>TLMD_154 [unwanted]: IF the scaffold splices a key into the example of a rule that declares `key-derives-from` or `for-each-key-of`, and the example does not carry a key where the rule reads one, THEN the engine SHALL refuse the derivation with a finding on the schema that names the rule and the key.
+- <a id="tlmd_205"></a>TLMD_205 [event]: WHEN the scaffold splices a prefix into the key of the example of a rule that declares `key-derives-from`, the engine SHALL replace the value that the schema states for the parent, as [TL_129][sokf:tramlines-spec#tl_129] defines, that starts the key followed by the separator, with the prefix and the separator.
+- <a id="tlmd_216"></a>TLMD_216 [event]: WHEN the scaffold writes the key of the example of a rule that declares `key-derives-from`, the schema states no value, as [TL_129][sokf:tramlines-spec#tl_129] defines, for the parent that `key-derives-from` names, and the key does not start with a value of the parent that the scaffold wrote followed by the separator, the engine SHALL replace the text of the key before its last separator with the first value of the parent that the scaffold wrote.
 - <a id="tlmd_155"></a>TLMD_155 [unwanted]: IF a rule takes its text or its heading from a frontmatter key that the scaffold does not write, THEN the engine SHALL refuse the derivation with a finding on the schema that names the rule and the key.
+- <a id="tlmd_206"></a>TLMD_206 [event]: WHEN the scaffold writes a table block that declares `example-columns`, the engine SHALL write those columns as the header row, each `|` in a name escaped as `\|`, then a separator row with one `---` for each column, and then each row of the block.
+- <a id="tlmd_208"></a>TLMD_208 [unwanted]: IF the scaffold writes a row of a table block that declares `example-columns`, and the row has a number of cells other than the number of those columns, THEN the engine SHALL refuse the derivation with a finding on the schema, at the rule that gives the row or else at the block, that names the row and both numbers.
 - <a id="tlmd_117"></a>TLMD_117 [ubiquitous]: the engine SHALL take the `example` of the bound format for a unit rule that binds a format and has no `example`.
 - <a id="tlmd_118"></a>TLMD_118 [ubiquitous]: the engine SHALL open every scaffold with one `<ns>:guidance` line before its title heading, whose text starts `The writer replaces each of the following examples with their own text.` and continues with the `guidance` of the schema.
 - <a id="tlmd_119"></a>TLMD_119 [ubiquitous]: the engine SHALL write the `guidance` of a section, a preamble, or a block as one `<!-- <ns>:guidance … -->` line before that part.
@@ -289,3 +313,4 @@ The engine repairs what the frontmatter and the schema determine. It never edits
 <!-- sokf:links -->
 
 [sokf:tramlines-spec]: /knowledge/spec/tramlines-spec.md
+[sokf:tramlines-spec#tl_129]: /knowledge/spec/tramlines-spec.md#tl_129

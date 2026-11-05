@@ -11,8 +11,9 @@ use super::At;
 use crate::{
     Finding, Locator, RepoPath,
     grammar::{
-        Block, FmFormat, Format, FormatMatch, FormatRegistry, FormatSource, FrontmatterConstraint,
-        Schema, Section, Shape, Text, Unit, captured, refused, squash,
+        Block, DerivationSource, FmFormat, Format, FormatMatch, FormatRegistry, FormatSource,
+        FrontmatterConstraint, KeyDerivation, Schema, Section, Shape, Text, Unit, captured,
+        refused, squash,
     },
     markdown::{is_slug, is_url},
 };
@@ -51,6 +52,7 @@ pub(super) struct Failed {
 // sokf-implements: TL_64
 // sokf-implements: TL_65
 // sokf-implements: TL_73
+// sokf-implements: TL_127
 pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec<Finding>, Failed) {
     let mut e = Examples {
         schema,
@@ -82,6 +84,12 @@ pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec
         };
         if let Some(text) = &section.heading.example {
             e.said_of(text, section.common.line, "TL_64", heading(section));
+            if let (Some(kd), Some(key)) = (&section.heading.key_derives_from, &section.heading.key)
+            {
+                let got = captured(&section.heading.shape, key, &squash(text)).map(|c| c.key);
+                let problem = derived(schema, kd, got);
+                e.said_of(text, section.common.line, "TL_127", problem);
+            }
         }
         e.blocks(section.blocks.as_deref());
     }
@@ -96,8 +104,9 @@ pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec
     e.at = At::default();
     // An entry of a farther layer sits in another file, so its finding
     // goes on the schema's own line and says which layer wrote it. A
-    // formats file that the caller names is checked on that file, with
-    // `check_formats`; its failed examples still stand for the scaffold.
+    // formats file that the caller names, and a formats file of a pack, is
+    // checked on that file, with `check_formats`; its failed examples still
+    // stand for the scaffold.
     // sokf-implements: MD-6_AC-8
     for (name, (format, source)) in &schema.core.formats.entries {
         let own = matches!(source, FormatSource::Schema(_));
@@ -111,7 +120,8 @@ pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec
             if let Some(text) = text.filter(|t| !t.is_empty()) {
                 e.failed.texts.push(text);
             }
-            if !matches!(source, FormatSource::File(_)) {
+            // sokf-implements: MD-6_AC-8
+            if !matches!(source, FormatSource::File(_) | FormatSource::Pack(_)) {
                 e.out
                     .push(Finding::error(path.clone(), Some(at), criterion, message));
             }
@@ -276,6 +286,8 @@ impl Examples<'_> {
             for rule in consumers(block) {
                 let problem = item(i, &block.examples, unit(self.schema, rule, text));
                 self.said_of(text, block.common.line, "TL_64", problem);
+                let problem = item(i, &block.examples, derived_unit(self.schema, rule, text));
+                self.said_of(text, block.common.line, "TL_127", problem);
             }
         }
         for rule in block.units() {
@@ -293,6 +305,15 @@ impl Examples<'_> {
             let problem = item(i, &rule.examples, unit(self.schema, rule, text));
             self.inside(None, rule.rule_id.as_ref(), |e| {
                 e.said_of(text, rule.common.line, "TL_64", problem);
+            });
+        }
+        // The example that the scaffold writes for the rule, its own or else
+        // its format's, carries the key that derives.
+        let examples = examples_of(self.schema, rule);
+        for (i, text) in examples.iter().enumerate() {
+            let problem = item(i, &examples, derived_unit(self.schema, rule, text));
+            self.inside(None, rule.rule_id.as_ref(), |e| {
+                e.said_of(text, rule.common.line, "TL_127", problem);
             });
         }
         for line in rule.lines.iter().flatten() {
@@ -407,6 +428,43 @@ fn unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
         return Some(format!("the example `{text}` captures no `key` `{k}`"));
     }
     None
+}
+
+/// The example `text` of a unit rule against the rule's `key-derives-from`.
+fn derived_unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
+    let kd = rule.key_derives_from.as_ref()?;
+    derived(schema, kd, rule.key_in(&schema.core.formats, &squash(text)))
+}
+
+/// The key of an example, `key`, against the example of the parent that
+/// `kd` names: the key starts with the value that the scaffold writes for
+/// the frontmatter key from the schema, or with a key of the example of
+/// the rule, followed by the separator. The scaffold splices its prefix in
+/// there, so an example that starts with another contradicts its schema. A
+/// key the example does not carry is a fault of its own, and a parent whose
+/// value the schema does not state has no example to start with.
+fn derived(schema: &Schema, kd: &KeyDerivation, key: Option<String>) -> Problem {
+    let key = key?;
+    let sep = &kd.separator;
+    let parents = schema.parent_examples(kd);
+    let of = match &kd.source {
+        DerivationSource::From(k) => {
+            format!("the value that the scaffold writes for the frontmatter `{k}`")
+        }
+        DerivationSource::Rule(r) => format!("a key of the example of rule `{r}`"),
+    };
+    if parents.is_empty()
+        || kd
+            .prefix_of(&key, parents.iter().map(String::as_str))
+            .is_some()
+    {
+        return None;
+    }
+    let named: Vec<String> = parents.iter().map(|p| format!("`{p}`")).collect();
+    Some(format!(
+        "the key `{key}` of the example does not start with {}, {of}, followed by the separator `{sep}`",
+        named.join(" or ")
+    ))
 }
 
 /// The unit rules of `block` that would take the block's own `example`:

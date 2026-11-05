@@ -301,7 +301,7 @@ When a block error surprises you, ask these questions in order:
 
 1. Is the block the kind you think? Two paragraphs with nothing between them are one prose block, and two consecutive lists with the same marker are one list.
 2. Which position met it first? The positions run in schema order.
-3. Was that position required once? Then it kept the block, and the error is that position's.
+3. Was that position required once? Then it kept the block, and the error is that position's. The one exception is a block that fails the position's shape and has the shape of an earlier optional position that took no block: the block belongs to that position and is out of place. Only the templates, patterns, and formats of the unit rules count, so a block that fails for a ban or a key keeps its error, and an optional position that declares no shape owns no block. The engine reports it once, as out of place, checks it against that position, and gives the next block to the position that it failed. So a `Planned:` paragraph after a blockquote that the schema lists after it draws one error, and the paragraphs after it draw none.
 4. Was it optional, repeating, or a group? Then it released the block on an error, and the error comes from a later position, or from the last one that tried the block.
 
 [Read an error and fix the document][sokf:how-to-read-a-finding] walks through a finding, and [the error reference][sokf:errors-blocks] lists each block error with its fix.
@@ -312,6 +312,8 @@ When a block error surprises you, ask these questions in order:
 - [TLMD_39][sokf:tramlines:tramlines-md-spec#tlmd_39], [TLMD_152][sokf:tramlines:tramlines-md-spec#tlmd_152], and [TLMD_41][sokf:tramlines:tramlines-md-spec#tlmd_41]: a body has exactly its declared blocks, and which blocks are exempt.
 - [TLMD_50][sokf:tramlines:tramlines-md-spec#tlmd_50]: the units of a run that no position takes are reported at the first of them.
 - [TLMD_169][sokf:tramlines:tramlines-md-spec#tlmd_169]: a required block that stands after a block declared later is reported once, as out of place.
+- [TLMD_209][sokf:tramlines:tramlines-md-spec#tlmd_209] to [TLMD_211][sokf:tramlines:tramlines-md-spec#tlmd_211]: an optional block that stands after a block declared later, and fails the position that takes it, is reported once, as out of place, and the blocks after it keep their positions.
+- [TLMD_224][sokf:tramlines:tramlines-md-spec#tlmd_224] to [TLMD_227][sokf:tramlines:tramlines-md-spec#tlmd_227]: which shapes tell a block out of place, how much of a run it is, and a repeating position that owns more than one.
 - [TLMD_59][sokf:tramlines:tramlines-md-spec#tlmd_59] to [TLMD_67][sokf:tramlines:tramlines-md-spec#tlmd_67]: claims, releases, and what a released block reports.
 - [TLMD_68][sokf:tramlines:tramlines-md-spec#tlmd_68] to [TLMD_70][sokf:tramlines:tramlines-md-spec#tlmd_70]: a position steps over a stray block, and a block of an unexpected kind is named with the expected kind in one error.
 - [TLMD_71][sokf:tramlines:tramlines-md-spec#tlmd_71] to [TLMD_73][sokf:tramlines:tramlines-md-spec#tlmd_73]: groups.
@@ -328,6 +330,10 @@ When a block error surprises you, ask these questions in order:
 [sokf:tramlines:tramlines-md-spec#tlmd_169]: /knowledge/spec/tramlines-md-spec.md#tlmd_169
 [sokf:tramlines:tramlines-md-spec#tlmd_193]: /knowledge/spec/tramlines-md-spec.md#tlmd_193
 [sokf:tramlines:tramlines-md-spec#tlmd_194]: /knowledge/spec/tramlines-md-spec.md#tlmd_194
+[sokf:tramlines:tramlines-md-spec#tlmd_209]: /knowledge/spec/tramlines-md-spec.md#tlmd_209
+[sokf:tramlines:tramlines-md-spec#tlmd_211]: /knowledge/spec/tramlines-md-spec.md#tlmd_211
+[sokf:tramlines:tramlines-md-spec#tlmd_224]: /knowledge/spec/tramlines-md-spec.md#tlmd_224
+[sokf:tramlines:tramlines-md-spec#tlmd_227]: /knowledge/spec/tramlines-md-spec.md#tlmd_227
 [sokf:tramlines:tramlines-md-spec#tlmd_39]: /knowledge/spec/tramlines-md-spec.md#tlmd_39
 [sokf:tramlines:tramlines-md-spec#tlmd_41]: /knowledge/spec/tramlines-md-spec.md#tlmd_41
 [sokf:tramlines:tramlines-md-spec#tlmd_48]: /knowledge/spec/tramlines-md-spec.md#tlmd_48

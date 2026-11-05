@@ -548,7 +548,7 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TLMD_169
 
-A block in the document stands after a block that the schema declares later ([TLMD_169][sokf:tramlines:tramlines-md-spec#tlmd_169]).
+A block in the document stands after a block that the schema declares later ([TLMD_169][sokf:tramlines:tramlines-md-spec#tlmd_169]), or an optional block stands after one ([TLMD_209][sokf:tramlines:tramlines-md-spec#tlmd_209]).
 
 ### Message
 
@@ -559,6 +559,8 @@ A block in the document stands after a block that the schema declares later ([TL
 ### Cause
 
 The section lists its blocks in order and doesn't set `blocks-ordered: false`. A required block of the section comes after a block that the section lists later. No later block of the section has its kind. The engine reports the block once, at its own line, and checks it against the rule that declares it.
+
+An optional block out of place draws the same error ([TLMD_209][sokf:tramlines:tramlines-md-spec#tlmd_209]). The block fails the shape of the rule that would otherwise take it, and has the shape of an optional rule that the schema lists earlier and that took no block ([TLMD_224][sokf:tramlines:tramlines-md-spec#tlmd_224], [TLMD_225][sokf:tramlines:tramlines-md-spec#tlmd_225]), such as a `Planned:` paragraph after a blockquote that the schema lists after it. The engine checks the block against that earlier rule, and checks the blocks after it against their own rules ([TLMD_210][sokf:tramlines:tramlines-md-spec#tlmd_210]). The error replaces the errors that the block and the blocks after it would draw, and a document that has it still fails ([TLMD_211][sokf:tramlines:tramlines-md-spec#tlmd_211]). A block that fails its rule for a ban or a key, or whose earlier optional rule declares no template, pattern, or format, draws its own errors instead.
 
 ### Fix
 
@@ -694,6 +696,11 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-md-spec#tlmd_161]: /knowledge/spec/tramlines-md-spec.md#tlmd_161
 [sokf:tramlines:tramlines-md-spec#tlmd_162]: /knowledge/spec/tramlines-md-spec.md#tlmd_162
 [sokf:tramlines:tramlines-md-spec#tlmd_169]: /knowledge/spec/tramlines-md-spec.md#tlmd_169
+[sokf:tramlines:tramlines-md-spec#tlmd_209]: /knowledge/spec/tramlines-md-spec.md#tlmd_209
+[sokf:tramlines:tramlines-md-spec#tlmd_210]: /knowledge/spec/tramlines-md-spec.md#tlmd_210
+[sokf:tramlines:tramlines-md-spec#tlmd_211]: /knowledge/spec/tramlines-md-spec.md#tlmd_211
+[sokf:tramlines:tramlines-md-spec#tlmd_224]: /knowledge/spec/tramlines-md-spec.md#tlmd_224
+[sokf:tramlines:tramlines-md-spec#tlmd_225]: /knowledge/spec/tramlines-md-spec.md#tlmd_225
 [sokf:tramlines:tramlines-md-spec#tlmd_39]: /knowledge/spec/tramlines-md-spec.md#tlmd_39
 [sokf:tramlines:tramlines-md-spec#tlmd_50]: /knowledge/spec/tramlines-md-spec.md#tlmd_50
 [sokf:tramlines:tramlines-md-spec#tlmd_69]: /knowledge/spec/tramlines-md-spec.md#tlmd_69

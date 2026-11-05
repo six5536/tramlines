@@ -134,6 +134,7 @@ impl MdLowerer<'_> {
             if let Some(what) = requires {
                 self.fail(b.common.line, "TLMD_153", what);
             }
+            self.check_example_columns(b);
             // A code block holds one fence, and the scaffold writes one fence
             // for each text of a list, so only a code block that repeats can
             // hold the fences that a list of several texts writes.
@@ -167,6 +168,43 @@ impl MdLowerer<'_> {
                 self.check_unit(u, Some(b.kind), schema, ids);
             }
             self.check_blocks(b.blocks.as_deref(), schema, ids);
+        }
+    }
+
+    /// The `example-columns` of a table block: at least one column, and
+    /// only beside `columns: []` and `columns-open: true`, whose check
+    /// accepts the header that the scaffold writes from it. The derivation
+    /// holds each row that the scaffold writes to the columns (TLMD_208).
+    // sokf-implements: MD-2_AC-8
+    fn check_example_columns(&mut self, b: &Block) {
+        let Some(header) = &b.example_columns else {
+            return;
+        };
+        if b.kind != BlockKind::Table {
+            return;
+        }
+        let declared = b.columns.as_ref().is_some_and(|c| !c.is_empty());
+        let why = if header.is_empty() {
+            Some("names no column, so the scaffold writes a header with no cell")
+        } else if declared {
+            Some("the block declares `columns`, which the scaffold writes as its header")
+        } else if !b.columns_open {
+            Some(
+                "the block does not declare `columns-open: true`, so its check accepts no header but an empty one",
+            )
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            let message = if header.is_empty() {
+                format!("`example-columns` {why}")
+            } else {
+                format!(
+                    "`example-columns` names the header of a table with `columns: []` and `columns-open: true`, and {why}"
+                )
+            };
+            // sokf-implements: TLMD_207
+            self.fail(b.common.line, "TLMD_207", message);
         }
     }
 

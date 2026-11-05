@@ -138,7 +138,7 @@ fn repair(schema: &Schema, text: &str) -> String {
 
 <!-- /sokf:include -->
 
-5. Add keys of your own with a host extension. An extension names the format grammar that it extends, and it can only add to that grammar: keys, rule maps, enum values, and `doc` text. The engine keeps each key that an extension adds unchanged. Your program reads and checks the key itself.
+5. Add keys of your own with a host extension. An extension names the format grammar that it extends, and it can only add to that grammar: keys, rule maps, enum values, and `doc` text. The engine keeps each key that an extension adds unchanged. Your program reads and checks the key itself. A key that the extension adds to a unit rule stays in the `extensions` of the lowered `Unit`. To check such a key against the units that the rule accepts, return `true` from `Host::records_accepted`. Each check then lists in `CheckOutput::accepted` each paragraph, item, and row that a rule accepts, with its lines and the `Unit::index` of its rule, in the order of the units in the document, and `Schema::unit` returns the rule with that index.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#extend -->
 
@@ -155,11 +155,82 @@ fn repair(schema: &Schema, text: &str) -> String {
 
 <!-- /sokf:include -->
 
+6. Layer the formats of packs, if your program copies sets of schemas from other repositories, each with a formats file of its own. A name resolves through four layers, the nearest first: the `formats` of the schema, your program's own formats file, the pack layer, and the shared formats, which are your program's built-in formats. Build each file of the pack layer with `FormatRegistry::layer` on the shared layer, with `FormatSource::Pack` and the name of its pack, so that a printed registry gives `pack:` and the pack as the `source` of each entry. The method `with_packs` puts the pack layer on the shared layer and returns a `PackLayer`. It reads the files in the order of their paths, whatever order you give them in. Build your own layer on `PackLayer::registry`, then pass it to `PackLayer::with_host`, which returns the registry that your schemas compile against and the findings of the pack layer. Two files that define one format or one type clash, and `with_host` reports each such name as [TL_128][sokf:errors-formats-and-examples#tl_128], unless your own formats file defines it in full, without `patch`. Check the examples of each formats file with `check_formats`, once, on that file. Report each finding as your program's own.
+
+<!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#packs -->
+
+```rust
+/// The formats that a schema sees, and the findings of the formats files:
+/// `shared` is the text of the program's built-in formats, `pack_files`
+/// the name of each pack with the path and the text of its formats file,
+/// and `own` the text of the program's own formats file.
+fn layer_formats(
+    shared: &str,
+    pack_files: &[(&str, &str, &str)],
+    own: &str,
+) -> (FormatRegistry, Vec<Finding>) {
+    let grammar = load_core_grammar().expect("the core grammar is built in");
+    let regexes = RegexCache::new();
+    let mut findings = Vec::new();
+    // The shared layer is the program's built-in formats, with the types
+    // that the program reserves.
+    let shared =
+        FormatRegistry::from_text(shared, &[("doc-id", "[a-z][a-z0-9-]*")], &grammar, &regexes)
+            .expect("the built-in formats are valid");
+    // One layer from the formats file `text` at `path`, built on `base`.
+    let mut layer = |text: &str, path: &RepoPath, source: FormatSource, base: &FormatRegistry| {
+        let file = yaml::parse(text, 1).expect("the formats file is YAML");
+        let registry = file.get("registry").expect("a `registry` map");
+        let (layer, said) = FormatRegistry::layer(
+            registry,
+            file.get("types"),
+            source,
+            &grammar,
+            &regexes,
+            path,
+            Some(base),
+        );
+        findings.extend(said);
+        layer
+    };
+    // Each file of the pack layer is built on the shared layer and named
+    // by its pack.
+    let files: Vec<(RepoPath, FormatRegistry)> = pack_files
+        .iter()
+        .map(|(name, path, text)| {
+            let path = RepoPath::parse(path).expect("a path");
+            let file = layer(text, &path, FormatSource::Pack(name.to_string()), &shared);
+            (path, file)
+        })
+        .collect();
+    let packs = shared.with_packs(&files);
+    // The program's own layer goes on the pack layer, and settles a name
+    // that two packs define.
+    let own_path = RepoPath::parse("/formats.yaml").expect("a path");
+    let host = layer(own, &own_path, FormatSource::Repo, packs.registry());
+    let (registry, said) = packs.with_host(&host);
+    findings.extend(said);
+    // The examples of each formats file are checked once, on that file.
+    for ((name, _, _), (path, _)) in pack_files.iter().zip(&files) {
+        findings.extend(check_formats(
+            &registry,
+            &FormatSource::Pack(name.to_string()),
+            path,
+        ));
+    }
+    findings.extend(check_formats(&registry, &FormatSource::Repo, &own_path));
+    (registry, findings)
+}
+```
+
+<!-- /sokf:include -->
+
 A host also supplies the facts that lie outside a document. Implement the `Host` trait of the `check` module, in place of `NullHost`. A host can then own frontmatter keys, add a frontmatter format, resolve what an image or a region names, and spell markers in its own namespace. [How the grammar layers fit together][sokf:explanation-grammar-layers] explains what a host can change.
 
 ## Troubleshooting
 
 - `TL_12` on a key that your extension adds: you compiled the schema with a grammar that lacks the extension. Compile with the grammar that `extend` changed.
+- `TL_128` from `PackLayer::with_host`: two packs define one format or one type. Define the name in full in your program's own formats file to choose one entry, or remove it from one pack.
 - `extend` returns an error: the extension changes something that the grammar under it defines, or names another grammar in `extends`. An extension can only add to a grammar.
 
 ## See also
@@ -170,6 +241,7 @@ A host also supplies the facts that lie outside a document. Implement the `Host`
 
 <!-- sokf:links -->
 
+[sokf:errors-formats-and-examples#tl_128]: /docs/reference/errors-formats-and-examples.md#tl_128
 [sokf:explanation-grammar-layers]: /docs/explanation/grammar-layers.md
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:reference-errors]: /docs/reference/errors.md

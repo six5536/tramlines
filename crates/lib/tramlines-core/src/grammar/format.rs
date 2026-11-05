@@ -31,6 +31,9 @@ pub struct Format {
     pub example: Option<String>,
     /// The entry as written, for a printed registry and a layer on top.
     pub raw: Spanned,
+    /// Whether its layer wrote the entry as a patch, which `raw` holds
+    /// merged onto the farther entry.
+    pub patched: bool,
 }
 
 /// A key a shape captured, and the offset where the shape's match began,
@@ -379,6 +382,7 @@ pub(super) fn lower_format(
         prohibited: prohibitions(entry, regexes),
         example,
         raw: entry.clone(),
+        patched: false,
     };
     if let Some(k) = &format.key {
         for (name, s) in format.shapes() {

@@ -321,7 +321,7 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TL_33
 
-A key in the document starts with a prefix that the `key-derives-from` of its rule doesn't allow, or the key lacks the separator ([TL_33][sokf:tramlines:tramlines-spec#tl_33]).
+A key in the document doesn't start with a prefix that the `key-derives-from` of its rule allows followed by the separator ([TL_33][sokf:tramlines:tramlines-spec#tl_33]).
 
 ### Message
 
@@ -334,7 +334,7 @@ A key in the document starts with a prefix that the `key-derives-from` of its ru
 
 ### Cause
 
-`key-derives-from: { rule: <rule-id>, separator: <separator> }` requires the part of each key before the separator to be a key that the named rule captured. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` requires it to be the value of that frontmatter key. The message shows that value after the frontmatter key's name. The error means that a key in the document starts with another prefix, or contains no separator at all.
+`key-derives-from: { rule: <rule-id>, separator: <separator> }` requires each key to start with a key that the named rule captured, followed by the separator. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` requires it to start with the value of that frontmatter key, followed by the separator. A prefix can contain the separator, so `CE-BUG-1` derives from `CE-BUG` with the separator `-`, and a key that more than one prefix starts derives from the longest ([TL_126][sokf:tramlines:tramlines-spec#tl_126]). The error means that a key in the document starts with no such prefix, or contains no separator at all. The message names the text before the last separator as the prefix that the key derives from, because a prefix can contain the separator, and shows the value after the frontmatter key's name.
 
 ### Fix
 
@@ -744,6 +744,7 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-spec#tl_109]: /knowledge/spec/tramlines-spec.md#tl_109
 [sokf:tramlines:tramlines-spec#tl_113]: /knowledge/spec/tramlines-spec.md#tl_113
 [sokf:tramlines:tramlines-spec#tl_117]: /knowledge/spec/tramlines-spec.md#tl_117
+[sokf:tramlines:tramlines-spec#tl_126]: /knowledge/spec/tramlines-spec.md#tl_126
 [sokf:tramlines:tramlines-spec#tl_29]: /knowledge/spec/tramlines-spec.md#tl_29
 [sokf:tramlines:tramlines-spec#tl_31]: /knowledge/spec/tramlines-spec.md#tl_31
 [sokf:tramlines:tramlines-spec#tl_33]: /knowledge/spec/tramlines-spec.md#tl_33

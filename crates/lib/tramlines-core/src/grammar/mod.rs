@@ -31,7 +31,7 @@ pub use model::{
     LifecycleDimension, Only, RuleCommon, Scope, States, Text,
 };
 pub use regex::RegexCache;
-pub use registry::{FormatRegistry, FormatSource};
+pub use registry::{FormatRegistry, FormatSource, PackLayer};
 pub use shape::{Shape, Squashed, has_hole, shape_of, squash, text_or_template};
 pub use template::{Failure, Segment, Template as LineTemplate};
 pub use types::{BUILT_INS, SLUG, TypeDef, TypeRegistry, is_hole_name};

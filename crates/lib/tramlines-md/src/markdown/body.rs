@@ -235,6 +235,7 @@ pub struct Heading {
     pub setext: bool,
 }
 
+// sokf:begin link-target
 /// The forms a body link takes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LinkTarget {
@@ -246,14 +247,19 @@ pub enum LinkTarget {
     Reference(String),
     /// A `/`-rooted path.
     Repo {
-        /// The path.
+        /// The path, without the query, the fragment, and the trailing `/`
+        /// characters of the link.
         path: RepoPath,
         /// The text after `#`.
         fragment: Option<String>,
+        /// Whether the path of the link, before any `?` or `#`, ends with
+        /// `/`: the path then names only a directory, which the host checks.
+        #[serde(default)]
+        dir: bool,
     },
     /// A path resolved from the containing file.
     Relative {
-        /// The path as written, without its fragment.
+        /// The path as written, without its query and its fragment.
         target: String,
         /// The text after `#`.
         fragment: Option<String>,
@@ -262,9 +268,11 @@ pub enum LinkTarget {
     Url(String),
     /// A `#fragment` alone.
     Anchor(String),
-    /// A `/`-rooted path that leaves the repository.
+    /// A `/`-rooted path that is not a valid repository path: one with an
+    /// empty, a `.`, or a `..` segment. The link as written.
     Invalid(String),
 }
+// sokf:end link-target
 
 /// A body link or image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

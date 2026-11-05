@@ -18,6 +18,7 @@ Every error and warning that tramlines prints contains a key, such as `TL_54` in
 - [Lifecycle and ids][sokf:errors-lifecycle-and-ids]: the lifecycle of a schema, the rules that it gates, and the `id` template.
 - [Formats][sokf:errors-formats-and-examples]: line formats, and a line that lacks the key of its format.
 - [Examples and guidance][sokf:errors-examples]: the examples of the rules and formats of a schema, and its `examples`.
+- [Lists of examples][sokf:errors-example-lists]: the `examples` of a section, and an `example` written as a list.
 - [Frontmatter][sokf:errors-frontmatter]: the frontmatter of a document.
 - [Lines and length][sokf:errors-lines]: the shape of the lines of a document, its bans, and its length.
 - [Headings and sections][sokf:errors-sections]: the headings of a document and the sections they open.
@@ -44,6 +45,7 @@ The end of the message names the rule in your schema that the document breaks, b
 [sokf:errors-block-kinds]: /docs/reference/errors-block-kinds.md
 [sokf:errors-blocks]: /docs/reference/errors-blocks.md
 [sokf:errors-command]: /docs/reference/errors-command.md
+[sokf:errors-example-lists]: /docs/reference/errors-example-lists.md
 [sokf:errors-examples]: /docs/reference/errors-examples.md
 [sokf:errors-formats-and-examples]: /docs/reference/errors-formats-and-examples.md
 [sokf:errors-frontmatter]: /docs/reference/errors-frontmatter.md

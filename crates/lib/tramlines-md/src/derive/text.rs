@@ -146,7 +146,17 @@ impl Deriver<'_> {
 
     /// `text`, respelled so the key `reader` reads from it takes a prefix
     /// `kd` allows: the first key its rule captured, or the value written
-    /// for its frontmatter key.
+    /// for its frontmatter key. The splice replaces exactly the example of
+    /// the parent, the value that the schema gives the frontmatter key or a
+    /// key of the rule's example, that starts the key followed by the
+    /// separator. A key that starts with no example of its parent is left
+    /// as written, because a guess at its prefix would hide the fault that
+    /// TL_127 reports. Where the schema states no value of the parent, as
+    /// for a value that only the host seeds, no example check applies, and
+    /// the prefix is the text before the key's last separator, as the
+    /// finding of TL_33 reads it.
+    // sokf-implements: MD-7_AC-12
+    // sokf-implements: TLMD_205
     pub(super) fn derive_with(
         &mut self,
         kd: &KeyDerivation,
@@ -157,19 +167,39 @@ impl Deriver<'_> {
         let Some(key) = capture_of(reader, &text) else {
             return text;
         };
-        let split = key.split_once(&kd.separator);
+        let sep = &kd.separator;
+        let examples = self.schema.parent_examples(kd);
         let parents = match &kd.source {
             DerivationSource::Rule(r) => self.keys_of(r),
             DerivationSource::From(k) => self.values.get(k).cloned().into_iter().collect(),
         };
-        if split.is_some_and(|(p, _)| parents.iter().any(|q| q == p)) {
-            return text;
-        }
+        let written = |p: &str| parents.iter().any(|q| q == p);
+        let tail = if examples.is_empty() {
+            // sokf-implements: TLMD_216
+            if kd
+                .prefix_of(&key, parents.iter().map(String::as_str))
+                .is_some()
+            {
+                return text;
+            }
+            match key.rsplit_once(sep.as_str()) {
+                Some((_, tail)) => tail,
+                None => return text,
+            }
+        } else {
+            let Some(example) = kd.prefix_of(&key, examples.iter().map(String::as_str)) else {
+                return text;
+            };
+            // A parent the scaffold wrote as its example is the prefix already.
+            if written(example) {
+                return text;
+            }
+            &key[example.len() + sep.len()..]
+        };
         let Some(parent) = parents.first() else {
             return text;
         };
-        let tail = split.map_or("1", |(_, t)| t);
-        let want = format!("{parent}{}{tail}", kd.separator);
+        let want = format!("{parent}{sep}{tail}");
         match respell(reader, &text, &want) {
             Some(spliced) => spliced,
             // sokf-implements: TLMD_154

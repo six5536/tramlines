@@ -23,5 +23,5 @@ pub(crate) use checker::{At, Checker, Occurrence, short};
 pub use checker::{CheckOptions, check_against};
 pub use host::{DocView, Host, NullHost, ScaffoldFront, Subject};
 pub(crate) use output::rules_named;
-pub use output::{Capture, CheckOutput, Gate, Paired, Placement, Repair, Spot};
+pub use output::{Accepted, Capture, CheckOutput, Gate, Paired, Placement, Repair, Spot};
 pub use schema::check_schema;

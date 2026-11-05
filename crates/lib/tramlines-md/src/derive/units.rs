@@ -5,6 +5,7 @@ use super::Deriver;
 use crate::{
     grammar::{Block, Shape, Unit},
     markdown::BlockKind,
+    text,
 };
 
 impl Deriver<'_> {
@@ -43,6 +44,7 @@ impl Deriver<'_> {
                 if let Some(paired) = self.paired_units(block, rule) {
                     for text in paired {
                         self.record_capture(block, rule, &text);
+                        self.fit_columns(block, Some(rule), &text);
                         out.push(text);
                     }
                     continue;
@@ -82,6 +84,7 @@ impl Deriver<'_> {
         {
             for text in paired {
                 self.record_capture(block, rule, &text);
+                self.fit_columns(block, Some(rule), &text);
                 out.push(text);
             }
             return out;
@@ -169,7 +172,37 @@ impl Deriver<'_> {
                 }
             }
         }
+        self.fit_columns(block, rule, &text);
         text
+    }
+
+    /// A row that the scaffold writes in a table that names its header under
+    /// `example-columns` has one cell for each of those columns. The finding
+    /// goes on the line of the rule whose text the row is, else of the
+    /// block, as the check of an example places it.
+    // sokf-implements: TLMD_208
+    // sokf-implements: MD-7_AC-13
+    pub(super) fn fit_columns(&mut self, block: &Block, rule: Option<&Unit>, row: &str) {
+        let Some(header) = block.example_columns.as_deref() else {
+            return;
+        };
+        let cells = cell_count(row);
+        if block.kind != BlockKind::Table || header.is_empty() || cells == header.len() {
+            return;
+        }
+        let own = rule.filter(|r| {
+            matches!(r.shape, Some(Shape::Text(_))) || !r.examples.is_empty() || r.format.is_some()
+        });
+        let line = own.map_or(block.common.line, |r| r.common.line);
+        self.refuse_on(
+            line,
+            "TLMD_208",
+            format!(
+                "the example row `{row}` has {}, and `example-columns` names {}",
+                text::count(cells, "cell", "cells"),
+                text::count(header.len(), "column", "columns"),
+            ),
+        );
     }
 
     /// The keys the line rules read out of a fence the schema states,
@@ -237,4 +270,19 @@ fn listed(rule: Option<&Unit>, block: &Block) -> usize {
         _ if block.example_list => block.examples.len(),
         _ => 0,
     }
+}
+
+/// The cells of a row written as the scaffold writes it, its cells joined
+/// by `|` without the outer pipes: one more than its unescaped pipes.
+fn cell_count(row: &str) -> usize {
+    let mut cells = 1;
+    let mut escaped = false;
+    for c in row.chars() {
+        match c {
+            '\\' if !escaped => escaped = true,
+            '|' if !escaped => cells += 1,
+            _ => escaped = false,
+        }
+    }
+    cells
 }

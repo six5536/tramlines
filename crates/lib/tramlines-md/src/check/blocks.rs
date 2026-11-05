@@ -385,6 +385,18 @@ fn satisfies(c: &Checker<'_>, unit: &Unit, rule: &UnitRule) -> bool {
     true
 }
 
+/// Whether a unit's squashed `text` has the shape of `rule`: its own
+/// template or pattern, and a shape of its format, whatever else the rule
+/// reports, its bans and its key among them.
+pub(super) fn has_shape(c: &Checker<'_>, text: &str, rule: &UnitRule) -> bool {
+    rule.shape
+        .as_ref()
+        .is_none_or(|s| s.matches(text, |k| c.front_value(k)))
+        && rule
+            .format_in(&c.schema.core.formats)
+            .is_none_or(|f| f.shape_for(text).is_some())
+}
+
 /// Units against a `sequence`: one rule per position, with `optional` and
 /// `repeat`.
 // sokf-implements: TLMD_147
@@ -530,6 +542,9 @@ pub(super) fn check_unit(
     }
     let squashed = Squashed::new(&unit.text);
     let text = squashed.text.as_str();
+    if c.records_accepted && accepts(c, unit_noun(c, block.kind), text, rule) {
+        c.accept(rule, unit.line, unit.end_line.max(unit.line));
+    }
     check_text(c, unit, rule);
     let schema = c.schema;
     let format = rule.format_in(&schema.core.formats);
@@ -655,6 +670,15 @@ pub(super) fn check_unit(
         c.emit(&rule.common, Some(unit.line), "TL_75", reason);
     }
     check_nested(c, unit, rule, section);
+}
+
+/// Whether `rule` accepts a unit, the `noun` of its kind, whose squashed
+/// text is `text`: a paragraph, an item, or a row, never a line of a fence,
+/// that has the rule's shape, its own and its format's, whatever else the
+/// rule reports, the bans of the rule and of its format among them.
+// sokf-implements: TLMD_212
+fn accepts(c: &Checker<'_>, noun: &str, text: &str, rule: &UnitRule) -> bool {
+    matches!(noun, "paragraph" | "item" | "row") && has_shape(c, text, rule)
 }
 
 /// The blocks inside an item, against the rule's `blocks`, or none.

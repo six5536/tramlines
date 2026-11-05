@@ -204,8 +204,8 @@ schema:
         requires:
           - key
         doc: >
-          Where the key's prefix must come from. The engine splits the key at the first
-          separator, and the prefix must be one that the derivation allows.
+          Where the key's prefix must come from. The key must start with a prefix that the
+          derivation allows, followed by the separator.
       example:
         type: string
         doc: A heading of the kind that the template or the pattern requires.
@@ -338,6 +338,17 @@ schema:
         requires:
           kind: table
         doc: Set to `true` to accept further columns after the declared ones.
+      example-columns:
+        type: list
+        of: string
+        requires:
+          kind: table
+        doc: >
+          The header row of the scaffold of a table block that declares `columns: []` and
+          `columns-open: true`, whose columns vary from document to document. The scaffold
+          writes it before the rows of the example, with each `|` in a name escaped, and each
+          row that the scaffold writes has one cell for each of its columns. The list names at
+          least one column.
       source-pattern:
         type: string
         format: regex
@@ -421,8 +432,8 @@ schema:
         type: object
         of: key-derivation
         doc: >
-          Where the key's prefix must come from. The engine splits the key at the first
-          separator, and the prefix must be one that the derivation allows.
+          Where the key's prefix must come from. The key must start with a prefix that the
+          derivation allows, followed by the separator.
       key-optional:
         type: boolean
         doc: >

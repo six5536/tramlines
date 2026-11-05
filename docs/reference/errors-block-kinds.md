@@ -350,6 +350,149 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
+## TLMD_207
+
+A table block of the schema declares `example-columns` that names no column, or its `columns` or its `columns-open` reject the header that the key names ([TLMD_207][sokf:tramlines:tramlines-md-spec#tlmd_207]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_207]: `example-columns` names no column, so the scaffold writes a header with no cell
+<file>:<line>: error[TLMD_207]: `example-columns` names the header of a table with `columns: []` and `columns-open: true`, and the block declares `columns`, which the scaffold writes as its header
+<file>:<line>: error[TLMD_207]: `example-columns` names the header of a table with `columns: []` and `columns-open: true`, and the block does not declare `columns-open: true`, so its check accepts no header but an empty one
+```
+
+### Cause
+
+The error is on the schema. `example-columns` names the header row of the scaffold of a table whose columns vary from document to document, which the block declares as `columns: []` and `columns-open: true`. A block with columns of its own writes them as the header of its scaffold. A block without `columns-open: true` accepts only an empty header, so the header of `example-columns` fails the check of the table.
+
+### Fix
+
+Remove `example-columns` from a block that declares its columns. On a block whose columns vary, declare `columns: []` and `columns-open: true`.
+
+### Example
+
+This schema names the header of its scaffold, and its table accepts no column:
+
+**`ports.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Ports
+    level: 1
+    blocks:
+      - kind: table
+        columns: []
+        example-columns: [Port, Program]
+        example: edit | acme
+```
+
+**`ports.md`**
+
+```markdown
+# Ports
+
+| Port | Program |
+| ---- | ------- |
+| edit | acme    |
+```
+
+```console
+$ tramlines validate --schema ports.yaml ports.md
+ports.yaml:6: error[TLMD_207]: `example-columns` names the header of a table with `columns: []` and `columns-open: true`, and the block does not declare `columns-open: true`, so its check accepts no header but an empty one
+1 error, 0 warnings
+[exit 1]
+```
+
+Accept the columns of each document:
+
+**`ports.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Ports
+    level: 1
+    blocks:
+      - kind: table
+        columns: []
+        columns-open: true
+        example-columns: [Port, Program]
+        example: edit | acme
+```
+
+```console
+$ tramlines validate --schema ports.yaml ports.md
+0 errors, 0 warnings
+```
+
+## TLMD_208
+
+A row that the scaffold writes in a table block has a different number of cells from the `example-columns` of the block ([TLMD_208][sokf:tramlines:tramlines-md-spec#tlmd_208]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_208]: the schema derives no scaffold: the example row `<row>` has <n> cells, and `example-columns` names <m> columns
+```
+
+### Cause
+
+The error is on the schema, at the rule whose example gives the row, or at the block when the row is the example of the block. The scaffold writes the header row from `example-columns` and each row of the scaffold under it, so a row with more or fewer cells than the header doesn't fit the table. The rows are the ones that the scaffold writes: the example of the block, of a unit rule, or of the format that a unit rule binds, but not the example of a position of a sequence that the scaffold leaves out. A row of the example is its cells joined by `|`, without the outer pipes, and an escaped pipe, `\|`, is part of a cell.
+
+### Fix
+
+Give each row of the example, or of the example of the format, one cell for each column of `example-columns`, or name a column in `example-columns` for each cell.
+
+### Example
+
+This schema names one column and gives a row of two cells:
+
+**`ports.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Ports
+    level: 1
+    blocks:
+      - kind: table
+        columns: []
+        columns-open: true
+        example-columns: [Port]
+        example: edit | acme
+```
+
+```console
+$ tramlines validate --schema ports.yaml ports.md
+ports.yaml:6: error[TLMD_208]: the schema derives no scaffold: the example row `edit | acme` has 2 cells, and `example-columns` names 1 column
+1 error, 0 warnings
+[exit 1]
+```
+
+Name the second column:
+
+**`ports.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Ports
+    level: 1
+    blocks:
+      - kind: table
+        columns: []
+        columns-open: true
+        example-columns: [Port, Program]
+        example: edit | acme
+```
+
+```console
+$ tramlines validate --schema ports.yaml ports.md
+0 errors, 0 warnings
+```
+
 ## TLMD_45
 
 A block contains HTML, and its rule doesn't accept HTML ([TLMD_45][sokf:tramlines:tramlines-md-spec#tlmd_45]).
@@ -635,6 +778,8 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-md-spec#tlmd_163]: /knowledge/spec/tramlines-md-spec.md#tlmd_163
 [sokf:tramlines:tramlines-md-spec#tlmd_172]: /knowledge/spec/tramlines-md-spec.md#tlmd_172
 [sokf:tramlines:tramlines-md-spec#tlmd_200]: /knowledge/spec/tramlines-md-spec.md#tlmd_200
+[sokf:tramlines:tramlines-md-spec#tlmd_207]: /knowledge/spec/tramlines-md-spec.md#tlmd_207
+[sokf:tramlines:tramlines-md-spec#tlmd_208]: /knowledge/spec/tramlines-md-spec.md#tlmd_208
 [sokf:tramlines:tramlines-md-spec#tlmd_42]: /knowledge/spec/tramlines-md-spec.md#tlmd_42
 [sokf:tramlines:tramlines-md-spec#tlmd_43]: /knowledge/spec/tramlines-md-spec.md#tlmd_43
 [sokf:tramlines:tramlines-md-spec#tlmd_44]: /knowledge/spec/tramlines-md-spec.md#tlmd_44

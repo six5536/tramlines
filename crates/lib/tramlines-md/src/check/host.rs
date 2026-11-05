@@ -47,6 +47,7 @@ pub enum Subject {
 
 // sokf-implements: MD-5_AC-9
 // sokf-implements: MD-5_AC-13
+// sokf-implements: MD-5_AC-14
 // sokf:begin host
 /// What the engine asks of its host in the middle of a check: everything
 /// that lies outside the document.
@@ -65,6 +66,13 @@ pub trait Host: tramlines_core::frontmatter::Host {
     /// when the documents have no frontmatter.
     fn scaffold_front(&self, _states: &States) -> Option<ScaffoldFront> {
         Some(ScaffoldFront::default())
+    }
+
+    /// Whether the engine records in `CheckOutput::accepted` each unit that
+    /// a unit rule accepts, for the host's rules to read. By default it
+    /// records none, which costs a check nothing.
+    fn records_accepted(&self) -> bool {
+        false
     }
 
     /// The host's own rules on `doc` at `states`, run after the engine's.

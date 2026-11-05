@@ -21,11 +21,11 @@ pub use tramlines_core::grammar::grammar_text as core_grammar_text;
 pub use tramlines_core::grammar::{
     BUILT_INS, Captured, CoreSchema, DerivationSource, Example, Failure, FmFormat, Format,
     FormatMatch, FormatRegistry, FormatSource, FormatVariant, FrontmatterConstraint, Grammar,
-    IdTemplate, KeyDef, KeyDerivation, LifecycleDimension, LineTemplate, Only, RegexCache,
-    RuleCommon, RuleMap, SLUG, Scope as KeyScope, Segment, Shape, Squashed, States, Text, Token,
-    TypeDef, TypeName, TypeRegistry, captured, has_hole, is_hole_name, load_core_grammar,
-    lower_common, parse_grammar, refused, refused_as, shape_of, squash, text_or_template,
-    validate_map, validate_schema,
+    IdTemplate, KeyDef, KeyDerivation, LifecycleDimension, LineTemplate, Only, PackLayer,
+    RegexCache, RuleCommon, RuleMap, SLUG, Scope as KeyScope, Segment, Shape, Squashed, States,
+    Text, Token, TypeDef, TypeName, TypeRegistry, captured, has_hole, is_hole_name,
+    load_core_grammar, lower_common, parse_grammar, refused, refused_as, shape_of, squash,
+    text_or_template, validate_map, validate_schema,
 };
 
 // sokf:end grammar-reexports

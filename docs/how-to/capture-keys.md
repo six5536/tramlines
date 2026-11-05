@@ -21,7 +21,7 @@ When the parts of a document have ids, such as requirements named `CART-1` and `
 
 2. Give the block a `rule-id`, so that other rules can refer to the keys that it captures. Each key must be unique within the document. A second capture of a key is an error. The `unique` schema key names the scope. Its default, `document`, is the only scope that the command checks. A program that embeds the engine can add wider scopes and check them itself.
 
-3. To require that each key starts with a known prefix, add `key-derives-from` beside `key`. `{ from: code, separator: "-" }` requires the part before the first `-` to equal the frontmatter value of `code`. `{ rule: reqs, separator: "_" }` requires the part before the first `_` to be a key that the rule `reqs` captured. With it, `CART-1_AC-1` derives from `CART-1`. This schema describes the list of requirements of one area:
+3. To require that each key starts with a known prefix, add `key-derives-from` beside `key`. `{ from: code, separator: "-" }` requires each key to start with the frontmatter value of `code` followed by `-`. `{ rule: reqs, separator: "_" }` requires each key to start with a key that the rule `reqs` captured followed by `_`. With it, `CART-1_AC-1` derives from `CART-1`. A prefix can contain the separator, so the code `CE-BUG` gives the key `CE-BUG-1`. This schema describes the list of requirements of one area:
 
 **`requirements.yaml`**
 
@@ -292,7 +292,7 @@ The anchor of `Cache` sits on its first capture. The anchor of `Loading` sits on
 - `TLMD_109`: a key has no anchor, an anchor isn't where its key is, an anchor names no key, or an anchor is written twice. Write or move the anchor as the message says. See [TLMD_109][sokf:errors-keys-and-repairs#tlmd_109].
 - `TLMD_101`: two keys, or a key and a heading, have the same slug and would share one anchor. Change one of them. See [TLMD_101][sokf:errors-keys-and-repairs#tlmd_101].
 - `TLMD_148`: a rule captures one key twice. See [TLMD_148][sokf:errors-keys-and-repairs#tlmd_148].
-- `TL_33`: the prefix of a key isn't one that its `key-derives-from` allows. See [TL_33][sokf:errors-schema-types-keys-lifecycle#tl_33].
+- `TL_33`: a key doesn't start with a prefix that its `key-derives-from` allows, followed by the separator. See [TL_33][sokf:errors-schema-types-keys-lifecycle#tl_33].
 - `TL_44`: a line has the shape of its rule but no key. Add the key, or set `key-optional` on the rule. See [TL_44][sokf:errors-formats-and-examples#tl_44].
 - `TL_31`: the `key` names no hole or named group of the shape. See [TL_31][sokf:errors-schema-types-keys-lifecycle#tl_31].
 - `TLMD_95`, `TLMD_96`: a key has no section or item that pairs with it, or a section or item names a key that the rule didn't capture. See [Errors: lines and pairings][sokf:errors-lines-and-pairings].

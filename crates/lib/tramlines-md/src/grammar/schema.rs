@@ -7,7 +7,10 @@ use std::collections::{BTreeMap, HashSet};
 use regex::Regex;
 use tramlines_core::grammar::Scope;
 
-use super::{CoreSchema, Format, FormatRegistry, KeyDerivation, Only, RuleCommon, Shape, States};
+use super::{
+    CoreSchema, DerivationSource, Format, FormatRegistry, KeyDerivation, Only, RuleCommon, Shape,
+    States, captured, squash,
+};
 use crate::{Spanned, markdown::BlockKind};
 
 /// Grammar `heading`: a section's heading as a unit rule, its shape and
@@ -131,6 +134,9 @@ pub struct Block {
     pub columns: Option<Vec<String>>,
     /// `columns-open`.
     pub columns_open: bool,
+    /// `example-columns`: the header row of the scaffold of a table with
+    /// no declared columns.
+    pub example_columns: Option<Vec<String>>,
     /// `source-pattern`.
     pub source_pattern: Option<Regex>,
     /// `inline-html`.
@@ -200,12 +206,32 @@ pub struct Unit {
     pub examples: Vec<String>,
     /// Whether `example` is written as a list rather than as one string.
     pub example_list: bool,
+    /// The keys a host's extension adds to the rule, as written, for the
+    /// host to lower.
+    pub extensions: BTreeMap<String, Spanned>,
+    /// The rule's place among the unit rules of its schema, counted from
+    /// zero in the order the schema writes them, which `Schema::unit` finds
+    /// the rule by. Two rules on one line of the schema have two places.
+    pub index: usize,
 }
 
 impl Unit {
     /// The format the rule binds, as `formats` defines it.
     pub(crate) fn format_in<'f>(&self, formats: &'f FormatRegistry) -> Option<&'f Format> {
         formats.get(self.format.as_deref()?)
+    }
+
+    /// The key the rule captures from the squashed `text`: its own `key` of
+    /// its own shape, or else the key of the shape of its format that
+    /// `text` takes.
+    pub(crate) fn key_in(&self, formats: &FormatRegistry, text: &str) -> Option<String> {
+        if let Some(shape) = &self.shape {
+            return Some(captured(shape, self.key.as_deref()?, text)?.key);
+        }
+        let format = self.format_in(formats)?;
+        let name = self.key.as_ref().or(format.key.as_ref())?;
+        let (shape, _) = format.shape_for(text)?;
+        Some(captured(shape, name, text)?.key)
     }
 
     /// Whether the squashed `text` has the rule's shape, its own or else its
@@ -344,6 +370,30 @@ impl Schema {
         ids
     }
 
+    /// The unit rule whose `Unit::index` is `index`: a rule of a block, of
+    /// an item's blocks, or of a fence's `lines`.
+    // sokf-implements: MD-2_AC-10
+    pub fn unit(&self, index: usize) -> Option<&Unit> {
+        let blocks = self
+            .sections
+            .iter()
+            .filter_map(|s| s.blocks.as_deref())
+            .chain(self.preamble.iter().filter_map(|p| p.blocks.as_deref()));
+        let mut pending: Vec<&Block> = blocks.flatten().collect();
+        while let Some(b) = pending.pop() {
+            pending.extend(b.blocks.iter().flatten());
+            let mut units: Vec<&Unit> = b.units().collect();
+            while let Some(u) = units.pop() {
+                if u.index == index {
+                    return Some(u);
+                }
+                units.extend(u.lines.iter().flatten());
+                pending.extend(u.blocks.iter().flatten());
+            }
+        }
+        None
+    }
+
     /// Whether unit rule `u` captures a key: it declares `key`, or binds a
     /// format that declares one.
     pub fn unit_captures_key(&self, u: &Unit) -> bool {
@@ -380,6 +430,105 @@ impl Schema {
             Err(RuleLookup::NoKey)
         } else {
             Err(RuleLookup::NoRule)
+        }
+    }
+
+    /// The keys that the examples of the rule `id` names capture, owned as
+    /// `rule_captures_key` owns them: the heading example of the section,
+    /// or the example of each unit rule, else its format's, else its
+    /// block's. These are the parents that the example of a key deriving
+    /// from the rule starts with (TL_127, TLMD_205).
+    pub(crate) fn example_keys(&self, id: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(p) = &self.preamble {
+            self.example_keys_in(p.blocks.as_deref(), id, None, None, &mut out);
+        }
+        for s in &self.sections {
+            if s.rule_id.as_deref() == Some(id)
+                && let (Some(key), Some(example)) = (&s.heading.key, &s.heading.example)
+                && let Some(got) = captured(&s.heading.shape, key, &squash(example))
+            {
+                out.push(got.key);
+            }
+            self.example_keys_in(
+                s.blocks.as_deref(),
+                id,
+                None,
+                s.rule_id.as_deref(),
+                &mut out,
+            );
+        }
+        out
+    }
+
+    /// The examples of the parent that `kd` names, which the example of a
+    /// key deriving through it starts with, in schema order and each once:
+    /// the value that the scaffold at the first states writes for the
+    /// frontmatter key from the schema, or the keys of the examples of the
+    /// rule. Empty where the schema states no value of the parent, as for a
+    /// key whose value only the host seeds.
+    // sokf-implements: TL_129
+    pub(crate) fn parent_examples(&self, kd: &KeyDerivation) -> Vec<String> {
+        let mut all = match &kd.source {
+            DerivationSource::Rule(r) => self.example_keys(r),
+            DerivationSource::From(k) => self
+                .core
+                .constraint(k)
+                .and_then(|c| c.scaffold_value(&States::default()))
+                .into_iter()
+                .collect(),
+        };
+        let mut seen = HashSet::new();
+        all.retain(|p| seen.insert(p.clone()));
+        all
+    }
+
+    /// `example_keys` under `blocks`, `group` and `section` being the ids
+    /// that own a key no nearer `rule-id` owns.
+    fn example_keys_in(
+        &self,
+        blocks: Option<&[Block]>,
+        id: &str,
+        group: Option<&str>,
+        section: Option<&str>,
+        out: &mut Vec<String>,
+    ) {
+        for b in blocks.unwrap_or(&[]) {
+            if b.kind == BlockKind::Group {
+                let group = b.rule_id.as_deref().or(group);
+                self.example_keys_in(b.blocks.as_deref(), id, group, section, out);
+                continue;
+            }
+            // The rules in schema order, each rule's line rules after it.
+            let mut units: Vec<&Unit> = b.units().collect();
+            let mut next = 0;
+            while let Some(&u) = units.get(next) {
+                next += 1;
+                units.extend(u.lines.iter().flatten());
+                self.example_keys_in(u.blocks.as_deref(), id, group, section, out);
+                let owner = u
+                    .rule_id
+                    .as_deref()
+                    .or(b.rule_id.as_deref())
+                    .or(group)
+                    .or(section);
+                if owner != Some(id) {
+                    continue;
+                }
+                let formats = &self.core.formats;
+                let texts: Vec<&str> = if !u.examples.is_empty() {
+                    u.examples.iter().map(String::as_str).collect()
+                } else if let Some(f) = u.format_in(formats) {
+                    vec![f.first_example()]
+                } else {
+                    b.examples.iter().map(String::as_str).collect()
+                };
+                out.extend(
+                    texts
+                        .into_iter()
+                        .filter_map(|t| u.key_in(formats, &squash(t))),
+                );
+            }
         }
     }
 

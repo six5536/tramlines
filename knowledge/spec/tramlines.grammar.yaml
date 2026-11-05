@@ -393,6 +393,7 @@ schema:
         type: string
         required: true
         doc: >
-          The literal text that ends the prefix. The engine splits the key at its first
-          occurrence.
+          The literal text that ends the prefix. A key derives from an allowed prefix that it
+          starts with, followed by the separator, and from the longest where more than one
+          starts it, so a prefix can contain the separator.
   # sokf:end key-derivation

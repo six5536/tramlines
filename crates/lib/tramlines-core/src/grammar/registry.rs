@@ -1,7 +1,8 @@
-//! The three-layer registry of line formats and the hole types they are
-//! written with (TL_34 to TL_41).
+//! The layered registry of line formats and the hole types they are
+//! written with (TL_34 to TL_41): the schema, the host, the pack layer,
+//! and the shared layer.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use saphyr::{Mapping, Scalar, Sequence, Yaml as SYaml, YamlEmitter};
 
@@ -11,6 +12,7 @@ use super::{
 };
 use crate::{Finding, Problem, RepoPath, Result, Spanned, Yaml, yaml};
 
+// sokf:begin format-source
 /// Where a registry entry comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatSource {
@@ -25,17 +27,22 @@ pub enum FormatSource {
     File(String),
     /// A schema's `formats`, by schema id.
     Schema(String),
+    /// A formats file of the pack layer, by the name of its pack.
+    Pack(String),
 }
+// sokf:end format-source
 
 impl FormatSource {
     /// The `source` value a printed registry carries.
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> Cow<'_, str> {
         match self {
-            FormatSource::BuiltIn => "built-in",
-            FormatSource::Embedded => "embedded",
-            FormatSource::Repo => "repo",
-            FormatSource::File(path) => path,
-            FormatSource::Schema(id) => id,
+            FormatSource::BuiltIn => Cow::Borrowed("built-in"),
+            FormatSource::Embedded => Cow::Borrowed("embedded"),
+            FormatSource::Repo => Cow::Borrowed("repo"),
+            FormatSource::File(path) => Cow::Borrowed(path),
+            FormatSource::Schema(id) => Cow::Borrowed(id),
+            // sokf-implements: CORE-5_AC-15
+            FormatSource::Pack(name) => Cow::Owned(format!("pack:{name}")),
         }
     }
 }
@@ -234,7 +241,8 @@ impl FormatRegistry {
                 validate::validate_map(entry, "format", grammar, regexes, path, None);
             if problems.is_empty() {
                 match lower_format(entry, &seen, regexes) {
-                    Ok(format) => {
+                    Ok(mut format) => {
+                        format.patched = !std::ptr::eq(entry, whole);
                         out.entries
                             .insert(name.value.clone(), (format, source.clone()));
                         continue;
@@ -286,8 +294,9 @@ impl FormatRegistry {
         if !redefined.is_empty() {
             for (format, _) in entries.values_mut() {
                 if format.uses_any(&redefined)
-                    && let Ok(again) = lower_format(&format.raw, &seen, &regexes)
+                    && let Ok(mut again) = lower_format(&format.raw, &seen, &regexes)
                 {
+                    again.patched = format.patched;
                     *format = again;
                 }
             }
@@ -297,6 +306,107 @@ impl FormatRegistry {
             entries.insert(name.clone(), entry.clone());
         }
         FormatRegistry { entries, types }
+    }
+
+    /// This registry, the shared layer, with the pack layer on top: the
+    /// entries and the types of `files`, each a formats file of the layer
+    /// built with `layer` on this registry with the source
+    /// `FormatSource::Pack`. The files are read in the order of their
+    /// paths, whatever order the caller gives, so no entry patches another
+    /// file's; where two files define one name, the entry of the first
+    /// stands, and the layer keeps the clash for `PackLayer::with_host`.
+    /// Each format that uses a type of the layer is compiled again against
+    /// it, so a type means one thing to every format that a schema sees,
+    /// and a format that no longer compiles is left out and reported.
+    // sokf-implements: TL_34
+    // sokf-implements: TL_27
+    // sokf-implements: CORE-5_AC-13
+    // sokf:begin format-registry
+    pub fn with_packs(&self, files: &[(RepoPath, FormatRegistry)]) -> PackLayer {
+        // sokf:end format-registry
+        let mut files: Vec<&(RepoPath, FormatRegistry)> = files.iter().collect();
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut packs = FormatRegistry::default();
+        let mut origin: BTreeMap<&str, &RepoPath> = BTreeMap::new();
+        let mut type_origin: BTreeMap<&str, &RepoPath> = BTreeMap::new();
+        let mut clashes = Vec::new();
+        for (path, file) in files.iter().copied() {
+            for (name, entry) in &file.entries {
+                match origin.get(name.as_str()) {
+                    Some(first) => clashes.push(Clash {
+                        what: "format",
+                        name: name.clone(),
+                        first: (*first).clone(),
+                        later: path.clone(),
+                        line: Some(entry.0.raw.line),
+                    }),
+                    None => {
+                        origin.insert(name, path);
+                        packs.entries.insert(name.clone(), entry.clone());
+                    }
+                }
+            }
+            for (name, def) in &file.types.entries {
+                match type_origin.get(name.as_str()) {
+                    Some(first) => clashes.push(Clash {
+                        what: "type",
+                        name: name.clone(),
+                        first: (*first).clone(),
+                        later: path.clone(),
+                        line: None,
+                    }),
+                    None => {
+                        type_origin.insert(name, path);
+                        packs.types.entries.insert(name.clone(), def.clone());
+                    }
+                }
+            }
+        }
+        // A file's formats were compiled against its own types, and a
+        // type of another file can stand in their place.
+        let names: Vec<&str> = packs.types.entries.keys().map(String::as_str).collect();
+        let seen = self.types_seen().layered(&packs.types);
+        let regexes = RegexCache::new();
+        let mut findings = Vec::new();
+        let mut again: Vec<(String, Option<Format>)> = Vec::new();
+        for (name, (format, _)) in &packs.entries {
+            if !format.uses_any(&names) {
+                continue;
+            }
+            // sokf-implements: TL_134
+            // sokf-implements: CORE-5_AC-16
+            match lower_format(&format.raw, &seen, &regexes) {
+                Ok(mut lowered) => {
+                    lowered.patched = format.patched;
+                    again.push((name.clone(), Some(lowered)));
+                }
+                Err(said) => {
+                    let path = origin[name.as_str()];
+                    findings.extend(said.into_iter().map(|(line, mut problem)| {
+                        problem.message = format!("format `{name}`: {}", problem.message);
+                        problem.error(path.clone(), Some(line))
+                    }));
+                    again.push((name.clone(), None));
+                }
+            }
+        }
+        for (name, format) in again {
+            match format {
+                Some(format) => {
+                    if let Some(entry) = packs.entries.get_mut(&name) {
+                        entry.0 = format;
+                    }
+                }
+                None => {
+                    packs.entries.remove(&name);
+                }
+            }
+        }
+        PackLayer {
+            registry: self.layered(&packs),
+            clashes,
+            findings,
+        }
     }
 
     /// The format named `name`.
@@ -348,6 +458,70 @@ impl FormatRegistry {
             .expect("emitting to a string cannot fail");
         out.push('\n');
         out.strip_prefix("---\n").map(str::to_string).unwrap_or(out)
+    }
+}
+
+// sokf:begin format-registry
+/// The shared layer with the pack layer on top, which the host builds its
+/// own layer on, and what the pack layer reports once the host's layer is
+/// known.
+#[derive(Debug, Clone)]
+#[must_use = "`PackLayer::with_host` gives the registry and the findings of the pack layer"]
+pub struct PackLayer {
+    registry: FormatRegistry,
+    clashes: Vec<Clash>,
+    findings: Vec<Finding>,
+}
+// sokf:end format-registry
+
+/// A format or a type that two files of the pack layer define: the first
+/// and the later file in the order of their paths, and the line of the
+/// later entry where the layer keeps one.
+#[derive(Debug, Clone)]
+struct Clash {
+    what: &'static str,
+    name: String,
+    first: RepoPath,
+    later: RepoPath,
+    line: Option<usize>,
+}
+
+impl PackLayer {
+    /// The shared layer with the pack layer on top, the base of the host's
+    /// own layer.
+    // sokf:begin format-registry
+    pub fn registry(&self) -> &FormatRegistry {
+        // sokf:end format-registry
+        &self.registry
+    }
+
+    /// The registry with `host`, the host's own layer built on `registry`,
+    /// on top, and the findings of the pack layer: each format that does
+    /// not compile against the types of the layer, and each format and
+    /// type that two files define and `host` does not define in full. A
+    /// patch in `host` settles no clash, because it was merged onto the
+    /// entry of whichever file came first.
+    // sokf-implements: TL_128
+    // sokf-implements: CORE-5_AC-14
+    // sokf:begin format-registry
+    pub fn with_host(&self, host: &FormatRegistry) -> (FormatRegistry, Vec<Finding>) {
+        // sokf:end format-registry
+        let settled = |c: &Clash| match c.what {
+            "format" => host.entries.get(&c.name).is_some_and(|(f, _)| !f.patched),
+            _ => host.types.entries.contains_key(&c.name),
+        };
+        let mut findings = self.findings.clone();
+        findings.extend(self.clashes.iter().filter(|c| !settled(c)).map(|c| {
+            Problem::new(
+                "TL_128",
+                format!(
+                    "{} `{}` is defined in both `{}` and `{}` of the pack layer; define it in full in the host's layer to choose one",
+                    c.what, c.name, c.first, c.later
+                ),
+            )
+            .error(c.later.clone(), c.line)
+        }));
+        (self.registry.layered(host), findings)
     }
 }
 

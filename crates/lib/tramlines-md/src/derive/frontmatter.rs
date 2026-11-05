@@ -80,14 +80,7 @@ impl Deriver<'_> {
             self.values.insert(key.clone(), value);
         }
         for dim in &self.schema.core.lifecycle {
-            let state = self
-                .states
-                .0
-                .get(&dim.key)
-                .and_then(|s| s.first())
-                .cloned()
-                .or_else(|| dim.states.first().cloned())
-                .unwrap_or_default();
+            let state = dim.state_in(self.states).cloned().unwrap_or_default();
             if let Some(g) = &dim.guidance {
                 out.push(guidance_comment(&self.dialect, g));
             }
@@ -122,26 +115,17 @@ impl Deriver<'_> {
             .unwrap_or_default()
     }
 
-    /// The value a leading key takes where the schema fixes one: its
-    /// `const`, the `id` template rendered with its sequence at one and the
-    /// slug `example`, or its `example`. A key narrowed by a shape and
-    /// offering no example is a refusal, as any other narrowed key is.
+    /// The value a leading key takes where the schema fixes one, as
+    /// `FrontmatterConstraint::fixed_value` says. A key narrowed by a shape
+    /// and offering no example is a refusal, as any other narrowed key is.
     fn leading_value(
         &mut self,
         key: &str,
         constraint: Option<&FrontmatterConstraint>,
     ) -> Option<String> {
         let c = constraint?;
-        if let Some(v) = &c.const_ {
-            return Some(v.clone());
-        }
-        if let Some(t) = &c.id_template {
-            return t
-                .render_with(1, t.has_slug().then_some("example"), self.states)
-                .ok();
-        }
-        if let Some(v) = &c.example {
-            return Some(v.clone());
+        if let Some(v) = c.fixed_value(self.states) {
+            return Some(v);
         }
         if c.shape.is_some() {
             let line = c.common.line;
@@ -153,22 +137,11 @@ impl Deriver<'_> {
     /// The value one declared key takes, or `None` where the key is
     /// optional and nothing states what to write.
     fn value_of(&mut self, key: &str, c: &FrontmatterConstraint) -> Option<String> {
-        if let Some(v) = &c.const_ {
-            return Some(v.clone());
-        }
         // The `id` a scaffold writes holds the states of that scaffold, so
         // it comes from the template, as a host's leading `id` does.
         // sokf-implements: TL_59
-        if let Some(t) = &c.id_template
-            && let Ok(v) = t.render_with(1, t.has_slug().then_some("example"), self.states)
-        {
+        if let Some(v) = c.scaffold_value(self.states) {
             return Some(v);
-        }
-        if let Some(v) = &c.example {
-            return Some(v.clone());
-        }
-        if let Some(v) = c.enum_.as_ref().and_then(|e| e.first()) {
-            return Some(v.clone());
         }
         // Nothing else fixes the value, so the scaffold writes none of its
         // own: an optional key is left out, a required one is refused.

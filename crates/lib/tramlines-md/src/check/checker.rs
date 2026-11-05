@@ -4,12 +4,12 @@
 use std::ops::Range;
 
 use super::{
-    Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, frontmatter, keys, limits, markers,
-    sections,
+    Accepted, Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, frontmatter, keys,
+    limits, markers, sections,
 };
 use crate::{
     Finding, Locator,
-    grammar::{RuleCommon, Schema, Section, States, Text},
+    grammar::{RuleCommon, Schema, Section, States, Text, Unit as UnitRule},
     markdown::BlockKind,
 };
 
@@ -135,6 +135,8 @@ pub(crate) struct Checker<'a> {
     /// The first line of the code or HTML block whose lines are being
     /// checked: a key captured there has its anchor before the block.
     pub lines_block: Option<usize>,
+    /// Whether the host asks for each unit a unit rule accepts.
+    pub records_accepted: bool,
 }
 
 impl Checker<'_> {
@@ -243,6 +245,19 @@ impl Checker<'_> {
         }
     }
 
+    /// Record that `rule` accepted the unit on `line` to `end_line`, where
+    /// the host asks for it.
+    // sokf-implements: TLMD_212
+    // sokf-implements: MD-4_AC-14
+    pub fn accept(&mut self, rule: &UnitRule, line: usize, end_line: usize) {
+        self.out.accepted.push(Accepted {
+            line,
+            end_line,
+            rule_index: rule.index,
+            rule_id: rule.rule_id.clone(),
+        });
+    }
+
     /// A heading rewritten whole. It replaces a repair of the same heading
     /// made before it, as the setext one, because it writes the heading as
     /// ATX too, so one pass reaches the fixed point.
@@ -301,6 +316,7 @@ pub fn check_against(
         later: Vec::new(),
         reserve: 0,
         lines_block: None,
+        records_accepted: host.records_accepted(),
     };
     // sokf-implements: MD-4_AC-1
     frontmatter::check(&mut c);
@@ -309,6 +325,7 @@ pub fn check_against(
     // the captures are put back in the order of the document, which says
     // which capture of a key comes first.
     c.out.captures.sort_by_key(|cap| cap.line);
+    c.out.accepted.sort_by_key(|a| a.line);
     keys::check(&mut c);
     anchors::check(&mut c);
     limits::check(&mut c);

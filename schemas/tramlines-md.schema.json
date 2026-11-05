@@ -195,6 +195,13 @@
           "type": "boolean",
           "description": "Set to `true` to accept further columns after the declared ones. Applies to a block of kind table."
         },
+        "example-columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The header row of the scaffold of a table block that declares `columns: []` and `columns-open: true`, whose columns vary from document to document. The scaffold writes it before the rows of the example, with each `|` in a name escaped, and each row that the scaffold writes has one cell for each of its columns. The list names at least one column. Applies to a block of kind table."
+        },
         "source-pattern": {
           "type": "string",
           "format": "regex",
@@ -604,7 +611,7 @@
         },
         "separator": {
           "type": "string",
-          "description": "The literal text that ends the prefix. The engine splits the key at its first occurrence."
+          "description": "The literal text that ends the prefix. A key derives from an allowed prefix that it starts with, followed by the separator, and from the longest where more than one starts it, so a prefix can contain the separator."
         }
       },
       "additionalProperties": false,

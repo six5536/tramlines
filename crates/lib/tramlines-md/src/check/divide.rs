@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use super::{
     Checker,
     blocks::check_plain,
-    claim::{Docs, is_run},
+    claim::{Docs, Dropped, is_run},
 };
 use crate::{Finding, grammar::Block as Rule, markdown::Block};
 
@@ -68,8 +68,8 @@ pub(super) fn extent(
     section: Option<usize>,
     firm: bool,
     (lower, upper): (usize, usize),
-) -> Result<usize, Vec<Finding>> {
-    let mut first: Option<Vec<Finding>> = None;
+) -> Result<usize, Dropped> {
+    let mut first: Option<Dropped> = None;
     let mut n = upper;
     loop {
         let at = c.save();
@@ -79,7 +79,7 @@ pub(super) fn extent(
             return Ok(1);
         }
         let dropped = c.rollback(&at);
-        let next = narrow(&docs[di], n, &dropped);
+        let next = narrow(&docs[di], n, &dropped.findings);
         if first.is_none() {
             first = Some(dropped);
         }
@@ -101,7 +101,7 @@ pub(super) fn extent(
 }
 
 /// Give `docs[di]` its first `n` units and insert the rest after it.
-fn commit(docs: &mut Docs<'_>, di: usize, n: usize) {
+pub(super) fn commit(docs: &mut Docs<'_>, di: usize, n: usize) {
     if n >= docs[di].units.len() {
         return;
     }

@@ -159,6 +159,7 @@ A `block` also accepts the keys of [`rule-common`](#rule-common).
 - `fence` (an integer). The minimum number of backticks in the fence. When absent, the minimum is three. Applies to a block of kind `code`.
 - `columns` (a list of strings). The header row, in order. A table block requires this key. A differing header is an error. Applies to a block of kind `table`.
 - `columns-open` (`true` or `false`). Set to `true` to accept further columns after the declared ones. Applies to a block of kind `table`.
+- `example-columns` (a list of strings). The header row of the scaffold of a table block that declares `columns: []` and `columns-open: true`, whose columns vary from document to document. The scaffold writes it before the rows of the example, with each `|` in a name escaped, and each row that the scaffold writes has one cell for each of its columns. The list names at least one column. Applies to a block of kind `table`.
 - `source-pattern` (a regular expression). A regular expression that each image path must match. The engine matches an image in the host's reference scheme by what the host reports that it shows, and any other image as written. Applies to a block of kind `image`.
 - `inline-html` (`true` or `false`). Set to `true` to accept inline HTML in this block's units. When absent, any HTML other than a comment is an error.
 - `blocks` (a list of [`block`](#block)). The blocks of one repetition of the group. Applies to a block of kind `group`.
@@ -178,7 +179,7 @@ A `heading` has exactly one of `text`, `template`, `pattern`.
 - `pattern` (a regular expression). A regular expression that the heading must match, for what a template can't express. Write `^` and `$` to bind the ends.
 - `key` (a string). The hole of the template, or the named group of the pattern, whose capture is the section's key.
 - `unique` (a string). The scope within which the key is unique. When absent, the scope is `document`. Values: `document`. Requires `key` beside it.
-- `key-derives-from` ([`key-derivation`](#key-derivation)). Where the key's prefix must come from. The engine splits the key at the first separator, and the prefix must be one that the derivation allows. Requires `key` beside it.
+- `key-derives-from` ([`key-derivation`](#key-derivation)). Where the key's prefix must come from. The key must start with a prefix that the derivation allows, followed by the separator. Requires `key` beside it.
 - `example` (a string). A heading of the kind that the template or the pattern requires.
 
 ## `unit`
@@ -192,7 +193,7 @@ A `unit` also accepts the keys of [`rule-common`](#rule-common).
 - `pattern` (a regular expression). A regular expression that the unit's text must match, for what a template can't express. Write `^` and `$` to bind the ends.
 - `format` (the name of a format). The name of a line format that the unit's text must match.
 - `key` (a string). The hole of the template, the named group of the pattern, or the hole or group of every shape of the format, whose capture is the unit's key. The key must be unique within its scope by its slug, and the slug names the key's generated anchor. Don't declare `key` beside a format that captures a key.
-- `key-derives-from` ([`key-derivation`](#key-derivation)). Where the key's prefix must come from. The engine splits the key at the first separator, and the prefix must be one that the derivation allows.
+- `key-derives-from` ([`key-derivation`](#key-derivation)). Where the key's prefix must come from. The key must start with a prefix that the derivation allows, followed by the separator.
 - `key-optional` (`true` or `false`). Set to `true` to treat a unit that contains no key as plain rather than as an error. The key is the rule's own `key` or the one that its `format` declares. The engine reports a rule that has neither. When absent, a unit with no key is an error.
 - `key-repeats` (`true` or `false`). Set to `true` to let the rule capture one key on several units, and a key that another rule captures, as a list that names the owner of each item names one owner many times. Each capture by this rule refers to the key, which a capture by a rule without `key-repeats` defines where there is one. When absent, a second capture of a key is an error.
 - `unique` (a string). The scope within which the key is unique. When absent, the scope is `document`. The engine reports a clash on both documents, and names the key and the other document. Values: `document`.
@@ -217,7 +218,7 @@ A `key-derivation` has exactly one of `rule`, `from`.
 
 - `rule` (the `rule-id` of a rule). The rule whose keys are the allowed prefixes.
 - `from` (a string). The frontmatter key whose value is the only allowed prefix.
-- `separator` (a string, required). The literal text that ends the prefix. The engine splits the key at its first occurrence.
+- `separator` (a string, required). The literal text that ends the prefix. A key derives from an allowed prefix that it starts with, followed by the separator, and from the longest where more than one starts it, so a prefix can contain the separator.
 
 ## `rule-common`
 

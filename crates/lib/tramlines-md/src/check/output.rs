@@ -127,6 +127,20 @@ pub struct Gate {
     pub rule: usize,
 }
 
+/// A paragraph, an item, or a row that a unit rule took and whose shape it
+/// has: the unit's lines, and the rule, by its `Unit::index`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Accepted {
+    /// The first line of the unit.
+    pub line: usize,
+    /// The last line of the unit: the last line of a wrapped paragraph.
+    pub end_line: usize,
+    /// The rule's `Unit::index`, which `Schema::unit` finds the rule by.
+    pub rule_index: usize,
+    /// The rule's `rule-id`, where it declares one.
+    pub rule_id: Option<String>,
+}
+
 /// What a schema check yields.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CheckOutput {
@@ -139,6 +153,10 @@ pub struct CheckOutput {
     /// Each gated rule that matched a part: what an `only` marker there
     /// must agree with.
     pub gates: Vec<Gate>,
+    /// Each unit a unit rule accepted, in the order of the units' first
+    /// lines in the document, where `Host::records_accepted` asks for them;
+    /// otherwise none.
+    pub accepted: Vec<Accepted>,
     /// The anchor each key needs, in the order the keys were captured.
     pub anchors: Vec<Placement>,
     /// Whether the anchors the body holds differ from `anchors`.

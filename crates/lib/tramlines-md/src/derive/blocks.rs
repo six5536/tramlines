@@ -102,8 +102,20 @@ impl Deriver<'_> {
                 out.push(String::new());
             }
             BlockKind::Table => {
-                let columns = block.columns.as_deref().unwrap_or_default();
-                out.push(format!("| {} |", columns.join(" | ")));
+                // A table with no declared columns names the header of its
+                // scaffold under `example-columns`, so that the separator
+                // has one `---` for each cell of the header.
+                // sokf-implements: TLMD_206
+                // sokf-implements: MD-7_AC-13
+                let columns = block
+                    .example_columns
+                    .as_deref()
+                    .or(block.columns.as_deref())
+                    .unwrap_or_default();
+                // A `|` in a name would end its cell, so the header escapes
+                // it, as a GFM table writes a pipe inside a cell.
+                let names: Vec<String> = columns.iter().map(|c| c.replace('|', "\\|")).collect();
+                out.push(format!("| {} |", names.join(" | ")));
                 out.push(format!(
                     "| {} |",
                     columns

@@ -34,7 +34,8 @@ Each normative rule of this specification is an EARS criterion, keyed `TL_n`.
 - <a id="shape"></a>`shape` - The required form of the text of one unit: a `text`, a `template`, or a `pattern`.
 - <a id="type"></a>`type` - A named regular expression, or a list of choices, that a hole of a template matches.
 - <a id="format"></a>`format` - A named shape of one line, with its example, that a rule binds by name.
-- <a id="registry"></a>`registry` - One layer of named formats and types: the schema, the host, or the shared layer.
+- <a id="registry"></a>`registry` - One layer of named formats and types: the schema, the host, the pack layer, or the shared layer.
+- <a id="pack-layer"></a>`pack layer` - The layer of formats and types between the host and the shared layer, which the host builds from the formats files of its packs, each named by its pack.
 - <a id="example"></a>`example` - Text of the kind that a rule demands, which the engine checks against the rule.
 - <a id="guidance"></a>`guidance` - What an example cannot express, which the scaffold includes and no finding prints.
 - <a id="lifecycle-dimension"></a>`lifecycle dimension` - One ordered list of states, stored in one frontmatter key.
@@ -107,7 +108,7 @@ Each shape matches the text with each run of whitespace collapsed to one space.
 - <a id="tl_120"></a>TL_120 [unwanted]: IF a hole of a template names a type that is not visible to the schema, THEN the engine SHALL report a finding on the schema that names the type.
 - <a id="tl_121"></a>TL_121 [unwanted]: IF a template contains a `${` that no `}` closes, or a hole whose name is not letters, digits, and `_` that do not start with a digit, THEN the engine SHALL report a finding on the schema that names the template.
 - <a id="tl_26"></a>TL_26 [unwanted]: IF a text fails a template, THEN the engine SHALL report the column where the text stops matching and what the template expects there: the end of a text that lacks only the end of the template, where only literals follow the last hole or the hole does not take the literal that follows it, and the start of a hole whose value runs on to the literal after the hole and that the hole does not take.
-- <a id="tl_27"></a>TL_27 [ubiquitous]: the engine SHALL resolve a type by name through the `types` of the schema, of the host, and of the shared registry, and the built-in types, the nearest first.
+- <a id="tl_27"></a>TL_27 [ubiquitous]: the engine SHALL resolve a type by name through the `types` of the schema, of the host, of the pack layer, and of the shared registry, and the built-in types, the nearest first.
 - <a id="tl_28"></a>TL_28 [ubiquitous]: the engine SHALL reserve the built-in types `text`, `word`, `int`, `slug`, and `seq`, and the types that the host reserves.
 - <a id="tl_29"></a>TL_29 [unwanted]: IF a schema defines a type with the name of a reserved type, THEN the engine SHALL report a finding on the schema that names the type.
 - <a id="tl_109"></a>TL_109 [unwanted]: IF the regular expression of a type that a schema defines contains an anchor or a capture group, THEN the engine SHALL report a finding on the schema that names the type.
@@ -115,15 +116,20 @@ Each shape matches the text with each run of whitespace collapsed to one space.
 - <a id="tl_31"></a>TL_31 [unwanted]: IF the `key` of a rule names no hole or named group of the shape of the rule, or of every shape of the format that the rule binds, or the `key` of a format names none of every shape of the format, THEN the engine SHALL report a finding on the schema that names the key.
 - <a id="tl_113"></a>TL_113 [unwanted]: IF a rule declares `key` beside a format that declares one, THEN the engine SHALL report a finding on the schema that names the format.
 - <a id="tl_32"></a>TL_32 [ubiquitous]: the engine SHALL check a `key-derives-from` against the key of the rule that declares it.
-- <a id="tl_33"></a>TL_33 [unwanted]: IF the part of a key before the first separator is not a prefix that its `key-derives-from` allows, THEN the engine SHALL report a finding that names the key.
+- <a id="tl_33"></a>TL_33 [unwanted]: IF a key starts with no prefix that its `key-derives-from` allows followed by the separator, THEN the engine SHALL report a finding that names the key.
+- <a id="tl_126"></a>TL_126 [event]: WHEN a key starts with more than one prefix that its `key-derives-from` allows followed by the separator, the engine SHALL derive the key from the longest of them.
 - <a id="tl_96"></a>TL_96 [unwanted]: IF a `key-derives-from` sits on a unit rule that captures no key, THEN the engine SHALL report a finding on the schema.
 - <a id="tl_117"></a>TL_117 [unwanted]: IF a `key-derives-from` names a rule or a frontmatter key that the schema does not declare, THEN the engine SHALL report a finding on the schema that names it.
+- <a id="tl_127"></a>TL_127 [unwanted]: IF the key of the example of a rule that declares `key-derives-from` does not start with a value that the schema states for the parent that `key-derives-from` names, as [TL_129](#tl_129) defines, followed by the separator, THEN the engine SHALL report a finding on the schema at the example that names the key and those values.
+- <a id="tl_129"></a>TL_129 [ubiquitous]: the engine SHALL take as the values that the schema states for the parent of a `key-derives-from`, for a frontmatter key, the value that a scaffold at the first state of each lifecycle key writes from the schema: its `const`, else the id that its `id` template renders, else its `example`, else the first value of its `enum`; and for a rule, each key that its examples capture, once.
 
 ## 5. Formats
 
-A format names the shape of one line, so that rules in many schemas share it. A format has one shape and an example, or variants, which each have a shape and an example of their own. The registries are layers: the schema, then the host, then the shared formats.
+A format names the shape of one line, so that rules in many schemas share it. A format has one shape and an example, or variants, which each have a shape and an example of their own. The registries are four layers: the schema, then the host, then the pack layer, then the shared formats. The files of the [pack layer](#pack-layer) have no order between them, so a patch in one of them merges onto the entry of the shared formats.
 
-- <a id="tl_34"></a>TL_34 [ubiquitous]: the engine SHALL resolve a format by name through the `formats` of the schema, of the host, and of the shared registry, the nearest first.
+- <a id="tl_34"></a>TL_34 [ubiquitous]: the engine SHALL resolve a format by name through the `formats` of the schema, of the host, of the pack layer, and of the shared registry, the nearest first.
+- <a id="tl_128"></a>TL_128 [unwanted]: IF two formats files of the pack layer define one format name or one type name, and the host's layer does not define it in full, as an entry that declares no `patch`, THEN the engine SHALL report a finding on the later of the two files in the order of their paths that names the format or the type and both files.
+- <a id="tl_134"></a>TL_134 [unwanted]: IF a format of a formats file of the pack layer does not compile against the types of the pack layer, THEN the engine SHALL report each reason on that file, at the line of the format, and leave the format out of the pack layer.
 - <a id="tl_35"></a>TL_35 [ubiquitous]: the engine SHALL compile each format that is visible to a schema against the types that are visible to the schema.
 - <a id="tl_36"></a>TL_36 [optional]: WHERE the nearer entry declares no patch, the engine SHALL replace a farther entry whole.
 - <a id="tl_37"></a>TL_37 [ubiquitous]: the engine SHALL merge a format entry that declares itself a patch onto the entry that it shadows, by RFC 7386.

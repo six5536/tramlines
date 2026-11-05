@@ -121,6 +121,24 @@ impl KeyDerivation {
             DerivationSource::From(k) => format!("the frontmatter `{k}`"),
         }
     }
+
+    /// The prefix of `prefixes` that `key` derives from: the longest that
+    /// `key` starts with, followed by the separator. A prefix can contain
+    /// the separator, so the key is never split at its first one.
+    // sokf-implements: TL_126
+    pub fn prefix_of<'a>(
+        &self,
+        key: &str,
+        prefixes: impl IntoIterator<Item = &'a str>,
+    ) -> Option<&'a str> {
+        prefixes
+            .into_iter()
+            .filter(|p| {
+                key.strip_prefix(p)
+                    .is_some_and(|rest| rest.starts_with(&self.separator))
+            })
+            .max_by_key(|p| p.len())
+    }
 }
 
 /// `format` of a frontmatter constraint.
@@ -174,6 +192,31 @@ pub struct FrontmatterConstraint {
     pub guidance: Option<String>,
 }
 
+impl FrontmatterConstraint {
+    /// The value that the schema fixes for the key in a scaffold at
+    /// `states`: its `const`, else the `id` template rendered with its
+    /// sequence at one and the slug `example`, else its `example`.
+    pub fn fixed_value(&self, states: &States) -> Option<String> {
+        if let Some(v) = &self.const_ {
+            return Some(v.clone());
+        }
+        if let Some(t) = &self.id_template
+            && let Ok(v) = t.render_with(1, t.has_slug().then_some("example"), states)
+        {
+            return Some(v);
+        }
+        self.example.clone()
+    }
+
+    /// The value that a scaffold at `states` writes for a declared key:
+    /// [`FrontmatterConstraint::fixed_value`], else the first value of its
+    /// `enum`.
+    pub fn scaffold_value(&self, states: &States) -> Option<String> {
+        self.fixed_value(states)
+            .or_else(|| self.enum_.as_ref()?.first().cloned())
+    }
+}
+
 /// Grammar `lifecycle-dimension`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LifecycleDimension {
@@ -188,6 +231,18 @@ pub struct LifecycleDimension {
     /// The keys a host's extension adds, as written: the host lowers what
     /// it adds.
     pub extensions: BTreeMap<String, Spanned>,
+}
+
+impl LifecycleDimension {
+    /// The state that a scaffold at `states` writes for the dimension: the
+    /// first that `states` gives it, else its first state.
+    pub fn state_in<'a>(&'a self, states: &'a States) -> Option<&'a String> {
+        states
+            .0
+            .get(&self.key)
+            .and_then(|s| s.first())
+            .or_else(|| self.states.first())
+    }
 }
 
 /// Grammar `example`.
@@ -283,5 +338,24 @@ impl CoreSchema {
     /// The lifecycle dimension with `key`.
     pub fn dimension(&self, key: &str) -> Option<&LifecycleDimension> {
         self.lifecycle.iter().find(|d| d.key == key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // sokf-tests: TL_126
+    #[test]
+    fn a_key_derives_from_the_longest_prefix_that_starts_it() {
+        let kd = KeyDerivation {
+            source: DerivationSource::From("code".into()),
+            separator: "-".into(),
+        };
+        assert_eq!(kd.prefix_of("CE-BUG-1", ["CE", "CE-BUG"]), Some("CE-BUG"));
+        assert_eq!(kd.prefix_of("CE-BUG-1", ["CE-BUG", "CE"]), Some("CE-BUG"));
+        assert_eq!(kd.prefix_of("CE-BUG-1", ["CE-BU"]), None);
+        assert_eq!(kd.prefix_of("CE-BUG", ["CE-BUG"]), None);
+        assert_eq!(kd.prefix_of("CE-BUG-1", ["CE-FIX"]), None);
     }
 }

@@ -4,15 +4,15 @@
 use std::borrow::Cow;
 
 use super::{
-    At, Checker,
-    blocks::check_plain,
-    divide::{extent, extents},
+    Accepted, At, Checker,
+    blocks::{check_plain, has_shape},
+    divide::{self, extent, extents},
     short,
 };
 use crate::{
     Finding, Severity,
-    grammar::{Block as Rule, States},
-    markdown::{Block, BlockKind},
+    grammar::{Block as Rule, States, Unit as UnitRule, squash},
+    markdown::{Block, BlockKind, Unit},
 };
 
 /// The blocks a walk holds, a list of its own from start to end, since a
@@ -28,6 +28,7 @@ pub(super) struct Savepoint {
     captures: usize,
     repairs: usize,
     gates: usize,
+    accepted: usize,
 }
 
 impl Checker<'_> {
@@ -38,6 +39,7 @@ impl Checker<'_> {
             captures: self.out.captures.len(),
             repairs: self.out.repairs.len(),
             gates: self.out.gates.len(),
+            accepted: self.out.accepted.len(),
         }
     }
 
@@ -50,15 +52,39 @@ impl Checker<'_> {
             .any(|f| f.severity == Severity::Error)
     }
 
-    /// Drop everything written since `at`, yielding the findings dropped.
-    /// Every list grows and none shrinks, so savepoints nest.
+    /// Drop everything written since `at`, yielding the findings and the
+    /// records of accepted units dropped. Every list grows and none
+    /// shrinks, so savepoints nest.
     // sokf-implements: TLMD_64
-    pub(super) fn rollback(&mut self, at: &Savepoint) -> Vec<Finding> {
+    pub(super) fn rollback(&mut self, at: &Savepoint) -> Dropped {
         self.out.captures.truncate(at.captures);
         self.out.repairs.truncate(at.repairs);
         self.out.gates.truncate(at.gates);
-        self.out.findings.split_off(at.findings)
+        // sokf-implements: TLMD_213
+        // sokf-implements: MD-4_AC-15
+        let accepted = self.out.accepted.split_off(at.accepted);
+        Dropped {
+            findings: self.out.findings.split_off(at.findings),
+            accepted,
+        }
     }
+
+    /// Keep what a refused position wrote after all, where the position
+    /// keeps the block: its findings, and the units its rules accepted.
+    // sokf-implements: TLMD_228
+    // sokf-implements: MD-4_AC-16
+    fn keep(&mut self, dropped: Dropped) {
+        self.out.findings.extend(dropped.findings);
+        self.out.accepted.extend(dropped.accepted);
+    }
+}
+
+/// What a rollback dropped: the findings, and the records of the units
+/// that the rules accepted.
+#[derive(Debug, Default)]
+pub(super) struct Dropped {
+    pub(super) findings: Vec<Finding>,
+    accepted: Vec<Accepted>,
 }
 
 /// The inner blocks of a group that `states` admit, in order.
@@ -222,7 +248,7 @@ fn match_free(
         let taken = taken.or_else(|| {
             let dropped = refusal.take()?;
             let ri = *free.first()?;
-            c.out.findings.extend(dropped);
+            c.keep(dropped);
             Some((ri, 1))
         });
         match taken {
@@ -291,6 +317,7 @@ fn default_prose() -> Rule {
         fence: 3,
         columns: None,
         columns_open: false,
+        example_columns: None,
         source_pattern: None,
         inline_html: false,
         blocks: None,
@@ -335,9 +362,12 @@ fn match_sequence(
         declared >= 2 || wraps == Some(kind) || group_opens.contains(&kind)
     };
     let mut di = start;
+    // The optional positions, no group among them, that took no block: a
+    // block that fails a later position may be one of theirs out of place.
+    let mut skipped: Vec<usize> = Vec::new();
     for (ri, rule) in rules.iter().enumerate() {
         let mut count = 0;
-        let mut refusal: Option<Vec<Finding>> = None;
+        let mut refusal: Option<Dropped> = None;
         let mut answered = false;
         let mut stray = false;
         // The kinds the positions after this one open: a block of one of
@@ -366,18 +396,14 @@ fn match_sequence(
                         })
                     {
                         let block = docs.remove(j);
+                        // The block's findings name its position, as a
+                        // claim's do (TL_73).
+                        // sokf-implements: TL_73
                         c.located(at_block(&c.at, rule), |c| {
-                            c.emit(
-                                &rule.common,
-                                Some(block.line),
-                                "TLMD_169",
-                                format!(
-                                    "the {} block is out of place; the blocks are in the order the schema lists them",
-                                    block.kind.name_in(&c.host.dialect())
-                                ),
-                            );
+                            let message = misplaced(c, &block);
+                            c.emit(&rule.common, Some(block.line), "TLMD_169", message);
+                            check_plain(c, &block, rule, section);
                         });
-                        check_plain(c, &block, rule, section);
                         count += 1;
                     }
                     break;
@@ -405,6 +431,10 @@ fn match_sequence(
             }
             c.later = later.clone();
             c.reserve = reserve_for(rules, ri, docs, di, c.states);
+            // The block as it stands before the claim cuts a run, for an
+            // earlier position that may own it out of place.
+            let held = (firm(rule) && !skipped.is_empty()).then(|| docs[di].clone());
+            let before = c.save();
             let claimed = claim(c, docs, di, rule, section, firm(rule), divides(rule.kind));
             c.reserve = 0;
             match claimed {
@@ -415,7 +445,47 @@ fn match_sequence(
                     count += 1;
                     break;
                 }
+                // The block, or the start of the run, fails this position by
+                // its shape and has the shape of an optional position that
+                // took no block: it is that position's block out of place.
+                // It is reported once and checked there, and this position
+                // tries the next block, so the blocks after it reach their
+                // own positions. Only a block that already failed is tried,
+                // so a document that passed still passes and one that
+                // failed still fails.
+                // sokf-implements: TLMD_209
+                // sokf-implements: TLMD_210
+                // sokf-implements: TLMD_211
+                // sokf-implements: MD-4_AC-13
+                // sokf-implements: MD-11_AC-3
                 Ok(n) => {
+                    let found = held.filter(|_| c.failed(&before)).and_then(|held| {
+                        owner(c, rules, &skipped, &held, rule, divides(rule.kind))
+                            .map(|o| (held, o))
+                    });
+                    if let Some((held, (k, take))) = found {
+                        c.rollback(&before);
+                        // The claim may have cut the run where the position
+                        // failed: the owner takes the run as it stood.
+                        // sokf-implements: TLMD_226
+                        if docs[di].units.len() < held.units.len() {
+                            docs.remove(di + 1);
+                        }
+                        docs[di] = held;
+                        divide::commit(docs, di, take);
+                        // sokf-implements: TLMD_227
+                        if !rules[k].repeat {
+                            skipped.retain(|&s| s != k);
+                        }
+                        let owner = rules[k];
+                        c.located(at_block(&c.at, owner), |c| {
+                            let message = misplaced(c, &docs[di]);
+                            c.error(Some(docs[di].line), "TLMD_169", message);
+                            check_plain(c, &docs[di], owner, section);
+                        });
+                        di += 1;
+                        continue;
+                    }
                     di += n;
                     count += 1;
                 }
@@ -431,7 +501,7 @@ fn match_sequence(
                     // it is set aside here with the reason it was refused.
                     // The positions after this one then see the blocks
                     // beyond it rather than stalling behind it.
-                    c.out.findings.extend(dropped);
+                    c.keep(dropped);
                     answered = true;
                     di += 1;
                     continue;
@@ -444,12 +514,17 @@ fn match_sequence(
                 break;
             }
         }
+        if count == 0 && rule.optional && rule.kind != BlockKind::Group {
+            skipped.push(ri);
+        }
         if count == 0 && !rule.optional && !answered {
             match refusal {
                 // The position refused a block of its own kind: why it
-                // refused says more than the kind it declined.
+                // refused says more than the kind it declined. The block went
+                // on to the positions after it, so the units the position
+                // accepted are not its own.
                 // sokf-implements: TLMD_66
-                Some(dropped) => c.out.findings.extend(dropped),
+                Some(dropped) => c.out.findings.extend(dropped.findings),
                 None => {
                     let (line, found) = match docs.get(di) {
                         Some(b) => (
@@ -488,6 +563,75 @@ fn match_sequence(
     di - start
 }
 
+/// The message of a block out of place.
+// sokf-implements: TLMD_169
+fn misplaced(c: &Checker<'_>, block: &Block) -> String {
+    format!(
+        "the {} block is out of place; the blocks are in the order the schema lists them",
+        block.kind.name_in(&c.host.dialect())
+    )
+}
+
+/// The first of the `skipped` positions whose block `block` is, out of
+/// place, with the number of its units that the position takes: the
+/// leading units of a run `divides` lets it divide that have the
+/// position's shape, within its `max`, else the whole block where every
+/// unit has it. The units it takes must fail `failed`, the position that
+/// claimed the block, by shape. Shapes alone decide, so a block that
+/// failed for another reason, such as a ban or a key, keeps its findings.
+// sokf-implements: TLMD_209
+// sokf-implements: TLMD_224
+// sokf-implements: TLMD_225
+// sokf-implements: TLMD_226
+fn owner(
+    c: &Checker<'_>,
+    rules: &[&Rule],
+    skipped: &[usize],
+    block: &Block,
+    failed: &Rule,
+    divides: bool,
+) -> Option<(usize, usize)> {
+    skipped.iter().copied().find_map(|k| {
+        let rule = rules[k];
+        if !matches_rule(block, rule, c.states) {
+            return None;
+        }
+        let take = if divides && is_run(rule.kind) {
+            let most = rule.max.unwrap_or(usize::MAX);
+            block
+                .units
+                .iter()
+                .take(most)
+                .take_while(|u| shaped(c, std::slice::from_ref(u), rule) == Some(true))
+                .count()
+        } else if shaped(c, &block.units, rule) == Some(true) {
+            block.units.len()
+        } else {
+            0
+        };
+        (take > 0 && shaped(c, &block.units[..take], failed) == Some(false)).then_some((k, take))
+    })
+}
+
+/// Whether each of `units` has the shape of a unit rule of `rule`, as
+/// `has_shape` reads it: `None` where no unit rule of `rule` declares a
+/// template, a pattern, or a format, or where there are no units.
+// sokf-implements: TLMD_224
+// sokf-implements: TLMD_225
+fn shaped(c: &Checker<'_>, units: &[Unit], rule: &Rule) -> Option<bool> {
+    let shapes: Vec<&UnitRule> = rule
+        .units()
+        .filter(|u| u.shape.is_some() || u.format.is_some())
+        .collect();
+    if shapes.is_empty() || units.is_empty() {
+        return None;
+    }
+    Some(units.iter().all(|u| {
+        let text = squash(&u.text);
+        shapes.iter().any(|r| has_shape(c, &text, r))
+    }))
+}
+
 /// The locator narrowed to one block rule: its `rule-id`, else where it
 /// sits among the blocks declared beside it.
 // sokf-implements: TL_73
@@ -515,7 +659,7 @@ fn claim(
     section: Option<usize>,
     firm: bool,
     divides: bool,
-) -> Result<usize, Vec<Finding>> {
+) -> Result<usize, Dropped> {
     c.located(at_block(&c.at, rule), |c| {
         claim_located(c, docs, di, rule, section, firm, divides)
     })
@@ -530,7 +674,7 @@ fn claim_located(
     section: Option<usize>,
     firm: bool,
     divides: bool,
-) -> Result<usize, Vec<Finding>> {
+) -> Result<usize, Dropped> {
     if let Some(bounds) = extents(&docs[di], rule, divides, c.reserve) {
         return extent(c, docs, di, rule, section, firm, bounds);
     }

@@ -13,8 +13,11 @@ guidance: >
   An error reference page contains one entry for each key that `tramlines` prints for one
   part of a schema or a document, in the order of the specification. Each entry describes
   the message, its cause, and its fix. It then shows the error with four things: the
-  files, a run that reports the error, the fixed file, and a run that reports no errors. A
-  test fails when a key that the command can print has no entry.
+  files, a run that reports the error, the fixed file, and a run that reports no errors. An
+  error that only a program that uses tramlines as a library reports has an Example in a
+  program section in place of the Example section, which shows the files and the output of
+  that program. A test fails when a key that the engine or the command can print has no
+  entry, or when an entry has neither section or both.
 
 frontmatter:
   type:
@@ -81,6 +84,10 @@ sections:
   - heading: Example
     level: 3
     parent: entry
+    optional: true
+    guidance: >
+      This section shows an error that the command reports. An error that only a program
+      that uses tramlines as a library reports has an Example in a program section instead.
     blocks-ordered: false
     blocks:
       - kind: prose
@@ -102,4 +109,27 @@ sections:
           ---
           title: Groceries
           ---
+  - heading: Example in a program
+    level: 3
+    parent: entry
+    optional: true
+    guidance: >
+      This section shows an error that only a program that uses tramlines as a library
+      reports, with the files and the output of that program, because the command has no
+      run that reports it.
+    blocks-ordered: false
+    blocks:
+      - kind: prose
+        repeat: true
+        guidance: A caption comes before each file, and a sentence before the output.
+        example: '**`packs/home/formats.yaml`**'
+      - kind: code
+        repeat: true
+        lang: any
+        guidance: Each file follows the caption that names it, and the output follows its sentence.
+        example: |
+          registry:
+            task:
+              template: 'TODO ${}'
+              example: TODO buy milk
 ````
