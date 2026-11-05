@@ -261,7 +261,7 @@ The two questions and two answers form four paragraphs in a row. tramlines divid
 - `TLMD_152`: the body lacks a block that the section declares. See [TLMD_152][sokf:errors-blocks#tlmd_152].
 - `TLMD_69`: the body contains a block of another kind where the schema expects a declared block. See [TLMD_69][sokf:errors-blocks#tlmd_69].
 - `TLMD_146`, `TLMD_160`: a block has fewer units than its `min`, or more than its `max`. See [TLMD_146][sokf:errors-blocks#tlmd_146] and [TLMD_160][sokf:errors-blocks#tlmd_160].
-- `TLMD_147`, `TLMD_161`: a block has fewer units than its `sequence` has entries, or more. See [TLMD_147][sokf:errors-blocks#tlmd_147] and [TLMD_161][sokf:errors-blocks#tlmd_161].
+- `TLMD_147`, `TLMD_161`: a position of the `sequence` that isn't `optional` takes no unit, or units remain after the last position. See [TLMD_147][sokf:errors-blocks#tlmd_147] and [TLMD_161][sokf:errors-blocks#tlmd_161].
 - `TLMD_162`: an item contains a nested list or code block that its rule doesn't declare under `blocks`. See [TLMD_162][sokf:errors-blocks#tlmd_162].
 - `TLMD_42`: a block declares a key that doesn't apply to its kind. See [TLMD_42][sokf:errors-block-kinds#tlmd_42].
 - `TLMD_153`: a block lacks a key that its kind requires. See [TLMD_153][sokf:errors-block-kinds#tlmd_153].

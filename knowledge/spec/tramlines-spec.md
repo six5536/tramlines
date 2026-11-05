@@ -68,7 +68,7 @@ version: "0.1"
 
 ## 3. Schemas
 
-A schema is strict: the engine requires what the schema declares, rejects what the schema does not declare, and treats each requirement as exclusive. A relaxation is a key that the schema sets explicitly. The host decides which schema governs each document.
+A schema is strict: the engine requires what the schema declares, rejects what the schema does not declare, and treats each requirement as exclusive. A relaxation is a key that the schema sets explicitly. The host decides which schema governs each document. A schema or formats file can also be written as JSON, because JSON is YAML 1.2. Pretty-print it, so that each finding points at its own line.
 
 - <a id="tl_11"></a>TL_11 [ubiquitous]: the engine SHALL check a schema against the grammar before it uses the schema.
 - <a id="tl_12"></a>TL_12 [unwanted]: IF a schema contains a key that the grammar does not define for the rule map that holds it, THEN the engine SHALL report a finding on the schema that names the key.

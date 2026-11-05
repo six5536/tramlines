@@ -49,5 +49,5 @@ sections:
             example: '[TL_3][sokf:tramlines:tramlines-spec#tl_3]: how a format grammar is merged onto the core grammar.'
           - pattern: '^\['
             min: 0
-            example: '[Embed the engine and extend the grammar][sokf:how-to-embed-the-engine]'
+            example: '[Embed the engine in a Rust program][sokf:how-to-embed-the-engine]'
 ````

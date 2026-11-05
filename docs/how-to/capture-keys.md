@@ -297,7 +297,7 @@ The anchor of `Cache` sits on its first capture. The anchor of `Loading` sits on
 - `TL_31`: the `key` names no hole or named group of the shape. See [TL_31][sokf:errors-schema-types-keys-lifecycle#tl_31].
 - `TLMD_95`, `TLMD_96`: a key has no section or item that pairs with it, or a section or item names a key that the rule didn't capture. See [Errors: lines and pairings][sokf:errors-lines-and-pairings].
 - `TLMD_98`: a rule with `for-each-key-of` captures no key. See [TLMD_98][sokf:errors-lines-and-pairings#tlmd_98].
-- `TLMD_167`: the rule that a `for-each-key-of` names captures no key. See [TLMD_167][sokf:errors-lines-and-pairings#tlmd_167].
+- `TLMD_167`: a `for-each-key-of` names no rule that captures a key. See [TLMD_167][sokf:errors-lines-and-pairings#tlmd_167].
 
 ## See also
 

@@ -64,7 +64,7 @@ Why: the core grammar leaves room for a second format, but the project builds a 
 
 ## Schema languages other than YAML
 
-A schema must be YAML 1.2. tramlines doesn't read JSON Schema, a schema written in code, or any other schema language.
+A schema must be YAML 1.2. A schema written as JSON is YAML 1.2, so tramlines reads it. tramlines doesn't read JSON Schema, a schema written in code, or any other schema language.
 
 Why: one schema language means one grammar, one set of error messages, and one guide to learn.
 

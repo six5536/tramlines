@@ -127,5 +127,5 @@ sections:
     blocks:
       - kind: bullet-list
         guidance: Each item links one reference page or explanation that relates to the task.
-        example: '[Line formats][sokf:reference-formats]'
+        example: '[Built-in types][sokf:reference-types]'
 ````

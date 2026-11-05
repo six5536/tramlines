@@ -19,7 +19,7 @@ A recipe consists of a title, a short introduction, a list of ingredients, a num
 
 ## Step 1: write the title heading
 
-A schema is a YAML file. Every schema declares `line-limit`, the maximum number of lines in a document. This schema also declares the frontmatter and the sections of a recipe.
+A schema is a YAML file. A schema or formats file can also be written as JSON, because JSON is YAML 1.2. Pretty-print it, so that each finding points at its own line. Every schema declares `line-limit`, the maximum number of lines in a document. This schema also declares the frontmatter and the sections of a recipe.
 
 Create the schema. The frontmatter contains one key, `title`. The first section starts with a level-1 heading whose text comes from that `title`, written as `{ from: title }`. A `prose` block of at most one paragraph follows the heading:
 
