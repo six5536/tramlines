@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tramlines_md::{
     Finding, Locator, RepoPath,
-    check::{self, CheckOutput, NullHost, example},
+    check::{self, CheckOutput, Host, example},
     document::Document,
     grammar::{FormatSource, Schema},
     markdown::Dialect,
@@ -17,6 +17,7 @@ use crate::{
     cli::ValidateArgs,
     load::{self, is_stdin},
     report::{self, Report},
+    texts::{Texts, Words},
 };
 
 /// Check the schema and every document, print the report, and give the
@@ -57,6 +58,11 @@ pub fn validate(args: &ValidateArgs) -> Result<u8, Stop> {
         load::format_of(doc, args.format.as_deref())?;
     }
     let engine = load::engine(args.formats.as_deref())?;
+    // The words of each label come from the file of texts, as they do for
+    // `tramlines new`, so a document that it starts passes.
+    // sokf-implements: CLI-17_AC-4
+    let texts = Texts::load(args.texts.as_deref())?;
+    let host = Words(&texts);
     let id = load::schema_id(&args.schema);
     // sokf-implements: CLI-1_AC-7
     // sokf-implements: CLI-4_AC-2
@@ -86,7 +92,7 @@ pub fn validate(args: &ValidateArgs) -> Result<u8, Stop> {
             report.add(
                 &shown(&args.schema),
                 // sokf-implements: CLI-1_AC-6
-                check::check_schema(&schema, &NullHost, &RepoPath::root(), &id),
+                check::check_schema(&schema, &host, &RepoPath::root(), &id),
             );
             // Every document is read before any is rewritten, so a file
             // that does not read stops the run with no file changed.
@@ -104,9 +110,12 @@ pub fn validate(args: &ValidateArgs) -> Result<u8, Stop> {
                 let body = text.strip_prefix(load::BOM).unwrap_or(&text);
                 let bom = &text[..text.len() - body.len()];
                 let (body, findings) = if args.fix {
-                    fix(&schema, &id, doc, bom, body, &mut report)?
+                    fix(&schema, &host, &id, doc, bom, body, &mut report)?
                 } else {
-                    (body.to_string(), check(&schema, &id, body).1.findings)
+                    (
+                        body.to_string(),
+                        check(&schema, &host, &id, body).1.findings,
+                    )
                 };
                 if pipe && is_stdin(doc) {
                     repaired_stdin = Some(format!("{bom}{body}"));
@@ -135,12 +144,12 @@ pub fn validate(args: &ValidateArgs) -> Result<u8, Stop> {
     Ok(code)
 }
 
-/// The document as parsed, and its check against the schema.
-fn check(schema: &Schema, id: &str, text: &str) -> (Document, CheckOutput) {
+/// The document as parsed, and its check against the schema with `host`.
+fn check(schema: &Schema, host: &dyn Host, id: &str, text: &str) -> (Document, CheckOutput) {
     // sokf-implements: CLI-1_AC-2
     // sokf-implements: CLI-6_AC-2
     let parsed = Document::parse(RepoPath::root(), text, &Dialect::default());
-    let out = parsed.check(schema, &NullHost, Locator::schema(id));
+    let out = parsed.check(schema, host, Locator::schema(id));
     (parsed, out)
 }
 
@@ -151,13 +160,14 @@ fn check(schema: &Schema, id: &str, text: &str) -> (Document, CheckOutput) {
 // sokf-implements: CLI-9_AC-2
 fn fix(
     schema: &Schema,
+    host: &dyn Host,
     id: &str,
     doc: &Path,
     bom: &str,
     text: &str,
     report: &mut Report,
 ) -> Result<(String, Vec<Finding>), Stop> {
-    let (parsed, out) = check(schema, id, text);
+    let (parsed, out) = check(schema, host, id, text);
     // sokf-implements: CLI-9_AC-6
     if parsed.problem.is_some() {
         return Ok((text.to_string(), out.findings));
@@ -172,12 +182,14 @@ fn fix(
     // sokf-implements: CLI-9_AC-4
     if text.contains("\r\n") {
         repaired = repaired.replace('\n', "\r\n");
+    } else if text.contains('\r') && !text.contains('\n') {
+        repaired = repaired.replace('\n', "\r");
     }
     if !is_stdin(doc) {
         std::fs::write(doc, format!("{bom}{repaired}"))
             .map_err(|e| Stop::plain(format!("{}: {e}", doc.display())))?;
         report.rewrote(&doc.display().to_string());
     }
-    let remaining = check(schema, id, &repaired).1.findings;
+    let remaining = check(schema, host, id, &repaired).1.findings;
     Ok((repaired, remaining))
 }

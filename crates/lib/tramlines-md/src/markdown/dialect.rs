@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::grammar::{Condition, Only};
+
 // sokf:begin dialect
 /// How a host spells the markers the parser recognises. The engine's own
 /// markers are `<ns>:only`, `<ns>:guidance` and `<ns>:optional`; a host
@@ -137,24 +139,41 @@ impl Dialect {
         self.is_optional_marker(line) || self.is_optional_close(line)
     }
 
-    /// Parse an `only k=v,v2 k2=v` marker line into its map, dimension to
-    /// states. `None` when the line is no marker or is malformed.
-    pub fn only_marker(&self, line: &str) -> Option<BTreeMap<String, Vec<String>>> {
+    /// Parse an `only k=v,v2 k2=v | k3=v` marker line into its condition:
+    /// each map, dimension to states, with the maps joined by ` | `. `None`
+    /// when the line is no marker or is malformed.
+    // sokf-implements: MD-3_AC-12
+    pub fn only_marker(&self, line: &str) -> Option<Condition> {
         if !self.is_only_marker(line) {
             return None;
         }
         let only = format!("{} ", self.spell("only"));
         let i = line.find(&only)?;
         let rest = line[i + only.len()..].trim_end_matches("-->").trim();
-        let mut map = BTreeMap::new();
-        for pair in rest.split_whitespace() {
-            let (k, v) = pair.split_once('=')?;
-            if k.is_empty() || v.is_empty() {
+        if rest.is_empty() {
+            return Some(Condition::default());
+        }
+        // A bar standing alone parts two maps; a bar inside a word is part
+        // of a state.
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        let mut maps = Vec::new();
+        for part in words.split(|w| *w == "|") {
+            let mut map = BTreeMap::new();
+            for pair in part {
+                let (k, v) = pair.split_once('=')?;
+                // A dimension is a slug, so a bar in one is a bar that
+                // lacks its space.
+                if k.is_empty() || v.is_empty() || k.contains('|') {
+                    return None;
+                }
+                map.insert(k.to_string(), v.split(',').map(str::to_string).collect());
+            }
+            if map.is_empty() {
                 return None;
             }
-            map.insert(k.to_string(), v.split(',').map(str::to_string).collect());
+            maps.push(Only(map));
         }
-        Some(map)
+        Some(Condition::new(maps))
     }
 }
 
@@ -189,6 +208,16 @@ mod tests {
         assert_eq!(plain.marker("<!-- tramlines:links -->"), None);
     }
 
+    /// One map of a condition, from its dimensions and their states.
+    fn map(pairs: &[(&str, &[&str])]) -> Only {
+        Only(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
+                .collect(),
+        )
+    }
+
     #[test]
     fn only_markers() {
         assert!(HOST.is_only_marker("<!-- host:only state=closed -->"));
@@ -208,13 +237,40 @@ mod tests {
         assert!(Dialect::default().is_only_marker("<!-- tramlines:only state=closed -->"));
         assert_eq!(
             HOST.only_marker("<!-- host:only state=open,done kind=bug -->"),
-            Some(BTreeMap::from([
-                ("kind".to_string(), vec!["bug".to_string()]),
-                (
-                    "state".to_string(),
-                    vec!["open".to_string(), "done".to_string()]
-                ),
+            Some(Condition(vec![map(&[
+                ("kind", &["bug"]),
+                ("state", &["open", "done"])
+            ])]))
+        );
+    }
+
+    // A condition of more than one map joins its maps with ` | `, and a
+    // marker with an empty map is malformed.
+    // sokf-tests: TLMD_121
+    // sokf-tests: MD-3_AC-12
+    #[test]
+    fn an_only_marker_joins_the_maps_of_a_condition() {
+        let two = HOST.only_marker("<!-- host:only plan=planned | state=closed kind=bug -->");
+        assert_eq!(
+            two,
+            Some(Condition(vec![
+                map(&[("kind", &["bug"]), ("state", &["closed"])]),
+                map(&[("plan", &["planned"])]),
             ]))
+        );
+        // The maps come back in order, so a marker that lists them in
+        // another order agrees with its rule.
+        assert_eq!(
+            two.unwrap().render(),
+            "kind=bug state=closed | plan=planned"
+        );
+        assert_eq!(HOST.only_marker("<!-- host:only a=x | -->"), None);
+        assert_eq!(HOST.only_marker("<!-- host:only | a=x -->"), None);
+        assert_eq!(HOST.only_marker("<!-- host:only a=x || b=y -->"), None);
+        assert_eq!(HOST.only_marker("<!-- host:only a=x |b=y -->"), None);
+        assert_eq!(
+            HOST.only_marker("<!-- host:only state=a|b -->"),
+            Some(Condition(vec![map(&[("state", &["a|b"])])]))
         );
     }
 

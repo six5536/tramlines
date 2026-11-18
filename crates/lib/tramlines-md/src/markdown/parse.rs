@@ -3,7 +3,7 @@
 //! generated content never reaches block matching and every reference label
 //! in the host's scheme reaches the broken-link callback.
 
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use comrak::{
     Arena, Options, ResolvedReference,
@@ -13,14 +13,19 @@ use comrak::{
 
 use super::{
     Block, BlockDetail, BlockKind, Body, Dialect, Heading, Link, Marker, Segments, Unit, anchor,
-    body, dialect,
+    body, code, dialect,
     link::{REF, target},
     segments as seg, slug,
 };
 
+mod columns;
+mod definitions;
 mod text;
 
-use text::strip_prefix;
+pub(super) use columns::written_pos;
+use columns::{line_at, precedes_table, row_pos};
+pub(super) use definitions::Defined;
+pub(super) use text::strip_prefix;
 
 struct KeepLabel;
 
@@ -37,31 +42,52 @@ impl BrokenLinkCallback for KeepLabel {
     }
 }
 
+/// The options that the engine gives comrak.
+pub(super) fn options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.footnotes = true;
+    options.extension.tasklist = true;
+    // A footnote's definition stays where it is written, and one that no
+    // reference names stays too, so that the code blocks it holds are read.
+    options.parse.leave_footnote_definitions = true;
+    options.parse.broken_link_callback = Some(Arc::new(KeepLabel));
+    options
+}
+
 /// Parse a body whose first line is file line `first_line`, its markers as
 /// `dialect` spells them.
 // sokf-implements: TLMD_4
 // sokf-implements: TLMD_5
 // sokf-implements: TLMD_6
 pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Dialect) -> Body {
-    let masked = mask(body, first_line, segments);
-    let mut options = Options::default();
-    options.extension.table = true;
-    options.extension.footnotes = true;
-    options.extension.tasklist = true;
-    options.parse.broken_link_callback = Some(Arc::new(KeepLabel));
+    let (masked, written) = mask(body, first_line, segments);
+    let options = options();
     // Every rule reads the text without its generated anchors (TLMD_107).
-    let (masked, anchors) = anchor::strip(&masked, first_line, &options);
-    let lines: Vec<&str> = masked.lines().collect();
+    let stripped = anchor::strip(&masked, first_line, &options);
+    let masked = stripped.text;
+    // Each line as comrak ends it, so a line that comrak numbers reads the
+    // text that comrak read there.
+    // sokf-implements: MD-3_AC-14
+    let mut lines: Vec<&str> = code::each_line(&masked).map(|l| &masked[l]).collect();
+    if lines.last() == Some(&"") {
+        lines.pop();
+    }
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &masked, &options);
+    // comrak reads a stand-in on the line of an item that holds only
+    // anchors, so that it reads the blocks that the document holds with
+    // them, and the rules read the line without it.
+    let parsed = stripped.parsed.as_deref().unwrap_or(&masked);
+    let root = comrak::parse_document(&arena, parsed, &options);
 
     let mut p = Parser {
         dialect,
         lines: &lines,
+        defined: Defined::of(root, &lines),
         offset: first_line.saturating_sub(1),
         body: Body {
             first_line,
-            anchors,
+            anchors: stripped.anchors,
             ..Body::default()
         },
         covered: Vec::new(),
@@ -69,6 +95,14 @@ pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Diale
     };
     let blocks = p.group(root.children());
     p.body.blocks = blocks;
+    // The removal of the anchors keeps every line, so `written` holds the
+    // bytes of each line of the tree.
+    let found = code::code_blocks(root, &written);
+    p.body.fenced = found
+        .iter()
+        .map(|&(first, last, _)| (first + p.offset, last + p.offset))
+        .collect();
+    p.body.code_blocks = found.into_iter().map(|(_, _, b)| b).collect();
     p.collect_inlines(root);
     p.reference_blocks();
     p.body.headings.sort_by_key(|h| h.line);
@@ -77,23 +111,74 @@ pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Diale
     p.body
 }
 
+/// The byte ranges of `text`, one line parsed alone, such as a squashed
+/// example, that lie in a code span, in order: what a format's bans leave
+/// out of a unit.
+// sokf-implements: TLMD_111
+pub(crate) fn code_spans_in(text: &str) -> Vec<Range<usize>> {
+    if !text.contains('`') {
+        return Vec::new();
+    }
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, text, &options());
+    let mut out: Vec<Range<usize>> = root
+        .descendants()
+        .filter_map(|n| {
+            let ast = n.data();
+            let sp = ast.sourcepos;
+            matches!(ast.value, NodeValue::Code(_))
+                .then(|| sp.start.column.saturating_sub(1)..sp.end.column.min(text.len()))
+        })
+        .filter(|r| r.start < r.end)
+        .collect();
+    out.sort_by_key(|r| r.start);
+    out
+}
+
+/// Whether `cell`, a table cell, holds no inline node. Comrak adds such a
+/// cell for each one missing from a body row, in its function
+/// `try_opening_row`, at the column after the end of the row's last cell,
+/// which holds the closing pipe in a row that ends with one, and GFM reads
+/// it as empty. A written cell holds no node only where it is empty.
+// sokf-implements: TLMD_4
+fn empty_cell<'b>(cell: &'b AstNode<'b>) -> bool {
+    cell.first_child().is_none()
+}
+
 /// Blank every include interior and the definition block, keeping line
-/// numbers.
-fn mask(body: &str, first_line: usize, segments: &Segments) -> String {
+/// numbers, with the bytes in `body` of each line of the result, as comrak
+/// ends a line. A blanked line stands for every line that comrak reads in
+/// the line of `body` that it blanks.
+fn mask(body: &str, first_line: usize, segments: &Segments) -> (String, Vec<Range<usize>>) {
     let mut out = String::with_capacity(body.len());
+    let lines = code::lines(body);
+    let mut written = Vec::with_capacity(lines.len());
+    let mut next = 0;
+    let mut at = 0;
     for (i, line) in body.split_inclusive('\n').enumerate() {
         let file_line = first_line + i;
+        let end = at + line.len();
         // sokf-implements: TLMD_41
         let hidden = segments.in_region(file_line) || segments.in_definition(file_line);
         if hidden {
             if line.ends_with('\n') {
                 out.push('\n');
             }
+            written.push(at..at + line.trim_end_matches(['\n', '\r']).len());
+            while lines.get(next).is_some_and(|l| l.start < end) {
+                next += 1;
+            }
         } else {
             out.push_str(line);
+            while let Some(l) = lines.get(next).filter(|l| l.start < end) {
+                written.push(l.clone());
+                next += 1;
+            }
         }
+        at = end;
     }
-    out
+    written.extend(lines[next..].iter().cloned());
+    (out, written)
 }
 
 /// The facts of a node, copied out so the node's borrow ends before
@@ -161,6 +246,8 @@ fn facts(value: &NodeValue) -> Facts {
 struct Parser<'a> {
     dialect: &'a Dialect,
     lines: &'a [&'a str],
+    /// The lines of the definitions that open each paragraph and heading.
+    defined: Defined,
     offset: usize,
     body: Body,
     /// Line ranges of leaf blocks, for finding reference definitions.
@@ -182,15 +269,26 @@ impl<'a> Parser<'a> {
     /// The source line at file line `n`, or empty.
     fn src(&self, file_line: usize) -> &'a str {
         file_line
-            .checked_sub(self.offset + 1)
-            .and_then(|i| self.lines.get(i))
-            .copied()
-            .unwrap_or("")
+            .checked_sub(self.offset)
+            .map_or("", |n| line_at(self.lines, n))
     }
 
     fn cover(&mut self, sp: Sourcepos) {
         let range = (self.line(sp), self.end_line(sp));
         self.covered.push(range);
+    }
+
+    /// Cover the lines of `node`, a paragraph or a heading that starts at
+    /// `sp`, past its opening definitions. Inside an item or a quote, the
+    /// definitions stay covered, because `reference_blocks` reads each line
+    /// that no block covers as a line of the top level.
+    fn cover_text<'b>(&mut self, node: &'b AstNode<'b>, sp: Sourcepos) {
+        let sp = if self.depth > 0 {
+            node.data().sourcepos
+        } else {
+            sp
+        };
+        self.cover(sp);
     }
 
     /// Group the nodes inside an item or a quote into blocks, one level
@@ -209,15 +307,14 @@ impl<'a> Parser<'a> {
         for node in nodes {
             // Only a paragraph that follows a paragraph joins its block.
             let after_prose = std::mem::take(&mut last_prose);
-            let (facts, sp) = {
-                let ast = node.data();
-                (facts(&ast.value), ast.sourcepos)
-            };
+            let facts = facts(&node.data().value);
+            // A paragraph or a heading starts past its opening definitions.
+            let sp = definitions::block_pos(node, self.lines, &self.defined);
             let line = self.line(sp);
             let end_line = self.end_line(sp);
             let block = match facts {
                 Facts::Heading { level, setext } => {
-                    self.cover(sp);
+                    self.cover_text(node, sp);
                     let text = if setext {
                         let mut parts = Vec::new();
                         for n in line..end_line {
@@ -250,8 +347,8 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 Facts::Paragraph => {
-                    self.cover(sp);
-                    if let Some(images) = images_of(node) {
+                    self.cover_text(node, sp);
+                    if let Some(images) = images_of(node, self.lines, &self.defined) {
                         let units = images
                             .into_iter()
                             .map(|(url, l)| Unit::leaf(url, l + self.offset, l + self.offset))
@@ -300,8 +397,10 @@ impl<'a> Parser<'a> {
                     fence,
                     literal,
                 } => {
-                    self.cover(sp);
-                    self.body.fenced.push((line, end_line));
+                    // The block's own lines, which comrak's span can miss.
+                    let (first, last) = code::span(sp.start.line, sp.end.line, fence > 0, &literal);
+                    let end_line = last + self.offset;
+                    self.covered.push((first + self.offset, end_line));
                     let unit = Unit::leaf(literal, line, end_line);
                     Block {
                         detail: BlockDetail::Code { lang, fence },
@@ -348,6 +447,9 @@ impl<'a> Parser<'a> {
                 Facts::Footnote(name) => {
                     self.cover(sp);
                     self.body.footnote_defs.push((name, line));
+                    // A definition is no block, so the paragraphs around it
+                    // stay one prose block.
+                    last_prose = after_prose;
                     continue;
                 }
                 Facts::Other => continue,
@@ -367,12 +469,11 @@ impl<'a> Parser<'a> {
         let mut end_line = line;
         let mut children = item.children().peekable();
         if let Some(first) = children.peek() {
-            let (is_para, sp) = {
-                let ast = first.data();
-                (matches!(ast.value, NodeValue::Paragraph), ast.sourcepos)
-            };
-            if is_para && images_of(first).is_none() {
-                self.cover(sp);
+            let is_para = matches!(first.data().value, NodeValue::Paragraph);
+            let sp = definitions::block_pos(first, self.lines, &self.defined);
+            if is_para && images_of(first, self.lines, &self.defined).is_none() {
+                // Its opening definitions stay part of the item.
+                self.cover(first.data().sourcepos);
                 (text, pieces) = self.mapped_text(sp);
                 end_line = self.end_line(sp);
                 children.next();
@@ -414,8 +515,11 @@ impl<'a> Parser<'a> {
             let cells: Vec<(String, Vec<super::Piece>)> = row
                 .children()
                 .map(|cell| {
-                    let sp = cell.data().sourcepos;
-                    self.mapped_text(sp)
+                    if empty_cell(cell) {
+                        (String::new(), Vec::new())
+                    } else {
+                        self.mapped_text(row_pos(cell, cell.data().sourcepos, self.lines))
+                    }
                 })
                 .collect();
             if header {
@@ -456,7 +560,9 @@ impl<'a> Parser<'a> {
         for n in node.descendants() {
             let ast = n.data();
             let inline = matches!(&ast.value, NodeValue::HtmlInline(html) if !html.trim_start().starts_with("<!--"));
-            if inline || leading_html(n).is_some() {
+            if inline {
+                lines.push(self.line(written_pos(n, self.lines, &self.defined)));
+            } else if leading_html(n).is_some() {
                 lines.push(self.line(ast.sourcepos));
             }
         }
@@ -469,35 +575,36 @@ impl<'a> Parser<'a> {
     fn collect_inlines<'b>(&mut self, root: &'b AstNode<'b>) {
         for n in root.descendants() {
             let ast = n.data();
-            let line = self.line(ast.sourcepos);
+            let line = || self.line(written_pos(n, self.lines, &self.defined));
             match &ast.value {
                 NodeValue::Link(link) | NodeValue::Image(link) => {
                     let is_image = matches!(ast.value, NodeValue::Image(_));
-                    let source = self.source_text(ast.sourcepos);
+                    let sp = written_pos(n, self.lines, &self.defined);
+                    let source = self.source_text(sp);
                     if let Some(target) = target(&link.url, &source, self.dialect.scheme) {
                         self.body.links.push(Link {
                             target,
-                            line,
+                            line: self.line(sp),
                             is_image,
-                            end_line: self.end_line(ast.sourcepos),
+                            end_line: self.end_line(sp),
                             inline: inline_destination(&source),
                         });
                     }
-                    let spans = self.spans(ast.sourcepos);
+                    let spans = self.spans(sp);
                     self.body.link_spans.extend(spans);
                 }
                 NodeValue::FootnoteReference(r) => {
-                    self.body.footnote_refs.push((r.name.clone(), line));
+                    self.body.footnote_refs.push((r.name.clone(), line()));
                 }
                 NodeValue::HtmlInline(html) if !html.trim_start().starts_with("<!--") => {
-                    self.body.inline_html.push(line);
+                    self.body.inline_html.push(line());
                 }
                 // A code span may open on one line and close on another,
                 // so each line it covers records its own range.
                 // sokf-implements: TLMD_8
                 // sokf-implements: TLMD_112
                 NodeValue::Code(_) => {
-                    let spans = self.spans(ast.sourcepos);
+                    let spans = self.spans(written_pos(n, self.lines, &self.defined));
                     self.body.code_spans.extend(spans);
                 }
                 _ => {}
@@ -583,13 +690,21 @@ fn atx_text(line: &str) -> String {
     t.to_string()
 }
 
-/// The images of a paragraph of images only, with their body lines.
-fn images_of<'b>(paragraph: &'b AstNode<'b>) -> Option<Vec<(String, usize)>> {
+/// The images of a paragraph of images only, of the parse of `lines`,
+/// with their body lines.
+fn images_of<'b>(
+    paragraph: &'b AstNode<'b>,
+    lines: &[&str],
+    defined: &Defined,
+) -> Option<Vec<(String, usize)>> {
     let mut images = Vec::new();
     for child in paragraph.children() {
         let ast = child.data();
         match &ast.value {
-            NodeValue::Image(link) => images.push((link.url.clone(), ast.sourcepos.start.line)),
+            NodeValue::Image(link) => {
+                let line = written_pos(child, lines, defined).start.line;
+                images.push((link.url.clone(), line));
+            }
             NodeValue::SoftBreak | NodeValue::LineBreak => {}
             NodeValue::Text(t) if t.trim().is_empty() => {}
             _ => return None,

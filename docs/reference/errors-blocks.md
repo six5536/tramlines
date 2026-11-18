@@ -276,21 +276,21 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TLMD_160
 
-A block contains more units than its `max` ([TLMD_160][sokf:tramlines:tramlines-md-spec#tlmd_160]).
+A block contains more units than its hard `max` ([TLMD_160][sokf:tramlines:tramlines-md-spec#tlmd_160]).
 
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_160]: the <kind> block allows at most <max> <units>; it has <count> (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_160]: the <kind> block allows at most <max> <units>; it has <count>. When at the limit: <when-at-limit> (schema <id>, <place of the rule>)
 ```
 
 ### Cause
 
-The block sets `max`, the most units that it holds, and the block in the document contains more. A unit is a paragraph, an item, a row, an image, a definition, or a repetition, depending on the kind of block.
+The block sets a hard `max`, the most units that it holds, and the block in the document contains more. A soft `max` is never checked. A unit is a paragraph, an item, a row, an image, a definition, or a repetition, depending on the kind of block.
 
 ### Fix
 
-Remove units from the block in the document. If the block can hold more units, raise `max` in the schema, or remove it.
+Remove units from the block in the document, and follow the text after `When at the limit:`, which says where more content goes. If the block can hold more units, raise the count in the schema, make the limit `soft`, or remove it.
 
 ### Example
 
@@ -304,7 +304,11 @@ sections:
   - heading: Groceries
     level: 1
     blocks:
-      - { kind: bullet-list, max: 2, example: Milk }
+      - kind: bullet-list
+        max:
+          hard: 2
+          when-at-limit: 'Leave further items for the next trip.'
+        example: Milk
 ```
 
 **`note.md`**
@@ -319,7 +323,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:3: error[TLMD_160]: the bullet-list block allows at most 2 items; it has 3 (schema note, section "Groceries" block 1)
+note.md:3: error[TLMD_160]: the bullet-list block allows at most 2 items; it has 3. When at the limit: Leave further items for the next trip. (schema note, section "Groceries" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -488,15 +492,15 @@ Paragraphs or items remain after the last block of their kind that takes part of
 
 ### Cause
 
-The section, or a group, lists two or more blocks of one kind in order: prose, bullet list, or numbered list. The engine divides one run of that kind among those blocks. Each block takes what its `min` and `max` allow. A section that sets `blocks-ordered: false` divides a run only inside a group. The run in the document holds more units than those blocks take together. The error reports the first unit left over.
+The section, or a group, lists two or more blocks of one kind in order: prose, bullet list, or numbered list. The engine divides one run of that kind among those blocks by the text of the units. Each block takes the units that its shape accepts from the start of what is left of the run. No `min` or `max` divides the run. A section that sets `blocks-ordered: false` divides a run only inside a group. The run in the document holds more units than those blocks take together. The error reports the first unit left over.
 
 ### Fix
 
-Remove the units left over from the document. If the section can hold more, raise the `max` of the last block of that kind in the schema.
+Remove the units left over from the document. If the section can hold them, give the last block of that kind in the schema a shape that accepts them.
 
 ### Example
 
-This schema declares two paragraphs, and the document contains three:
+This schema declares a serving line and a step, each with a template, and the document adds a third paragraph that is neither:
 
 **`note.yaml`**
 
@@ -506,8 +510,10 @@ sections:
   - heading: Pancakes
     level: 1
     blocks:
-      - { kind: prose, max: 1, example: Thin pancakes for four people. }
-      - { kind: prose, max: 1, example: Mix the batter and fry it. }
+      - kind: prose
+        each: { template: 'Serves ${:int}.', example: Serves 4. }
+      - kind: prose
+        each: { template: 'Step ${:int}: ${}', example: 'Step 1: mix the batter.' }
 ```
 
 **`note.md`**
@@ -515,9 +521,9 @@ sections:
 ```markdown
 # Pancakes
 
-Thin pancakes for four people.
+Serves 4.
 
-Mix the batter and fry it.
+Step 1: mix the batter.
 
 Serve warm.
 ```
@@ -536,9 +542,9 @@ Remove the third paragraph:
 ```markdown
 # Pancakes
 
-Thin pancakes for four people.
+Serves 4.
 
-Mix the batter and fry it.
+Step 1: mix the batter.
 ```
 
 ```console

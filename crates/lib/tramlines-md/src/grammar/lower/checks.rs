@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use super::MdLowerer;
 use crate::{
-    grammar::{Block, DerivationSource, KeyDerivation, Schema, Shape, Unit},
+    grammar::{Block, DerivationSource, KeyDerivation, Label, Schema, Shape, Unit},
     markdown::BlockKind,
     text,
 };
@@ -24,10 +24,12 @@ impl MdLowerer<'_> {
 
     // sokf-implements: TL_15
     pub(super) fn check_references(&mut self, schema: &Schema) {
-        let ids: HashSet<String> = schema.rule_ids().into_iter().collect();
+        let ids: HashSet<String> = schema.declared_names();
         let mut seen = HashSet::new();
-        // The second declaration is the one that clashes.
-        for (id, line) in schema.rule_id_lines() {
+        // The second declaration is the one that clashes. Only an id that
+        // a reference can name clashes: a unit rule's `rule-id` names the
+        // rule alone, and several rules can share one.
+        for (id, line) in schema.referable_id_lines() {
             if !seen.insert(id.clone()) {
                 self.fail(line, "TL_15", format!("`rule-id` `{id}` is declared twice"));
             }
@@ -37,29 +39,27 @@ impl MdLowerer<'_> {
                 self.check_pairs_with(schema, s.common.line, r);
             }
             if let Some(d) = &s.heading.key_derives_from {
-                self.check_derivation(schema, &ids, s.common.line, d);
+                self.check_derivation(schema, s.common.line, d);
             }
             self.check_parent(schema, &ids, i);
-            self.check_blocks(s.blocks.as_deref(), schema, &ids);
+            self.check_blocks(s.blocks.as_deref(), schema);
         }
         if let Some(p) = &schema.preamble {
-            self.check_blocks(p.blocks.as_deref(), schema, &ids);
+            self.check_blocks(p.blocks.as_deref(), schema);
         }
     }
 
     /// A derivation names a rule the schema declares, or a frontmatter
     /// key it declares.
-    fn check_derivation(
-        &mut self,
-        schema: &Schema,
-        ids: &HashSet<String>,
-        line: usize,
-        d: &KeyDerivation,
-    ) {
+    fn check_derivation(&mut self, schema: &Schema, line: usize, d: &KeyDerivation) {
         let missing = match &d.source {
-            DerivationSource::Rule(r) => {
-                (!ids.contains(r)).then(|| format!("`key-derives-from` names no rule `{r}`"))
-            }
+            // A derivation reads a set of keys as a pairing does, so a name
+            // that holds no key is refused, and one that only a unit rule's
+            // `rule-id` carries says to declare `key-of` (TLMD_238).
+            DerivationSource::Rule(r) => schema
+                .rule_captures_key(r)
+                .err()
+                .map(|why| why.message("key-derives-from", r)),
             DerivationSource::From(k) => (!schema.core.frontmatter.iter().any(|(f, _)| f == k))
                 .then(|| format!("`key-derives-from` names no frontmatter key `{k}`")),
         };
@@ -119,9 +119,23 @@ impl MdLowerer<'_> {
         }
     }
 
-    fn check_blocks(&mut self, blocks: Option<&[Block]>, schema: &Schema, ids: &HashSet<String>) {
+    /// A rule that declares `label` names a label of the schema's
+    /// `labels`, so the schema declares some.
+    // sokf-implements: TLMD_241
+    fn check_label(&mut self, schema: &Schema, line: usize, label: Option<Label>) {
+        if label.is_some() && schema.labels.is_empty() {
+            self.fail(
+                line,
+                "TLMD_241",
+                "`label` on a rule of a schema that declares no `labels`: declare the key of each label under `labels`",
+            );
+        }
+    }
+
+    fn check_blocks(&mut self, blocks: Option<&[Block]>, schema: &Schema) {
         for b in blocks.unwrap_or(&[]) {
-            self.check_bounds(b.common.line, b.min, b.max);
+            self.check_label(schema, b.common.line, b.label);
+            self.check_bounds(b.common.line, b.min, b.max.as_ref());
             // sokf-implements: TLMD_153
             let requires = match b.kind {
                 BlockKind::Code if b.lang.is_none() => Some("a `code` block requires `lang`"),
@@ -165,9 +179,9 @@ impl MdLowerer<'_> {
                     );
                     self.fail(u.common.line, "TLMD_90", message);
                 }
-                self.check_unit(u, Some(b.kind), schema, ids);
+                self.check_unit(u, Some(b.kind), schema);
             }
-            self.check_blocks(b.blocks.as_deref(), schema, ids);
+            self.check_blocks(b.blocks.as_deref(), schema);
         }
     }
 
@@ -211,13 +225,8 @@ impl MdLowerer<'_> {
     /// One unit rule. `kind` is the enclosing block's kind, or `None` for a
     /// rule under `lines`, whose unit is one line of text.
     // sokf-implements: TLMD_90
-    fn check_unit(
-        &mut self,
-        u: &Unit,
-        kind: Option<BlockKind>,
-        schema: &Schema,
-        ids: &HashSet<String>,
-    ) {
+    fn check_unit(&mut self, u: &Unit, kind: Option<BlockKind>, schema: &Schema) {
+        self.check_label(schema, u.common.line, u.label);
         // A rule pairs what it captures, so it captures something, and the
         // rule it pairs with is one the schema declares.
         // sokf-implements: TLMD_98
@@ -289,11 +298,13 @@ impl MdLowerer<'_> {
                 );
             }
         }
+        // A rule captures a key of its own or its format's; a format that
+        // resolves to nothing has its finding under `TL_97`.
+        let no_key =
+            u.key.is_none() && (u.format.is_none() || format.is_some_and(|f| f.key.is_none()));
         if let Some(d) = &u.key_derives_from {
-            self.check_derivation(schema, ids, u.common.line, d);
-            // A rule captures a key of its own or its format's; a format
-            // that resolves to nothing has its finding under `TL_97`.
-            if u.key.is_none() && (u.format.is_none() || format.is_some_and(|f| f.key.is_none())) {
+            self.check_derivation(schema, u.common.line, d);
+            if no_key {
                 // sokf-implements: TL_96
                 self.fail(
                     u.common.line,
@@ -311,14 +322,24 @@ impl MdLowerer<'_> {
                 "`key-optional` without a `key` or a `format` that declares one",
             );
         }
+        // `key-of` names the set that the rule's keys go to, so the rule
+        // captures one.
+        if u.key_of.is_some() && no_key {
+            // sokf-implements: TLMD_237
+            self.fail(
+                u.common.line,
+                "TLMD_237",
+                "`key-of` on a rule that captures no key: declare `key`, or bind a `format` that declares one",
+            );
+        }
         if u.lines_open && u.lines.is_none() {
             // sokf-implements: TL_103
             self.fail(u.common.line, "TL_103", "`lines-open` without `lines`");
         }
-        self.check_bounds(u.common.line, u.min, u.max);
-        self.check_blocks(u.blocks.as_deref(), schema, ids);
+        self.check_bounds(u.common.line, u.min, u.max.as_ref());
+        self.check_blocks(u.blocks.as_deref(), schema);
         for line in u.lines.iter().flatten() {
-            self.check_unit(line, None, schema, ids);
+            self.check_unit(line, None, schema);
         }
     }
 }

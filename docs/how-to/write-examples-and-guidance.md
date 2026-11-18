@@ -20,7 +20,7 @@ The example of a rule is the only part of a schema that shows the text that the 
 
 1. Write each `example` as a line that a real document of the kind would contain, about a real subject. Never write a placeholder such as `<decision>`, an instruction such as `Describe the decision.`, or filler such as `One item.` A writer, a person or an agent, imitates the examples in a new document. An example written as a prompt therefore comes back word for word.
 
-2. Give an `example` to every rule with a `template` or a `pattern`, unless the rule binds a format that has one. A rule with only `text`, a count, or a `select-pattern` needs none, because its error is clear without one.
+2. Give an `example` to every rule with a `template` or a `pattern`, unless the rule binds a format that has one. A rule with only `text`, a count, or a `select-pattern` needs none, because its error is clear without one. Where the units of a rule carry a label, as in [Label the units of a part][sokf:how-to-label-units], write the example with its label too, because a writer copies the example.
 
    The command checks every example against its rule and reports each one that fails as an error in the schema. This example lacks the full stop that its template requires:
 
@@ -54,6 +54,8 @@ minutes.yaml:8: error[TL_64]: the example `Decided: the release moves to 3 Novem
 ```
 
 3. Add `guidance` for what an example can't show, such as a choice, a limit, or a reason. Guidance also covers what a writer must avoid where no rule enforces it. Phrase it as what to do instead: a schema contains no wrong text for a writer to imitate. The schema, a section, a preamble, a block, a frontmatter key, and a lifecycle dimension each accept guidance. The scaffold places it before the part that it guides, and the command never prints it in an error.
+
+   A limit has guidance of its own too. Give each `max` a `when-at-limit` text that tells the writer what to do with the content that doesn't fit within the limit, such as `Put each decision in the list that follows.`. Leave the count out of the text, because the limit holds the count, and a program that embeds tramlines, such as sokf, can write its own words for the count before the text. The `tramlines` command writes such words in English for a schema that declares `language: en`, and in another language from a file of texts, as [the reference of the command][sokf:reference-cli#the-words-of-a-limit] describes. Where the program gives none, such as for a schema that declares no `language`, the scaffold writes the limit in the syntax of the schema before the text, such as `` `soft: 1`, `when-at-limit`: Put each decision in the list that follows. ``. The scaffold writes the text unchanged after the part's own guidance and those words, in the same guidance line, and adds no words of its own, so write it in the language of the schema. Unlike guidance, the text also appears in an error on a hard limit, after the error's own words and `When at the limit:`, so that a writer who reads only the error learns where more content goes. Use a `soft` limit for the usual length, which tramlines never checks, and a `hard` limit only where the structure needs the count, such as one list in a section.
 
 4. To name a rule in its failures, give it a `rule-id`. Without one, the error names the rule by its place in the schema, its key, or its pattern.
 
@@ -207,6 +209,8 @@ review.md:3: error[TLMD_158]: a `tramlines:guidance` line is left here: write th
 - `TL_64`: an example fails its own rule. Fix the example, or the shape if the example is right. See [TL_64][sokf:errors-examples#tl_64].
 - `TL_65`: the example of a format fails the shape, the bans, or the key of the format. See [TL_65][sokf:errors-examples#tl_65].
 - `TL_66`: a rule with a `template` or a `pattern` has no `example`. Add one. See [TL_66][sokf:errors-examples#tl_66].
+- `TL_137`: a `max` is a bare number. Write the map that the message shows, with a `when-at-limit` text. See [TL_137][sokf:errors-limits#tl_137].
+- `TL_138`: the `when-at-limit` of a `max` is empty. Write the text that tells the writer what to do at the limit. See [TL_138][sokf:errors-limits#tl_138].
 - `TL_68`: the `guidance` of a rule repeats its `example`. Write what the example can't show, or remove the guidance. See [TL_68][sokf:errors-examples#tl_68].
 - `TLMD_158`: a guidance line is left in a document. Write the part that it guides, then delete the line. See [TLMD_158][sokf:errors-keys-markers-scaffolds#tlmd_158].
 - `TLMD_164`: the scaffold that the schema derives from its examples fails the schema, though each example passes its own rule. See [TLMD_164][sokf:errors-scaffolds#tlmd_164].
@@ -229,11 +233,15 @@ review.md:3: error[TLMD_158]: a `tramlines:guidance` line is left here: write th
 [sokf:errors-examples#tl_68]: /docs/reference/errors-examples.md#tl_68
 [sokf:errors-keys-and-repairs#tlmd_137]: /docs/reference/errors-keys-and-repairs.md#tlmd_137
 [sokf:errors-keys-markers-scaffolds#tlmd_158]: /docs/reference/errors-keys-markers-scaffolds.md#tlmd_158
+[sokf:errors-limits#tl_137]: /docs/reference/errors-limits.md#tl_137
+[sokf:errors-limits#tl_138]: /docs/reference/errors-limits.md#tl_138
 [sokf:errors-scaffolds#tlmd_164]: /docs/reference/errors-scaffolds.md#tlmd_164
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:explanation-strict-by-default]: /docs/explanation/strict-by-default.md
+[sokf:how-to-label-units]: /docs/how-to/label-units.md
 [sokf:how-to-read-a-finding]: /docs/how-to/read-a-finding.md
 [sokf:how-to-write-line-shapes]: /docs/how-to/write-line-shapes.md
+[sokf:reference-cli#the-words-of-a-limit]: /docs/reference/cli.md#the-words-of-a-limit
 [sokf:reference-errors]: /docs/reference/errors.md
 [sokf:reference-schema-keys]: /docs/reference/schema-keys.md
 [sokf:tramlines:tramlines-spec#7-examples-and-guidance]: /knowledge/spec/tramlines-spec.md#7-examples-and-guidance

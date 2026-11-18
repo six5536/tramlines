@@ -88,13 +88,14 @@ fn check_document(schema: &Schema, path: &str, text: &str) -> Vec<String> {
 
 <!-- /sokf:include -->
 
-3. Repair the document, if your program writes files. The repairs rewrite a heading or a line that is bound to a frontmatter value, a renamed heading, and a setext heading. They also write, move, and remove the anchors of keys. The function `line_edits` collects them, and the function `apply` applies them in one pass.
+3. Repair the document, if your program writes files. The repairs rewrite a heading or a line that is bound to a frontmatter value, a renamed heading, and a setext heading. They also write, move, and remove the anchors of keys, and write the host's words in place of a label written as its key. The function `line_edits` collects them, and the function `apply` applies them in one pass.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#repair -->
 
 ```rust
 /// The document with every repair of its check applied: headings bound to
-/// frontmatter, renamed and setext headings, and the anchors of its keys.
+/// frontmatter, renamed and setext headings, labels written as their keys,
+/// and the anchors of its keys.
 fn repair(schema: &Schema, text: &str) -> String {
     let dialect = Dialect::default();
     let document = Document::parse(RepoPath::root(), text, &dialect);
@@ -117,6 +118,7 @@ fn repair(schema: &Schema, text: &str) -> String {
         &document.text,
         &document.segments,
         &out.repairs,
+        &out.label_repairs,
         Some(&anchors),
     );
     apply(&document.text, &edits).expect("the edits of one check never clash")
@@ -138,6 +140,25 @@ fn repair(schema: &Schema, text: &str) -> String {
 
 <!-- /sokf:include -->
 
+   To word the count of each limit in a scaffold, implement `Host::limit_lead`. It takes a `LimitFacts`, which holds the kind, the count, and the subject of a limit, and the `language` that the schema declares, as written. It returns the words that the guidance line holds before the limit's `when-at-limit`, in that language, or `None` for no words. The subject is a `LimitSubject`: the kind of the block for a block's own limit, the key for a frontmatter key's limit, and for a rule's limit `LimitSubject::Rule`, which holds the kind of the rule's block, whether the rule counts units or lines (`Counts`), and the format that it binds or else its `rule-id` (`RuleName`), where it has either. In a compiled schema, every rule with a limit has one of the two, as [TLMD_235][sokf:errors-units#tlmd_235] requires. Write the count, then a sentence that forbids leaving out or merging content to stay within the count, then a label that words the key `when-at-limit` in the schema's language, such as `When at the limit:`. From a rule that binds the format `node`, counts lines, and has a hard count of 9, an English host writes ``At most 9 `node` lines. Never leave out or merge content to stay within the count. When at the limit:``, and from a block's own soft count of 1 in a prose block, `Usually up to 1 paragraph. Never leave out or merge content to stay within the count. When at the limit:`. A hard count of 0 bans what the rule counts, so word it as a ban rather than as a count. Compare the language ignoring case, because `EN` and `en` name one language, and fall back from a tag such as `en-GB` to `en` where you have no words for the region. The engine adds no words of its own. Where your host returns `None` or blank words, such as for a schema in a language that it has no words for, the line holds the limit in the syntax of the schema, such as `` `hard: 9`, `when-at-limit`: ``, before its text.
+
+   A finding on a hard limit holds none of the host's words: it quotes the limit's `when-at-limit` after the engine's English words and `When at the limit:`, before the place of the rule.
+
+   Where a schema declares `labels`, implement `Host::label_words` to give the words of each label in the schema's language. It takes a `LabelFacts`, which holds the key of the label and the `language` that the schema declares, and returns the words that a document writes between the label's brackets, such as `Mensch` for the key `human` in German, or `None` for no words. The engine asks for them when it checks a document, when it checks a schema, when it derives a scaffold, and when it returns the guide, so pass the same host to each. A document accepts only the words that your host gives, and a label's key where your host gives none, blank words, or words that hold a square bracket or begin with `^`. The repair of a check, in `CheckOutput::label_repairs`, writes the words in place of a label written as its key: pass it to `line_edits`, as the preceding code does. To name the label that a new document's units carry, such as `agent` for a document that an agent writes, implement `Host::scaffold_label`, which takes the keys of the schema's labels and returns one of them. Where your host names none, each unit takes the label of its example, else the first label of the schema. The engine gives a label no meaning, and writes no words of its own for one.
+
+   To show the writer of an existing document the guidance of its parts, call `guide` with the states of the document, or with the states that it is moving to, and with the host that derives its scaffold, so that the guide holds the same words. The following example passes the null host. The guide lists the schema's guidance, each frontmatter key, the preamble, and each section with its blocks, in the order of the schema. Each part has its own guidance, the text of the guidance line that the scaffold writes for it, whether it is optional at those states, and its limits, each with its kind, its count, and its `when-at-limit`. The guide owns its data and serialises with serde:
+
+<!-- sokf:include /crates/lib/tramlines-md/tests/it/guide.rs#guide -->
+
+```rust
+    // The guidance of each part of a document at its states, or at the
+    // states that it is moving to, as a host shows it to the writer.
+    let open = guide(&schema, &states(&[("state", "open")]), &NullHost);
+    let json = serde_json::to_value(&open).expect("the guide serialises");
+```
+
+<!-- /sokf:include -->
+
 5. Add keys of your own with a host extension. An extension names the format grammar that it extends, and it can only add to that grammar: keys, rule maps, enum values, and `doc` text. The engine keeps each key that an extension adds unchanged. Your program reads and checks the key itself. A key that the extension adds to a unit rule stays in the `extensions` of the lowered `Unit`. To check such a key against the units that the rule accepts, return `true` from `Host::records_accepted`. Each check then lists in `CheckOutput::accepted` each paragraph, item, and row that a rule accepts, with its lines and the `Unit::index` of its rule, in the order of the units in the document, and `Schema::unit` returns the rule with that index.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#extend -->
@@ -155,7 +176,7 @@ fn repair(schema: &Schema, text: &str) -> String {
 
 <!-- /sokf:include -->
 
-6. Layer the formats of packs, if your program copies sets of schemas from other repositories, each with a formats file of its own. A name resolves through four layers, the nearest first: the `formats` of the schema, your program's own formats file, the pack layer, and the shared formats, which are your program's built-in formats. Build each file of the pack layer with `FormatRegistry::layer` on the shared layer, with `FormatSource::Pack` and the name of its pack, so that a printed registry gives `pack:` and the pack as the `source` of each entry. The method `with_packs` puts the pack layer on the shared layer and returns a `PackLayer`. It reads the files in the order of their paths, whatever order you give them in. Build your own layer on `PackLayer::registry`, then pass it to `PackLayer::with_host`, which returns the registry that your schemas compile against and the findings of the pack layer. Two files that define one format or one type clash, and `with_host` reports each such name as [TL_128][sokf:errors-formats-and-examples#tl_128], unless your own formats file defines it in full, without `patch`. Check the examples of each formats file with `check_formats`, once, on that file. Report each finding as your program's own.
+6. Layer the formats of packs, if your program copies sets of schemas from other repositories, each with a formats file of its own. A name resolves through four layers, the nearest first: the `formats` of the schema, your program's own formats file, the pack layer, and the shared formats, which are your program's built-in formats. Build each file of the pack layer with `FormatRegistry::layer` on the shared layer, with `FormatSource::Pack` and the name of its pack, so that a printed registry gives `pack:` and the pack as the `source` of each entry. The method `with_packs` puts the pack layer on the shared layer and returns a `PackLayer`. It reads the files in the order of their paths, whatever order you give them in. Build your own layer on `PackLayer::registry`, then pass it and the path of your formats file to `PackLayer::with_host`, which returns the registry that your schemas compile against and the findings of the pack layer and of your layer. Two files that define one format or one type clash, and `with_host` reports each such name as [TL_128][sokf:errors-formats-and-examples#tl_128], unless your own formats file defines it in full, without `patch`. A type of a nearer layer can make a format of a farther layer too large to compile. The format is then left out, and `with_host` reports it on the file that declares the type. Your own formats file can settle a shared format that a type of a pack breaks: define the format in full, patch it, or define a type against which it compiles. `PackLayer::registry` keeps such a format as the shared layer compiled it, for your patch to merge onto. Give your schemas the registry of `with_host`, never `PackLayer::registry`. If your program lays one registry on another with `FormatRegistry::layered`, report each `BrokenFormat` that it returns on the file of the nearer layer. Check the examples of each formats file with `check_formats`, once, on that file. Report each finding as your program's own.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#packs -->
 
@@ -208,7 +229,7 @@ fn layer_formats(
     // that two packs define.
     let own_path = RepoPath::parse("/formats.yaml").expect("a path");
     let host = layer(own, &own_path, FormatSource::Repo, packs.registry());
-    let (registry, said) = packs.with_host(&host);
+    let (registry, said) = packs.with_host(&host, &own_path);
     findings.extend(said);
     // The examples of each formats file are checked once, on that file.
     for ((name, _, _), (path, _)) in pack_files.iter().zip(&files) {
@@ -242,6 +263,7 @@ A host also supplies the facts that lie outside a document. Implement the `Host`
 <!-- sokf:links -->
 
 [sokf:errors-formats-and-examples#tl_128]: /docs/reference/errors-formats-and-examples.md#tl_128
+[sokf:errors-units#tlmd_235]: /docs/reference/errors-units.md#tlmd_235
 [sokf:explanation-grammar-layers]: /docs/explanation/grammar-layers.md
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:reference-errors]: /docs/reference/errors.md

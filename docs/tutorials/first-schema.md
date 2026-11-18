@@ -21,7 +21,7 @@ A recipe consists of a title, a short introduction, a list of ingredients, a num
 
 A schema is a YAML file. A schema or formats file can also be written as JSON, because JSON is YAML 1.2. Pretty-print it, so that each finding points at its own line. Every schema declares `line-limit`, the maximum number of lines in a document. This schema also declares the frontmatter and the sections of a recipe.
 
-Create the schema. The frontmatter contains one key, `title`. The first section starts with a level-1 heading whose text comes from that `title`, written as `{ from: title }`. A `prose` block of at most one paragraph follows the heading:
+Create the schema. The frontmatter contains one key, `title`. The first section starts with a level-1 heading whose text comes from that `title`, written as `{ from: title }`. A `prose` block follows the heading. Its `max` is a soft limit: a recipe usually opens with one paragraph, and `when-at-limit` tells the writer where more goes. tramlines never checks a soft limit:
 
 **`recipe.yaml`**
 
@@ -35,7 +35,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
 ```
 
@@ -81,7 +83,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2
@@ -155,7 +159,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2
@@ -195,7 +201,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2
@@ -342,7 +350,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2
@@ -366,7 +376,7 @@ sections:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-recipe.yaml:17: error[TL_64]: the example `flour` fails at column 1: expected an `int` (`\d+`), found `flour` (schema recipe, section "Ingredients" block 1)
+recipe.yaml:19: error[TL_64]: the example `flour` fails at column 1: expected an `int` (`\d+`), found `flour` (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -388,7 +398,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2
@@ -430,7 +442,7 @@ examples:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-recipe.yaml:31: error[TL_69]: example 1 fails: line 12: [TL_74] `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
+recipe.yaml:33: error[TL_69]: example 1 fails: line 12: [TL_74] `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -451,7 +463,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast, ready in twenty minutes.
   - heading: Ingredients
     level: 2

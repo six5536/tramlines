@@ -79,7 +79,7 @@ links:
 types:
   decision-id: 'D-[1-9][0-9]*'
   question-id: 'Q-[1-9][0-9]*'
-  action: [Add, Allow, Change, Fix, Make, Move, Remove, Rename, Replace, Report, Split, Tighten]
+  action: [Add, Allow, Change, Fix, Give, Make, Move, Quote, Remove, Rename, Replace, Report, Split, Tighten]
 
 sections:
   - heading: { from: title }

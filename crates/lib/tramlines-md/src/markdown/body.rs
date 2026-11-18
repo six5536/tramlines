@@ -1,9 +1,12 @@
 //! The parsed body: blocks with units as grammar `block` and `unit` read
 //! them, plus positioned headings, links, footnotes and definitions.
 
+use std::borrow::Cow;
+use std::ops::Range;
+
 use serde::{Deserialize, Serialize};
 
-use super::{Anchor, Dialect, slug};
+use super::{Anchor, Dialect, parse, slug};
 use crate::{RepoPath, text};
 
 /// One variant per grammar `block.kind` value.
@@ -300,6 +303,26 @@ impl Link {
     }
 }
 
+// sokf:begin code-block
+/// A code block of a body, at any depth of quotes, lists, and footnotes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeBlock {
+    /// The bytes of the block's lines in the body as written: from the
+    /// start of its first line, which holds the opening fence of a fenced
+    /// block, to the end of its last line, which holds the closing fence
+    /// where the block has one, before that line's ending. The range holds
+    /// no blank line after the block's last line. The offsets count from the start of the text that
+    /// `markdown::parse` takes, before it blanks a region or the trailer or
+    /// removes an anchor; `Document::parse` gives it the body after the
+    /// frontmatter, with CRLF and a carriage return alone read as LF. A
+    /// line ends at a line feed, at a carriage return and a line feed, or at
+    /// a carriage return alone.
+    pub bytes: Range<usize>,
+    /// Whether the block is fenced; an indented block is not.
+    pub fenced: bool,
+}
+// sokf:end code-block
+
 /// A parsed body.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Body {
@@ -319,8 +342,13 @@ pub struct Body {
     pub ref_defs: Vec<(String, String, usize)>,
     /// Lines carrying inline HTML other than a comment.
     pub inline_html: Vec<usize>,
-    /// Line ranges of fenced and indented code, inclusive.
+    /// Line ranges of fenced and indented code, inclusive: the lines of
+    /// each entry of `code_blocks`.
     pub fenced: Vec<(usize, usize)>,
+    /// Every code block, at any depth of quotes, lists, and footnotes, in
+    /// the order of the document; none inside a region or the trailer.
+    #[serde(default)]
+    pub code_blocks: Vec<CodeBlock>,
     /// Byte ranges a code span covers: line, start, end. A span crossing
     /// lines records one entry per line.
     #[serde(default)]
@@ -402,6 +430,40 @@ impl Body {
             .any(|&(l, s, e)| l == line && s <= col && col < e)
     }
 
+    /// The byte ranges of the text of `unit` that lie inside a code span,
+    /// a span that crosses lines included, from the ranges the parse
+    /// records. A unit with no pieces, such as a line of a fence, has none.
+    // sokf-implements: TLMD_111
+    // sokf-implements: TLMD_112
+    pub(crate) fn code_in(&self, unit: &Unit) -> Vec<std::ops::Range<usize>> {
+        let mut out = Vec::new();
+        for (k, piece) in unit.pieces.iter().enumerate() {
+            // A piece runs to where the next one starts in the text, and,
+            // where the next is a cell on the same line, to that cell's
+            // column, so a separator never reaches into the next cell.
+            let next = unit.pieces.get(k + 1);
+            let width = next.map_or(unit.text.len(), |p| p.offset) - piece.offset;
+            let mut stop_col = piece.col + width;
+            if let Some(p) = next.filter(|p| p.line == piece.line) {
+                stop_col = stop_col.min(p.col);
+            }
+            let first = self
+                .code_spans
+                .partition_point(|&(line, _, _)| line < piece.line);
+            for &(_, start, end) in self.code_spans[first..]
+                .iter()
+                .take_while(|&&(line, _, _)| line == piece.line)
+            {
+                let from = start.max(piece.col);
+                let to = end.min(stop_col);
+                if from < to {
+                    out.push(piece.offset + (from - piece.col)..piece.offset + (to - piece.col));
+                }
+            }
+        }
+        out
+    }
+
     /// Whether byte `col` of `line` lies strictly inside a code span or a
     /// link, and where that span starts.
     pub fn span_around(&self, line: usize, col: usize) -> Option<usize> {
@@ -413,29 +475,45 @@ impl Body {
             .min()
     }
 
-    /// `text`, the line numbered `line`, with every code span blanked.
-    /// Lengths, byte offsets and line numbers are kept, so a finding still
-    /// points where the text is.
+    /// `text`, the line numbered `line`, with every code span overwritten
+    /// by a run of backticks, as `mask_code` reads it. Lengths, byte
+    /// offsets, and line numbers are kept, so a finding still points where the text is.
     // sokf-implements: TLMD_111
-    pub fn mask_spans<'a>(&self, line: usize, text: &'a str) -> std::borrow::Cow<'a, str> {
-        let spans: Vec<(usize, usize)> = self
+    // sokf-implements: TLMD_112
+    pub fn mask_spans<'a>(&self, line: usize, text: &'a str) -> Cow<'a, str> {
+        // A span that crosses onto this line is recorded from its first
+        // column, so it leaves the indent and the quote markers before
+        // the code as they are, where a unit's text leaves them out.
+        let lead = text.len() - parse::strip_prefix(text).len();
+        let spans: Vec<std::ops::Range<usize>> = self
             .code_spans
             .iter()
             .filter(|&&(l, _, _)| l == line)
-            .map(|&(_, s, e)| (s.min(text.len()), e.min(text.len())))
-            .filter(|&(s, e)| s < e && text.is_char_boundary(s) && text.is_char_boundary(e))
+            .map(|&(_, s, e)| if s == 0 { lead.min(e)..e } else { s..e })
             .collect();
-        if spans.is_empty() {
-            return std::borrow::Cow::Borrowed(text);
-        }
-        let mut out = text.to_string();
-        for (start, end) in spans {
-            // One byte of space per byte blanked, so every later offset
-            // and the line's own length stay as they were.
-            out.replace_range(start..end, &" ".repeat(end - start));
-        }
-        std::borrow::Cow::Owned(out)
+        mask_code(text, &spans)
     }
+}
+
+/// `text` with each of `code`, byte ranges of it that lie in a code span,
+/// read as a run of backticks one byte for each byte, which is what every
+/// ban reads (TLMD_111). A backtick is what the text already holds
+/// at the edges of a code span, so a ban finds no word of the code and no
+/// gap where it was: a ban on a space before a comma, or on a word that a
+/// space and the code follow, matches only what the text holds.
+// sokf-implements: TLMD_111
+pub(crate) fn mask_code<'a>(text: &'a str, code: &[std::ops::Range<usize>]) -> Cow<'a, str> {
+    if code.is_empty() {
+        return Cow::Borrowed(text);
+    }
+    let mut out = text.to_string();
+    for r in code {
+        // A range covers whole characters, so the text stays UTF-8.
+        let start = text.floor_char_boundary(r.start.min(text.len()));
+        let end = text.ceil_char_boundary(r.end.min(text.len()));
+        out.replace_range(start..end, &"`".repeat(end - start));
+    }
+    Cow::Owned(out)
 }
 
 /// The headings inside `blocks` at any depth, through quotes and the

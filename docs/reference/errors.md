@@ -15,7 +15,9 @@ Every error and warning that tramlines prints contains a key, such as `TL_54` in
 - [The schema][sokf:errors-schema]: faults in the YAML, keys, values, and regular expressions of the schema itself.
 - [Shapes and templates][sokf:errors-schema-shapes]: the one shape of each rule, and the holes of a template.
 - [Schema types and keys][sokf:errors-schema-types-keys-lifecycle]: the types, keys, key derivations, and bounds of a schema.
-- [Lifecycle and ids][sokf:errors-lifecycle-and-ids]: the lifecycle of a schema, the rules that it gates, and the `id` template.
+- [Limits][sokf:errors-limits]: the form of a `max` and its `when-at-limit` text.
+- [Lifecycle and ids][sokf:errors-lifecycle-and-ids]: the lifecycle of a schema, and the `id` template.
+- [Conditions][sokf:errors-conditions]: the condition of a rule, in `only` or in `optional`.
 - [Formats][sokf:errors-formats-and-examples]: line formats, and a line that lacks the key of its format.
 - [Examples and guidance][sokf:errors-examples]: the examples of the rules and formats of a schema, and its `examples`.
 - [Lists of examples][sokf:errors-example-lists]: the `examples` of a section, and an `example` written as a list.
@@ -45,6 +47,7 @@ The end of the message names the rule in your schema that the document breaks, b
 [sokf:errors-block-kinds]: /docs/reference/errors-block-kinds.md
 [sokf:errors-blocks]: /docs/reference/errors-blocks.md
 [sokf:errors-command]: /docs/reference/errors-command.md
+[sokf:errors-conditions]: /docs/reference/errors-conditions.md
 [sokf:errors-example-lists]: /docs/reference/errors-example-lists.md
 [sokf:errors-examples]: /docs/reference/errors-examples.md
 [sokf:errors-formats-and-examples]: /docs/reference/errors-formats-and-examples.md
@@ -52,6 +55,7 @@ The end of the message names the rule in your schema that the document breaks, b
 [sokf:errors-keys-and-repairs]: /docs/reference/errors-keys-and-repairs.md
 [sokf:errors-keys-markers-scaffolds]: /docs/reference/errors-keys-markers-scaffolds.md
 [sokf:errors-lifecycle-and-ids]: /docs/reference/errors-lifecycle-and-ids.md
+[sokf:errors-limits]: /docs/reference/errors-limits.md
 [sokf:errors-lines]: /docs/reference/errors-lines.md
 [sokf:errors-lines-and-pairings]: /docs/reference/errors-lines-and-pairings.md
 [sokf:errors-nested-sections]: /docs/reference/errors-nested-sections.md

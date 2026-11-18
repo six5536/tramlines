@@ -1,20 +1,21 @@
 //! How a position divides a run: the extents it may take of the run, the
-//! longest that passes, and the cut that gives the rest to the position
-//! after it.
+//! longest that passes by the text of its units, and the cut that gives
+//! the rest to the position after it. No count divides a run: neither a
+//! `min` nor a `max` decides where a position ends.
 
 use std::borrow::Cow;
 
 use super::{
     Checker,
     blocks::check_plain,
-    claim::{Docs, Dropped, is_run},
+    claim::{Docs, Dropped, is_run, is_text_error},
 };
 use crate::{Finding, grammar::Block as Rule, markdown::Block};
 
 /// The extents a position may take of a run: the fewest and the most
-/// units, or `None` where the position takes the block whole. The most
-/// leaves `reserve` units at the end of the run, where the bounds still
-/// admit an extent, for a later group's opening.
+/// units, or `None` where the position takes the block whole. The most is
+/// the whole run, less the `reserve` units at its end that a later group's
+/// opening takes, but never the first unit of the run.
 // sokf-implements: TLMD_77
 // sokf-implements: TLMD_78
 // sokf-implements: TLMD_193
@@ -25,18 +26,15 @@ pub(super) fn extents(
     divides: bool,
     reserve: usize,
 ) -> Option<(usize, usize)> {
-    // A `max` of zero admits no units at all, so there is nothing to
+    // A hard `max` of zero admits no units at all, so there is nothing to
     // divide: the block is taken whole and reported as too many.
-    if !divides || !is_run(rule.kind) || block.units.len() < 2 || rule.max == Some(0) {
+    if !divides || !is_run(rule.kind) || block.units.len() < 2 || rule.hard_max() == Some(0) {
         return None;
     }
     let len = block.units.len();
-    let mut upper = rule.max.map_or(len, |m| m.min(len));
-    let lower = rule.min.max(1);
-    if reserve > 0 && len >= lower + reserve {
-        upper = upper.min(len - reserve);
-    }
-    Some((lower.min(upper), upper))
+    // The position keeps the first unit of its run, whatever the group
+    // after it could also take.
+    Some((1, len - reserve.min(len - 1)))
 }
 
 /// The largest extent worth trying once `n` failed: the units before the
@@ -47,6 +45,7 @@ pub(super) fn extents(
 fn narrow(block: &Block, n: usize, findings: &[Finding]) -> usize {
     findings
         .iter()
+        .filter(|f| is_text_error(f))
         .filter_map(|f| f.line)
         .min()
         .map_or(n, |l| {
@@ -55,8 +54,10 @@ fn narrow(block: &Block, n: usize, findings: &[Finding]) -> usize {
         .min(n - 1)
 }
 
-/// The longest extent of a run the position writes no error against, cut
-/// from the block and committed; the rest falls to the position after it.
+/// The longest extent of a run the position writes no error against, other
+/// than an error on a count, cut from the block and committed; the rest
+/// falls to the position after it. Only the text of the units decides the
+/// extent, and its counts are reported against it.
 // sokf-implements: TLMD_48
 // sokf-implements: TLMD_49
 // sokf-implements: TLMD_74
@@ -74,7 +75,10 @@ pub(super) fn extent(
     loop {
         let at = c.save();
         check_plain(c, &prefix(&docs[di], n), rule, section);
-        if !c.failed(&at) {
+        // The extent that the text of its units chose is the position's,
+        // and its counts are reported against it: a count neither cuts the
+        // extent shorter nor refuses it.
+        if !c.failed_by_text(&at) {
             commit(docs, di, n);
             return Ok(1);
         }
@@ -89,8 +93,8 @@ pub(super) fn extent(
         n = next;
     }
     // Nothing satisfies the position. One that claims whatever it reports
-    // takes the most its bounds admit, which is what it took before a run
-    // was searched at all.
+    // takes the whole run, less what a later group's opening takes, which
+    // is what it took before a run was searched at all.
     // sokf-implements: TLMD_75
     if firm {
         check_plain(c, &prefix(&docs[di], upper), rule, section);

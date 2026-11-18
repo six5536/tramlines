@@ -7,15 +7,15 @@
 //! example on an optional rule that no scaffold reaches, and the example a
 //! later edit to its rule left behind.
 
-use super::At;
+use super::{At, Host, NullHost, label};
 use crate::{
     Finding, Locator, RepoPath,
     grammar::{
         Block, DerivationSource, FmFormat, Format, FormatMatch, FormatRegistry, FormatSource,
-        FrontmatterConstraint, KeyDerivation, Schema, Section, Shape, Text, Unit, captured,
-        refused, squash,
+        FrontmatterConstraint, KeyDerivation, Label, Schema, Section, Shape, Text, Unit, Words,
+        captured, carries_labels, refused_masked, squash,
     },
-    markdown::{is_slug, is_url},
+    markdown::{self, BlockKind, is_slug, is_url},
 };
 
 /// What one example failed, as the reason alone.
@@ -32,12 +32,16 @@ struct Examples<'a> {
     locator: Locator,
     /// Where in the schema the rule being read sits.
     at: At,
+    /// The labels of the schema in the words of the host.
+    labels: Words,
 }
 
 /// Every `example` a schema carries, against the rule it sits on. The
-/// finding of a rule's example names the schema `id` and the rule.
+/// finding of a rule's example names the schema `id` and the rule. The
+/// label of an example is held to the keys of the schema's labels, as a
+/// host that gives no words for them holds it.
 pub fn check(schema: &Schema, path: &RepoPath, id: &str) -> Vec<Finding> {
-    check_examples(schema, path, id).0
+    check_examples(schema, &NullHost, path, id).0
 }
 
 /// The examples that failed their rules: the text of each, and the line
@@ -48,12 +52,18 @@ pub(super) struct Failed {
     pub rules: Vec<usize>,
 }
 
-/// The findings of `check`, and the examples that failed.
+/// The findings of `check`, and the examples that failed, the label of
+/// each example held to the words that `host` gives.
 // sokf-implements: TL_64
 // sokf-implements: TL_65
 // sokf-implements: TL_73
 // sokf-implements: TL_127
-pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec<Finding>, Failed) {
+pub(super) fn check_examples(
+    schema: &Schema,
+    host: &dyn Host,
+    path: &RepoPath,
+    id: &str,
+) -> (Vec<Finding>, Failed) {
     let mut e = Examples {
         schema,
         path,
@@ -61,6 +71,7 @@ pub(super) fn check_examples(schema: &Schema, path: &RepoPath, id: &str) -> (Vec
         failed: Failed::default(),
         locator: Locator::schema(id),
         at: At::default(),
+        labels: label::words_of(schema, host),
     };
     for (key, constraint) in &schema.core.frontmatter {
         if let Some(text) = &constraint.example {
@@ -181,7 +192,12 @@ fn format_examples(
     };
     for (own, line) in examples {
         let text = squash(line);
-        let problem = match (own, format.check(&text)) {
+        // A format names no kind of block, so its example reads as a line
+        // of prose, whose code spans its bans leave out.
+        // sokf-implements: TLMD_111
+        let code = markdown::code_spans_in(&text);
+        let checked = format.check_masked(&text, &markdown::mask_code(&text, &code), "line");
+        let problem = match (own, checked) {
             (Some((vi, shape)), _) if !shape.matches(&text, |_| None) => Some(format!(
                 "the example `{line}` of variant `{vi}` of format `{name}`{layer} does not match its own variant: it {}",
                 shape.failure(&text)
@@ -278,31 +294,52 @@ impl Examples<'_> {
 
     /// One block, and the unit rules under it.
     fn block(&mut self, block: &Block) {
+        // The rules of a fence or of an HTML block govern its lines, whose
+        // backticks are text and open no code span.
+        let lines = matches!(block.kind, BlockKind::Code | BlockKind::Html);
         // A block's example stands for one of its units, so it is held
         // to the rules that would take it: those that state no text of
         // their own. A block whose rules each carry an example, and one
         // that declares no unit rule at all, answer to nothing here.
+        let consumers = consumers(block);
         for (i, text) in block.examples.iter().enumerate() {
-            for rule in consumers(block) {
-                let problem = item(i, &block.examples, unit(self.schema, rule, text));
+            for rule in &consumers {
+                let problem = item(i, &block.examples, self.unit(block, rule, text, lines));
                 self.said_of(text, block.common.line, "TL_64", problem);
-                let problem = item(i, &block.examples, derived_unit(self.schema, rule, text));
+                let problem = item(
+                    i,
+                    &block.examples,
+                    derived_unit(self.schema, &self.labels, block, rule, text),
+                );
                 self.said_of(text, block.common.line, "TL_127", problem);
+            }
+            // A block with no unit rule holds its units to its own `label`.
+            if block.units().next().is_none() {
+                let (bare, found) = self.label_of(block, None, text);
+                let problem = self.label_problem(block, None, text, &bare, found.as_ref());
+                self.said_of(
+                    text,
+                    block.common.line,
+                    "TL_64",
+                    item(i, &block.examples, problem),
+                );
             }
         }
         for rule in block.units() {
-            self.units(rule);
+            self.units(block, rule, lines);
         }
         if let Some(rules) = &block.rules {
-            self.grammar(rules);
+            self.grammar(block, rules);
         }
         self.blocks(block.blocks.as_deref());
     }
 
     /// One unit rule, the rules under its `lines`, and an item's blocks.
-    fn units(&mut self, rule: &Unit) {
+    /// `lines` says that the rule governs the lines of a fence or of an
+    /// HTML block.
+    fn units(&mut self, block: &Block, rule: &Unit, lines: bool) {
         for (i, text) in rule.examples.iter().enumerate() {
-            let problem = item(i, &rule.examples, unit(self.schema, rule, text));
+            let problem = item(i, &rule.examples, self.unit(block, rule, text, lines));
             self.inside(None, rule.rule_id.as_ref(), |e| {
                 e.said_of(text, rule.common.line, "TL_64", problem);
             });
@@ -311,16 +348,20 @@ impl Examples<'_> {
         // its format's, carries the key that derives.
         let examples = examples_of(self.schema, rule);
         for (i, text) in examples.iter().enumerate() {
-            let problem = item(i, &examples, derived_unit(self.schema, rule, text));
+            let problem = item(
+                i,
+                &examples,
+                derived_unit(self.schema, &self.labels, block, rule, text),
+            );
             self.inside(None, rule.rule_id.as_ref(), |e| {
                 e.said_of(text, rule.common.line, "TL_127", problem);
             });
         }
         for line in rule.lines.iter().flatten() {
-            self.units(line);
+            self.units(block, line, lines);
         }
         if let Some(lines) = &rule.lines {
-            self.grammar(lines);
+            self.grammar(block, lines);
         }
         self.blocks(rule.blocks.as_deref());
     }
@@ -330,17 +371,16 @@ impl Examples<'_> {
     // sokf-implements: TLMD_58
     // sokf-implements: TL_43
     // sokf-implements: TLMD_58
-    fn grammar(&mut self, rules: &[Unit]) {
+    fn grammar(&mut self, block: &Block, rules: &[Unit]) {
         for (i, rule) in rules.iter().enumerate() {
             if !rule.is_production() {
                 continue;
             }
             let examples = examples_of(self.schema, rule);
             for (n, text) in examples.iter().enumerate() {
-                if let Some(earlier) = rules[..i]
-                    .iter()
-                    .position(|r| r.is_production() && has_shape(self.schema, r, text))
-                {
+                if let Some(earlier) = rules[..i].iter().position(|r| {
+                    r.is_production() && has_shape(self.schema, &self.labels, block, r, text)
+                }) {
                     let problem = Some(format!(
                         "the example `{text}` is taken by the rule at line {} first, so this rule takes nothing: order the rules from the narrowest",
                         rules[earlier].common.line
@@ -376,16 +416,80 @@ fn examples_of(schema: &Schema, rule: &Unit) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Whether `text` has `rule`'s shape, its own or its format's.
-fn has_shape(schema: &Schema, rule: &Unit, text: &str) -> bool {
-    rule.fits(&schema.core.formats, &squash(text), |_| None)
+/// Whether `text`, an example of a unit of `block`, has `rule`'s shape,
+/// its own or its format's, read without its label in `words`.
+fn has_shape(schema: &Schema, words: &Words, block: &Block, rule: &Unit, text: &str) -> bool {
+    let (bare, _) = schema.unlabelled(words, block, Some(rule), text);
+    rule.fits(&schema.core.formats, &bare, |_| None)
+}
+
+impl Examples<'_> {
+    /// The example `text` of a unit of `block` that `rule` governs, as the
+    /// rule reads it: squashed, without the label that it carries, and the
+    /// label (TLMD_257).
+    fn label_of(
+        &self,
+        block: &Block,
+        rule: Option<&Unit>,
+        text: &str,
+    ) -> (String, Option<crate::grammar::Found>) {
+        self.schema.unlabelled(&self.labels, block, rule, text)
+    }
+
+    /// The label `found` that the example `text` carries, as `bare` reads
+    /// without it, against what `rule` of `block` declares and the words of
+    /// the host, as a unit's label is held to them (TLMD_257).
+    // sokf-implements: TLMD_257
+    // sokf-implements: MD-6_AC-10
+    fn label_problem(
+        &self,
+        block: &Block,
+        rule: Option<&Unit>,
+        text: &str,
+        bare: &str,
+        found: Option<&crate::grammar::Found>,
+    ) -> Problem {
+        if self.labels.is_empty() || !carries_labels(block.kind) {
+            return None;
+        }
+        let listed = self.labels.listed();
+        match (block.label_of(rule), found) {
+            (Some(Label::Required), None) => Some(format!(
+                "the example `{text}` carries no label, and its rule requires one: {listed}"
+            )),
+            (None, Some(f)) => Some(format!(
+                "the example `{bare}` carries the label `[{}]`, and its rule declares no `label`",
+                f.words
+            )),
+            (Some(_), Some(f)) if !self.labels.accepts(&f.words) => Some(format!(
+                "the label `[{}]` of the example `{bare}` is none of the labels of the schema: {listed}",
+                f.words
+            )),
+            _ => None,
+        }
+    }
+
+    /// The example `text` of a unit of `block` against `rule`, as `unit`
+    /// holds it, read without its label, and then its label.
+    fn unit(&self, block: &Block, rule: &Unit, text: &str, lines: bool) -> Problem {
+        if lines {
+            return unit(self.schema, rule, text, &squash(text), lines);
+        }
+        let (bare, found) = self.label_of(block, Some(rule), text);
+        // A failure quotes the text that its column counts in.
+        let shown = if found.is_some() { bare.as_str() } else { text };
+        unit(self.schema, rule, shown, &bare, lines)
+            .or_else(|| self.label_problem(block, Some(rule), text, &bare, found.as_ref()))
+    }
 }
 
 /// A unit rule's example against that rule's text constraints. A guard
 /// comes first: a rule governs what it selects, so an example the guard
-/// passes over stands for a unit the rule never reads.
-fn unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
-    let squashed = squash(text);
+/// passes over stands for a unit the rule never reads. `lines` says that
+/// the example stands for a line of a fence or of an HTML block. `bare` is
+/// the example squashed, without its label, which the rule reads.
+fn unit(schema: &Schema, rule: &Unit, text: &str, bare: &str, lines: bool) -> Problem {
+    let squashed = bare.to_string();
     if let Some(select) = &rule.select
         && !select.is_match(&squashed)
     {
@@ -400,14 +504,23 @@ fn unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
     {
         return Some(format!("the example `{text}` {}", shape.failure(&squashed)));
     }
-    if let Some(reason) = refused(&squashed, &rule.prohibited_patterns, None) {
+    // The example stands for a unit, so the bans of its rule and of its
+    // format leave out its code spans, as a unit's do; a line holds none.
+    // sokf-implements: TLMD_111
+    let format = rule.format_in(&schema.core.formats);
+    let code = if lines || !rule.bans_in(&schema.core.formats) {
+        Vec::new()
+    } else {
+        markdown::code_spans_in(&squashed)
+    };
+    let masked = markdown::mask_code(&squashed, &code);
+    if let Some(reason) =
+        refused_masked(&squashed, &masked, &rule.prohibited_patterns, "line", None)
+    {
         return Some(format!("the example `{text}` is refused: {reason}"));
     }
     if let Some(name) = &rule.format {
-        match rule
-            .format_in(&schema.core.formats)
-            .map(|f| (f, f.check(&squashed)))
-        {
+        match format.map(|f| (f, f.check_masked(&squashed, &masked, "line"))) {
             Some((_, FormatMatch::Fail(reason) | FormatMatch::Refused(reason))) => {
                 return Some(format!("the example `{text}` {reason}"));
             }
@@ -430,10 +543,12 @@ fn unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
     None
 }
 
-/// The example `text` of a unit rule against the rule's `key-derives-from`.
-fn derived_unit(schema: &Schema, rule: &Unit, text: &str) -> Problem {
+/// The example `text` of a unit of `block` that `rule` governs against
+/// the rule's `key-derives-from`, read without its label in `words`.
+fn derived_unit(schema: &Schema, words: &Words, block: &Block, rule: &Unit, text: &str) -> Problem {
     let kd = rule.key_derives_from.as_ref()?;
-    derived(schema, kd, rule.key_in(&schema.core.formats, &squash(text)))
+    let (bare, _) = schema.unlabelled(words, block, Some(rule), text);
+    derived(schema, kd, rule.key_in(&schema.core.formats, &bare))
 }
 
 /// The key of an example, `key`, against the example of the parent that

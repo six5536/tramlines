@@ -447,4 +447,40 @@ sections:
         lang: any
         guidance: A code block is an example. It shows a rule and adds none.
         example: "line-limit: 0"
+  - heading: "11. Labels"
+    level: 2
+    rule-id: section-11
+    blocks-ordered: false
+    blocks:
+      - kind: prose
+        optional: true
+        repeat: true
+        guidance: The prose is informative and explains a rule. A sentence that says what has to be true is a criterion, not prose.
+        each:
+          pattern: '.'
+          prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
+          example: 'The engine reads a schema before any document that it governs.'
+      - kind: bullet-list
+        optional: true
+        repeat: true
+        guidance: >
+          A list holds criteria, or it is a named list in place of a table. A named list
+          describes one thing in each item: its name in backticks, then what it is. A sentence
+          before the list says what the list contains. Two lists in a row read as one list, so
+          a paragraph or an example separates them.
+        rules:
+          - format: tlmd-criterion
+            unique: repository
+            min: 0
+            example: 'TLMD_110 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+          - template: '`${}` - ${}'
+            min: 0
+            prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
+            example: '`text` - The exact text of a unit.'
+      - kind: code
+        optional: true
+        repeat: true
+        lang: any
+        guidance: A code block is an example. It shows a rule and adds none.
+        example: "line-limit: 0"
 ````

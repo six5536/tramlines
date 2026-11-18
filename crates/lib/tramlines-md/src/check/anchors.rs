@@ -1,11 +1,12 @@
 //! The anchor each key needs (TLMD_104 to TLMD_109), against the anchors the
 //! body holds.
 //! A key has one anchor, named by its slug: on the heading that captures it,
-//! where one does, else on the capture that defines it.
+//! where one does, else on the capture that defines it. An anchor that names
+//! no key stays where it stands while a unit that breaks its rule holds it.
 
 use std::collections::{BTreeMap, HashSet};
 
-use super::{Capture, Checker, Placement, Spot};
+use super::{Broken, Capture, Checker, Placement, Repair, Spot};
 use crate::{
     Finding,
     markdown::{Anchor, Body, render_anchor, slug},
@@ -101,11 +102,48 @@ fn at_spot(anchor: &Anchor, spot: Spot, body: &Body, text: &str) -> bool {
     }
 }
 
+/// Where `anchor` stands, when a unit that breaks its rule holds it: on a
+/// line of the unit's text, or on the line of anchors before the block of
+/// a line of a fence. No unit holds the slug of a heading, which already
+/// names the heading.
+fn held(anchor: &Anchor, broken: &[&Broken], body: &Body, text: &str) -> Option<Spot> {
+    if body.headings.iter().any(|h| h.slug == anchor.id) {
+        return None;
+    }
+    broken.iter().find_map(|b| match b {
+        Broken::Text(lines) | Broken::Beyond(lines)
+            if !anchor.alone && lines.contains(&anchor.line) =>
+        {
+            Some(Spot::Inline(anchor.line, anchor.col))
+        }
+        Broken::Before(line) if at_spot(anchor, Spot::Before(*line), body, text) => {
+            Some(Spot::Before(*line))
+        }
+        _ => None,
+    })
+}
+
+/// The records of the units that break their rules, less those of the
+/// units that a repair rewrites to the text of their rule, which section 7
+/// of the specification says break no rule. The final repairs decide,
+/// whether the check recorded a unit before or after its repair. A repair
+/// rewrites a heading, a paragraph, or an item, and the record of a
+/// paragraph or an item holds the lines of its text. Content beyond the
+/// text outlasts the repair, so its record stays.
+fn unrepaired<'a>(broken: &'a [Broken], repairs: &[Repair]) -> Vec<&'a Broken> {
+    let rewritten: HashSet<usize> = repairs.iter().map(|r| r.line).collect();
+    broken
+        .iter()
+        .filter(|b| !matches!(b, Broken::Text(lines) if rewritten.contains(lines.start())))
+        .collect()
+}
+
 /// Compare the anchors the body holds with those its keys need, report
 /// each difference, and keep what the repair writes.
 // sokf-implements: TLMD_109
+// sokf-implements: TLMD_139
 pub(super) fn check(c: &mut Checker<'_>) {
-    let wanted = placements(&c.out.captures);
+    let mut wanted = placements(&c.out.captures);
     let body = c.doc.body;
     let text = c.doc.text;
     let mut findings = Vec::new();
@@ -150,6 +188,10 @@ pub(super) fn check(c: &mut Checker<'_>) {
         }
     }
     let wanted_ids: HashSet<&str> = wanted.iter().map(|p| p.id.as_str()).collect();
+    let broken = unrepaired(&c.broken, &c.out.repairs);
+    // The anchors that units which break their rules hold, which the
+    // repair writes again where they stand.
+    let mut kept = Vec::new();
     for (i, a) in body.anchors.iter().enumerate() {
         if claimed.contains(&i) {
             continue;
@@ -167,6 +209,28 @@ pub(super) fn check(c: &mut Checker<'_>) {
             // the anchor.
             if captured_here(true) {
                 stale = true;
+                continue;
+            }
+            // A unit that breaks its rule captures no key until its text
+            // passes, so the anchor waits for the key where it stands.
+            if let Some(spot) = held(a, &broken, body, text) {
+                // One copy stays, as for an anchor whose key is captured.
+                if kept.iter().any(|k: &Placement| k.id == a.id) {
+                    fail(
+                        &mut findings,
+                        a.line,
+                        format!(
+                            "the anchor `#{}` occurs more than once; its repair keeps one",
+                            a.id
+                        ),
+                    );
+                    continue;
+                }
+                kept.push(Placement {
+                    id: a.id.clone(),
+                    key: a.id.clone(),
+                    spot,
+                });
                 continue;
             }
             fail(
@@ -200,6 +264,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
     }
     // sokf-implements: MD-4_AC-9
     c.out.anchors_stale = stale || !findings.is_empty();
+    // sokf-implements: MD-4_AC-8
+    wanted.extend(kept);
     c.out.anchors = wanted;
     // A scaffold carries no anchors until a new document is written from it.
     // sokf-implements: MD-4_AC-5

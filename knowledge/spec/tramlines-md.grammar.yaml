@@ -40,6 +40,18 @@ schema:
       type: list
       of: prohibited-heading
       doc: Headings that are banned inside open regions.
+    labels:
+      type: list
+      of: string
+      format: slug
+      doc: >
+        The keys of the labels that a unit can carry, each a slug, such as `[human, agent]`. A label is
+        its words in square brackets followed by one space, such as `[human] `. It stands
+        straight after the key of a unit that begins with the key that its rule captures,
+        and otherwise at the start of the unit, after the box of a task item. The host
+        gives the words of each label in the language of the schema, and a label whose
+        host gives none has its key as its words. A block or a unit rule that declares
+        `label` needs this key.
 # sokf:end schema
   # sokf:begin section
   section:
@@ -77,10 +89,11 @@ schema:
         enum: [1, 2, 3, 4, 5, 6]
         doc: The heading depth.
       optional:
-        type: boolean
+        type: boolean-or-condition
         doc: >
-          Set to `true` to let the section be absent. When absent, the section is
-          required.
+          Set to `true` to let the section be absent. Set to a condition, as for `only`,
+          to let the section be absent where the document's state matches the condition
+          and require it elsewhere. When absent, the section is required.
       repeat:
         type: boolean
         doc: >
@@ -101,13 +114,15 @@ schema:
         type: string-or-list
         format: rule-id
         doc: >
-          Requires one occurrence of this section for each key that the referenced rule
-          captured, each key once. A list of rules pairs with the keys that any of them
-          captured, and a key that two of them captured needs one occurrence. The engine reads the key of each occurrence by the
-          heading's `key`, which the heading must declare. The referenced rule must
-          capture a key. A missing occurrence and an orphan are each an error that names
-          the key. Under a `parent`, the keys are those captured inside the same
-          occurrence of the parent.
+          Requires one occurrence of this section for each key filed under the
+          referenced name, each key once. The name is the `rule-id` of a section or a
+          block, or a `key-of`, and never the `rule-id` of a unit rule, which holds no
+          keys. A list of names pairs with the keys of any of them, and a key that two of
+          them hold needs one occurrence. The engine reads the key of each occurrence by
+          the heading's `key`, which the heading must declare. The referenced name must
+          hold a key. A missing occurrence and an orphan are each an error that names the
+          key. Under a `parent`, the keys are those captured inside the same occurrence of
+          the parent.
       parent:
         type: string
         format: rule-id
@@ -139,13 +154,14 @@ schema:
           Set to `false` to accept the declared blocks in any order. When absent, the
           blocks must appear in the declared order.
       only:
-        type: map
-        of: string-or-list
+        type: condition
         doc: >
-          Maps lifecycle dimensions to states. The rule applies when the document's state
-          is in the set for every dimension named. When absent, the rule always applies.
-          The engine reports on the schema a dimension or state that the lifecycle doesn't
-          declare, or `only` without a lifecycle.
+          The condition in which the rule applies: a map of lifecycle dimensions to
+          states, or a list of such maps. A map matches when the document's state is in
+          the set for every dimension that it names, and a list matches when any of its
+          maps does. When absent, the rule always applies. The engine reports on the
+          schema a dimension or state that the lifecycle doesn't declare, an empty list, a
+          dimension with no state, or `only` without a lifecycle.
       guidance:
         type: string
         doc: >
@@ -239,7 +255,7 @@ schema:
       block. A block has a kind and units: the paragraphs of prose or a blockquote, the
       items of a list, the rows of a table, or the repetitions of a group. `each` applies
       one unit rule to every unit. `sequence` applies one rule per position and fixes the
-      count. Otherwise, `min` and `max` bound the count. Generated blocks, region
+      count. Otherwise, `min` and a hard `max` bound the count. Generated blocks, region
       interiors, footnote definitions, and HTML comments are exempt from matching. Every
       rule reads the text with its generated anchors removed. The engine reports on the
       schema a key that doesn't apply to the block's kind.
@@ -268,8 +284,11 @@ schema:
           reference definitions outside the generated block. A `group` block is a
           repeating sequence of blocks.
       optional:
-        type: boolean
-        doc: Set to `true` to let the block be absent. When absent, the block is required.
+        type: boolean-or-condition
+        doc: >
+          Set to `true` to let the block be absent. Set to a condition, as for a section's
+          `only`, to let the block be absent where the document's state matches the
+          condition and require it elsewhere. When absent, the block is required.
       repeat:
         type: boolean
         doc: >
@@ -279,8 +298,11 @@ schema:
         type: integer
         doc: The minimum number of units. When absent, the minimum is one.
       max:
-        type: integer
-        doc: The maximum number of units. When absent, there is no upper bound.
+        type: object
+        of: limit
+        doc: >
+          The limit on the number of units, and what the writer does with more. When
+          absent, there is no upper bound.
       each:
         type: object
         of: unit
@@ -301,8 +323,8 @@ schema:
           the units that its shape matches, and each unit goes to the first such entry in
           order. An entry with a `select-pattern` takes the units that the guard selects
           and checks them. If it states only a guard and a count, it counts those units
-          and takes nothing. An entry with neither takes every unit. `min` and `max` bound
-          what each entry took or counted. A unit that no entry takes is an error unless
+          and takes nothing. An entry with neither takes every unit. `min` and a hard
+          `max` bound what each entry took or counted. A unit that no entry takes is an error unless
           `units-open` is set. The engine reports it against the production that it
           follows furthest.
       units-open:
@@ -363,6 +385,18 @@ schema:
         doc: >
           Set to `true` to accept inline HTML in this block's units. When absent, any HTML
           other than a comment is an error.
+      label:
+        type: string
+        enum:
+          - required
+          - optional
+        requires:
+          kind: [prose, blockquote, bullet-list, numbered-list, table]
+        doc: >
+          Whether each unit of the block carries one of the schema's `labels`: `required`
+          for a label on every unit, or `optional` for a label where the writer gives one.
+          A unit rule of the block that declares no `label` takes this one. When absent,
+          a unit carries a label only where its unit rule declares `label`.
       blocks:
         type: list
         of: block
@@ -374,11 +408,9 @@ schema:
         format: slug
         doc: >
           The name by which other rules reference this block. Its keys are the keys that
-          its units capture, except the keys of a unit rule that declares its own
-          `rule-id`.
+          its units capture, except the keys of a unit rule that declares `key-of`.
       only:
-        type: map
-        of: string-or-list
+        type: condition
         doc: As for a section's `only`.
       example:
         type: string-or-list
@@ -461,16 +493,31 @@ schema:
         type: string
         format: slug
         doc: >
-          The name by which other rules reference this rule. The keys that it captures
-          belong to it, not to the enclosing block.
+          The name of this rule. The rule's findings name the rule by it, and so do the
+          words that a host writes before the `when-at-limit` of its limit. The name
+          holds no keys, and no other rule references it, so several unit rules can
+          share it. A rule under `rules` or `lines` that declares `max` and binds no
+          format must declare one. Name it after what the rule counts, such as `wait`
+          for a rule that selects the items that begin with `wait`.
+      key-of:
+        type: string
+        format: slug
+        doc: >
+          The name of the set that the keys of this rule belong to, which a
+          `for-each-key-of` or a `key-derives-from` references. Several rules can name one
+          set, and a set that shares its name with the `rule-id` of a section or a block
+          is the set of that section or block. When absent, the keys are filed under the
+          `rule-id` of the enclosing block, else of its group, else of its section. The
+          rule must capture a key, by `key` or by its format.
       for-each-key-of:
         type: string-or-list
         format: rule-id
         doc: >
-          Requires one unit that captures each key that the referenced rule captured, each
-          key once, as a section's `for-each-key-of` pairs headings with keys. A list of
-          rules pairs with the keys that any of them captured, each key once. This rule
-          must capture a key, by `key` or by its format, and so must the referenced rule.
+          Requires one unit that captures each key filed under the referenced name, each
+          key once, as a section's `for-each-key-of` pairs headings with keys. The name
+          is the `rule-id` of a section or a block, or a `key-of`. A list of names pairs
+          with the keys of any of them, each key once. This rule must capture a key, by
+          `key` or by its format, and the referenced name must hold one.
           A missing key and an orphan are each an error that names the key. When the
           section declares a `parent`, the keys are those captured inside the same
           occurrence of the parent. Otherwise, they are the keys of the document. The
@@ -479,7 +526,23 @@ schema:
       prohibited-patterns:
         type: list
         of: prohibition
-        doc: Patterns that the unit's text must not match, each with its message.
+        doc: >
+          Patterns that the unit's text must not match, each with its message. Code spans
+          are excluded, as they are from the schema's patterns: the patterns read each one
+          as a run of backticks of the same length, so they match no word inside it. A line
+          of a fence or of an HTML block holds no code span, so the patterns read all of it.
+      label:
+        type: string
+        enum:
+          - required
+          - optional
+        requires:
+          kind: [prose, blockquote, bullet-list, numbered-list, table]
+        doc: >
+          Whether each unit that this rule governs carries one of the schema's `labels`, as
+          for a block's `label`, in place of the block's. When absent, the rule takes the
+          `label` of its block, and a position of a `sequence` takes the `label` of the
+          block's `each` before it. A line of a fence carries no label.
       optional:
         type: boolean
         doc: >
@@ -505,8 +568,8 @@ schema:
           grammar of a block's units. Each line, without its indent, is a unit of its own.
           Blank lines don't count. A line that no rule takes is an error unless
           `lines-open` is set. A rule here can't contain `lines` or `blocks`. A key
-          captured from a line belongs to the line rule's own `rule-id`, or else to the
-          enclosing block's. A rule that contains `lines` can also state an `example`.
+          captured from a line is filed under the line rule's `key-of`, or, where the
+          rule declares none, under the enclosing block's `rule-id`. A rule that contains `lines` can also state an `example`.
           That example is the whole fence: the scaffold copies it, and these rules read
           its keys out of it.
       lines-open:
@@ -532,10 +595,12 @@ schema:
           default. Write `min: 0` to govern such units without requiring one. When absent
           on a rule without a guard, the minimum is one.
       max:
-        type: integer
+        type: object
+        of: limit
         doc: >
-          Under `rules` or `lines`, the most units or lines that the rule may take or
-          count. When absent, there is no upper bound.
+          Under `rules` or `lines`, the limit on the units or lines that the rule may take
+          or count, and what the writer does with more. When absent, there is no upper
+          bound. A rule with a `max` and no `format` must declare a `rule-id`.
       example:
         type: string-or-list
         doc: >
@@ -544,7 +609,7 @@ schema:
           engine checks each text of a list against the rule, and a failure quotes the
           first. The scaffold writes one unit for each text of a list, in order, and
           copies of the last text while `min` demands more, but never more units than the
-          `max` of the rule or of the block. A rule under `rules` writes its list even
+          hard `max` of the rule or of the block. A rule under `rules` writes its list even
           with `min: 0`. In a `sequence`, a position that declares `repeat` writes the
           whole list, and any other position writes the first text. In a `code` block,
           each text is one fence, so the block declares `repeat: true`.
@@ -559,7 +624,6 @@ schema:
         required: true
         doc: The exact heading text.
       only:
-        type: map
-        of: string-or-list
+        type: condition
         doc: As for a section's `only`.
   # sokf:end prohibited-heading

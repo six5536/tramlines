@@ -166,7 +166,7 @@ A rule pairs a unit or a section with each key that another rule captures, and o
 
 ### Cause
 
-A unit rule or a section declares `for-each-key-of`, which names a rule by its `rule-id`. The engine expects one unit or section for each key that the named rule captures, and the document contains none for this key. The error is on the line that captures the key. Where the section declares a `parent`, the engine checks each occurrence of the parent on its own, and ends the message with ``under `<parent heading>` ``.
+A unit rule or a section declares `for-each-key-of`, which names a set of keys by the `rule-id` of a section or a block, or by a `key-of`. The engine expects one unit or section for each key of the set, and the document contains none for this key. The error is on the line that captures the key. Where the section declares a `parent`, the engine checks each occurrence of the parent on its own, and ends the message with ``under `<parent heading>` ``.
 
 ### Fix
 
@@ -245,7 +245,7 @@ A unit or a section names a key that its paired rule doesn't capture ([TLMD_96][
 
 ### Cause
 
-A unit rule or a section declares `for-each-key-of`, which names a rule by its `rule-id`. The unit or section captures a key that the named rule doesn't capture in the same scope. Where the section declares a `parent`, the scope is one occurrence of the parent, and the message ends with ``under `<parent heading>` ``.
+A unit rule or a section declares `for-each-key-of`, which names a set of keys by the `rule-id` of a section or a block, or by a `key-of`. The unit or section captures a key that the set doesn't hold in the same scope. Where the section declares a `parent`, the scope is one occurrence of the parent, and the message ends with ``under `<parent heading>` ``.
 
 ### Fix
 
@@ -368,22 +368,23 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TLMD_167
 
-The `for-each-key-of` of a section or a unit rule names no rule, or a rule that captures no key ([TLMD_167][sokf:tramlines:tramlines-md-spec#tlmd_167]).
+The `for-each-key-of` of a section or a unit rule names no section, block, or `key-of` that holds a key, or names the `rule-id` of a unit rule, which holds none ([TLMD_167][sokf:tramlines:tramlines-md-spec#tlmd_167]).
 
 ### Message
 
 ```text
 <file>:<line>: error[TLMD_167]: `for-each-key-of` names no rule `<rule-id>`
 <file>:<line>: error[TLMD_167]: `for-each-key-of` names rule `<rule-id>`, which captures no key
+<file>:<line>: error[TLMD_167]: `for-each-key-of` names `<rule-id>`, the `rule-id` of a unit rule, which holds no key: declare `key-of: <rule-id>` on each rule whose keys it means, or name the `key-of` that the rule declares
 ```
 
 ### Cause
 
-The error is on the schema. A pairing matches its keys with the keys of the rule that `for-each-key-of` names by its `rule-id`. No rule of the schema declares that `rule-id`, or the rule that declares it captures no key.
+The error is on the schema. A pairing matches its keys with the keys filed under the name that `for-each-key-of` holds: the `rule-id` of a section or a block, or the `key-of` of a unit rule. No section or block declares that `rule-id` and no rule declares that `key-of`, or no key is filed under the name. A unit rule's own `rule-id` only names the rule, so a pairing can't name it.
 
 ### Fix
 
-In the schema, set `for-each-key-of` to the `rule-id` of a rule that captures a key, or add `key` to the rule that it names.
+In the schema, set `for-each-key-of` to the `rule-id` of a section or a block that holds a key, or add `key` to a rule whose keys are filed under the name. Where it names the `rule-id` of a unit rule, give that rule `key-of` with the same name.
 
 ### Example
 
@@ -443,9 +444,86 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
+## TLMD_237
+
+A unit rule or a line rule declares `key-of`, but it captures no key ([TLMD_237][sokf:tramlines:tramlines-md-spec#tlmd_237]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_237]: `key-of` on a rule that captures no key: declare `key`, or bind a `format` that declares one
+```
+
+### Cause
+
+The error is on the schema. `key-of` names the set that the keys of the rule belong to, so a rule with `key-of` needs a key to file there.
+
+### Fix
+
+In the schema, add `key` to the rule, or bind a `format` that declares a key. If the rule needs no key, remove `key-of`.
+
+### Example
+
+This schema files the tools of a list under `tools`, but its rule captures no key:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Tools
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each: { pattern: '^[a-z]+$', key-of: tools, example: hammer }
+```
+
+**`note.md`**
+
+```markdown
+# Tools
+
+- hammer
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+note.yaml:7: error[TLMD_237]: `key-of` on a rule that captures no key: declare `key`, or bind a `format` that declares one
+1 error, 0 warnings
+[exit 1]
+```
+
+Capture the tool as the key:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Tools
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each: { pattern: '^(?P<tool>[a-z]+)$', key: tool, key-of: tools, example: hammer }
+```
+
+**`note.md`**
+
+```markdown
+# Tools
+
+- <a id="hammer"></a>hammer
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
 <!-- sokf:links -->
 
 [sokf:tramlines:tramlines-md-spec#tlmd_167]: /knowledge/spec/tramlines-md-spec.md#tlmd_167
+[sokf:tramlines:tramlines-md-spec#tlmd_237]: /knowledge/spec/tramlines-md-spec.md#tlmd_237
 [sokf:tramlines:tramlines-md-spec#tlmd_87]: /knowledge/spec/tramlines-md-spec.md#tlmd_87
 [sokf:tramlines:tramlines-md-spec#tlmd_90]: /knowledge/spec/tramlines-md-spec.md#tlmd_90
 [sokf:tramlines:tramlines-md-spec#tlmd_95]: /knowledge/spec/tramlines-md-spec.md#tlmd_95

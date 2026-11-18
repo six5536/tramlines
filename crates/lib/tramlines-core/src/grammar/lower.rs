@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, HashSet};
 use regex::Regex;
 
 use super::{
-    CoreSchema, DerivationSource, Example, FormatRegistry, FormatSource, Grammar, KeyDerivation,
-    LifecycleDimension, Only, RegexCache, RuleCommon, TypeRegistry,
+    Condition, CoreSchema, DerivationSource, Example, FormatRegistry, FormatSource, Grammar,
+    KeyDerivation, LifecycleDimension, Limit, LimitKind, Only, RegexCache, RuleCommon,
+    TypeRegistry,
 };
 use crate::{Finding, Problem, RepoPath, Severity, Spanned, Yaml};
 
@@ -18,6 +19,7 @@ use crate::{Finding, Problem, RepoPath, Severity, Spanned, Yaml};
 pub const CORE_SCHEMA_KEYS: &[&str] = &[
     "line-limit",
     "guidance",
+    "language",
     "lifecycle",
     "frontmatter",
     "frontmatter-open",
@@ -44,7 +46,8 @@ pub fn extensions(node: &Spanned, known: &[&str]) -> BTreeMap<String, Spanned> {
 
 /// The registry a schema sees: its own `formats` and `types` as the
 /// nearest layer on `registry`. A refusal is added to `findings`, and the
-/// schema then sees `registry` alone.
+/// schema then sees `registry` alone. A format of `registry` that a type
+/// of the schema breaks is left out, and reported at the line of the type.
 // sokf-implements: TL_34
 // sokf-implements: TL_36
 // sokf-implements: CORE-6_AC-5
@@ -76,7 +79,22 @@ pub fn lower_formats(
     );
     // sokf-implements: CORE-6_AC-6
     findings.extend(refused);
-    registry.layered(&own)
+    let (seen, broken) = registry.layered(&own);
+    let types = yaml.get("types").and_then(Spanned::as_map).unwrap_or(&[]);
+    // A format that the schema declares and that did not load has its own
+    // finding, which a finding on the farther format of that name would
+    // repeat.
+    let declared = |name: &str| yaml.get("formats").and_then(|f| f.get(name)).is_some();
+    for b in broken.iter().filter(|b| !declared(&b.name)) {
+        let line = types
+            .iter()
+            .find(|(name, _)| name.value == b.types[0])
+            .map_or(yaml.line, |(name, _)| name.line);
+        // sokf-implements: TL_140
+        // sokf-implements: CORE-6_AC-15
+        findings.extend(b.findings(schema, Some(line)));
+    }
+    seen
 }
 
 /// The keys every rule map accepts, `severity` and `only`, lowered for a
@@ -109,7 +127,7 @@ pub struct Lowerer<'a> {
     pub findings: Vec<Finding>,
     /// The `rule-id`s declared so far.
     pub rule_ids: HashSet<String>,
-    /// The lifecycle, which `only` resolves against.
+    /// The lifecycle, which each condition resolves against.
     pub lifecycle: Vec<LifecycleDimension>,
     /// The types a template of this schema is written with.
     pub types: TypeRegistry,
@@ -177,6 +195,36 @@ impl<'a> Lowerer<'a> {
         ));
     }
 
+    /// The grammar `limit` at `key` of `node`, such as a block's `max`. The
+    /// generic check has already checked the map against the grammar, so
+    /// only an empty `when-at-limit` is reported here.
+    // sokf-implements: TL_138
+    // sokf-implements: CORE-6_AC-13
+    pub fn limit(&mut self, node: &Spanned, key: &str) -> Option<Limit> {
+        let map = node.get(key)?;
+        let (kind, count) = match (usize_of(map, "soft"), usize_of(map, "hard")) {
+            (Some(n), _) => (LimitKind::Soft, n),
+            (None, Some(n)) => (LimitKind::Hard, n),
+            (None, None) => return None,
+        };
+        let when_at_limit = str_of(map, "when-at-limit").unwrap_or_default();
+        if when_at_limit.trim().is_empty() {
+            let line = map.get("when-at-limit").map_or(map.line, |w| w.line);
+            self.fail(
+                line,
+                "TL_138",
+                format!(
+                    "`when-at-limit` of `{key}` is empty: it holds the text that tells the writer what to do at the limit"
+                ),
+            );
+        }
+        Some(Limit {
+            kind,
+            count,
+            when_at_limit,
+        })
+    }
+
     /// A finding on the schema, at `line`, for `problem`.
     pub fn fail_with(&mut self, line: usize, problem: Problem) {
         self.findings
@@ -196,17 +244,60 @@ impl<'a> Lowerer<'a> {
 
     /// The `only` of a rule, resolved against the lifecycle.
     // sokf-implements: TL_19
+    pub fn only(&mut self, node: &Spanned) -> Condition {
+        match node.get("only") {
+            Some(value) => self.condition(value, "only"),
+            None => Condition::default(),
+        }
+    }
+
+    /// The `optional` of a rule that takes a boolean or a condition: `None`
+    /// where the rule is required in every state, and otherwise the
+    /// condition in which it is optional, which admits every state for
+    /// `true`.
+    // sokf-implements: CORE-6_AC-10
+    pub fn optional(&mut self, node: &Spanned) -> Option<Condition> {
+        let value = node.get("optional")?;
+        match value.as_bool() {
+            Some(true) => Some(Condition::default()),
+            Some(false) => None,
+            None => Some(self.condition(value, "optional")),
+        }
+    }
+
+    /// The condition at `value`, the value of `key`, resolved against the
+    /// lifecycle: one map, or a list of maps, as [`Condition::new`] builds
+    /// it.
     // sokf-implements: TL_20
-    pub fn only(&mut self, node: &Spanned) -> Only {
-        let mut only = Only::default();
-        let Some(map) = node.get("only") else {
-            return only;
-        };
+    // sokf-implements: TL_136
+    fn condition(&mut self, value: &Spanned, key: &str) -> Condition {
         if self.lifecycle.is_empty() {
             // sokf-implements: TL_111
-            self.fail(map.line, "TL_111", "`only` without a lifecycle");
-            return only;
+            self.fail(value.line, "TL_111", format!("`{key}` without a lifecycle"));
+            return Condition::default();
         }
+        let maps: Vec<&Spanned> = match value.as_seq() {
+            Some([]) => {
+                self.fail(
+                    value.line,
+                    "TL_136",
+                    format!("`{key}` is an empty list; give it a map of states, or a list of maps"),
+                );
+                return Condition::default();
+            }
+            Some(items) => items.iter().collect(),
+            None => vec![value],
+        };
+        let maps: Vec<Only> = maps.into_iter().map(|m| self.only_map(m, key)).collect();
+        Condition::new(maps)
+    }
+
+    /// One map of a condition, each dimension and state checked against
+    /// the lifecycle. A dimension that the lifecycle does not declare stays
+    /// in the map, which then admits no document, so that a map that names
+    /// only unknown dimensions does not admit every state.
+    fn only_map(&mut self, map: &Spanned, key: &str) -> Only {
+        let mut only = Only::default();
         for (dim, states) in map.as_map().unwrap_or(&[]) {
             let Some(dimension) = self
                 .lifecycle
@@ -214,23 +305,41 @@ impl<'a> Lowerer<'a> {
                 .find(|d| d.key == dim.value)
                 .map(|d| d.states.clone())
             else {
+                only.0.insert(
+                    dim.value.clone(),
+                    states.as_str_or_list().unwrap_or_default(),
+                );
                 self.fail(
                     dim.line,
                     "TL_20",
                     format!(
-                        "`only` names a dimension the lifecycle does not declare: `{}`",
+                        "`{key}` names a dimension the lifecycle does not declare: `{}`",
                         dim.value
                     ),
                 );
                 continue;
             };
             let admitted = states.as_str_or_list().unwrap_or_default();
+            // A dimension with no state admits no document. An undeclared
+            // dimension is reported above alone, because its states mean
+            // nothing until it is named right.
+            // sokf-implements: TL_136
+            if admitted.is_empty() && states.as_seq().is_some() {
+                self.fail(
+                    states.line,
+                    "TL_136",
+                    format!(
+                        "`{key}` lists no state for `{}`; list at least one",
+                        dim.value
+                    ),
+                );
+            }
             for s in &admitted {
                 if !dimension.contains(s) {
                     self.fail(
                         states.line,
                         "TL_20",
-                        format!("`only` names `{s}`, which is no state of `{}`", dim.value),
+                        format!("`{key}` names `{s}`, which is no state of `{}`", dim.value),
                     );
                 }
             }
@@ -337,6 +446,8 @@ impl<'a> Lowerer<'a> {
             prohibited_patterns,
             formats,
             guidance: str_of(yaml, "guidance"),
+            // sokf-implements: CORE-6_AC-16
+            language: str_of(yaml, "language"),
             examples,
             line: yaml.line,
             key_lines: yaml

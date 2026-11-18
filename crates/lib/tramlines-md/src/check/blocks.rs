@@ -1,99 +1,23 @@
 //! What a block and its units must satisfy: sequence, nested blocks,
 //! per-kind keys. Which block a position gets is `claim`.
 
+use std::{borrow::Cow, ops::Range};
+
 use super::{
-    Capture, Checker, Paired, Repair, Spot, Subject,
+    Capture, Checker, Paired, Spot, Subject,
+    bound::check_text,
     claim::check_blocks,
     rules::{check_lines, check_rules, reach},
     short,
 };
 use crate::{
     grammar::{
-        Block as Rule, Captured, FormatMatch, Lang, RuleCommon, Shape, Squashed, Text,
-        Unit as UnitRule, captured, refused_as, squash,
+        Block as Rule, Captured, FormatMatch, Lang, RuleCommon, Shape, Squashed, Unit as UnitRule,
+        captured, refused_masked,
     },
-    markdown::{Block, BlockDetail, BlockKind, Unit, host_ref},
+    markdown::{self, Block, BlockDetail, BlockKind, Unit, host_ref},
     text,
 };
-
-/// What a `text` rule expects: the literal, or the frontmatter value;
-/// `None` when the key is absent.
-fn expected_text(c: &Checker<'_>, text: &Text) -> Option<String> {
-    c.text_of(text).map(|s| squash(&s))
-}
-
-/// What precedes a unit's text on its first line: the item marker, the
-/// quote marker, the indentation; nothing for a bare paragraph.
-fn repair_prefix(c: &Checker<'_>, unit: &Unit) -> Option<String> {
-    let line = c.doc.text.lines().nth(unit.line.checked_sub(1)?)?;
-    if unit.text.is_empty() {
-        return Some(format!("{} ", line.trim_end()));
-    }
-    (0..=line.len())
-        .filter(|&i| line.is_char_boundary(i))
-        .find(|&i| {
-            let rest = line[i..].trim_end();
-            !rest.is_empty()
-                && !rest.starts_with(char::is_whitespace)
-                && unit.text.starts_with(rest)
-        })
-        .map(|i| line[..i].to_string())
-}
-
-/// The `text` rule on one unit: the finding, and the repair it
-/// applies.
-// sokf-implements: TLMD_136
-// sokf-implements: TLMD_165
-// sokf-implements: TLMD_168
-// sokf-implements: MD-4_AC-7
-fn check_text(c: &mut Checker<'_>, unit: &Unit, rule: &UnitRule) {
-    let Some(Shape::Text(text)) = &rule.shape else {
-        return;
-    };
-    let Some(expected) = expected_text(c, text) else {
-        let Text::From(key) = text else {
-            return;
-        };
-        if !c.unbound_is_own_fault(key) {
-            return;
-        }
-        c.emit(
-            &rule.common,
-            Some(unit.line),
-            "TLMD_168",
-            format!(
-                "`{}` is bound to the frontmatter `{key}`, which is absent",
-                short(&unit.text)
-            ),
-        );
-        return;
-    };
-    if squash(&unit.text) == expected {
-        return;
-    }
-    let (criterion, message) = match text {
-        Text::Literal(_) => (
-            "TL_74",
-            format!("`{}` must read `{expected}`", short(&unit.text)),
-        ),
-        Text::From(key) => (
-            "TLMD_165",
-            format!(
-                "`{}` must equal the frontmatter `{key}`: `{expected}`",
-                short(&unit.text)
-            ),
-        ),
-    };
-    c.emit(&rule.common, Some(unit.line), criterion, message);
-    if let Some(prefix) = repair_prefix(c, unit) {
-        c.out.repairs.push(Repair {
-            line: unit.line,
-            end_line: unit.end_line.max(unit.line),
-            prefix,
-            text: expected,
-        });
-    }
-}
 
 /// What one unit of a block of `kind` is called, as a failure names it;
 /// a line of a fence while the lines of a code or HTML block are checked.
@@ -144,15 +68,22 @@ pub(super) fn check_plain(c: &mut Checker<'_>, block: &Block, rule: &Rule, secti
     }
     if let Some(each) = &rule.each {
         for unit in &block.units {
-            check_unit(c, unit, each, rule, section);
+            // A unit of a sequence has its label judged by its position.
+            check_unit(c, unit, each, rule, section, rule.sequence.is_none());
         }
     }
     if let Some(rules) = &rule.rules {
         check_rules(c, block, rules, rule, section);
     }
     // A list with no unit rule declares no `blocks` for its items either.
+    // A unit of such a block carries the label that the block declares,
+    // and no other (TLMD_242).
     if rule.each.is_none() && rule.sequence.is_none() && rule.rules.is_none() {
         for unit in &block.units {
+            let read = c.read(unit, rule, None);
+            if c.check_label(unit, rule, None, &read, true) {
+                c.broke(unit);
+            }
             no_nested(c, unit, &rule.common);
         }
     }
@@ -339,7 +270,9 @@ pub(super) fn check_count(c: &mut Checker<'_>, rule: &Rule, n: usize, line: usiz
             ),
         );
     }
-    if let Some(max) = rule.max
+    // A soft limit is never checked.
+    if let Some(limit) = &rule.max
+        && let Some(max) = limit.hard()
         && n > max
     {
         // sokf-implements: TLMD_160
@@ -347,28 +280,37 @@ pub(super) fn check_count(c: &mut Checker<'_>, rule: &Rule, n: usize, line: usiz
             &rule.common,
             Some(line),
             "TLMD_160",
-            format!(
-                "the {} block allows at most {}; it has {n}",
-                rule.kind.name_in(&c.host.dialect()),
-                text::count(max, unit_of(rule.kind), noun(rule.kind))
+            text::at_limit(
+                format!(
+                    "the {} block allows at most {}; it has {n}",
+                    rule.kind.name_in(&c.host.dialect()),
+                    text::count(max, unit_of(rule.kind), noun(rule.kind))
+                ),
+                &limit.when_at_limit,
             ),
         );
     }
 }
 
-/// The frontmatter value of `key`, as text.
-/// Whether a unit satisfies a rule's shape, silently: its own shape or its
-/// format's, and the key it demands.
-fn satisfies(c: &Checker<'_>, unit: &Unit, rule: &UnitRule) -> bool {
-    let text = squash(&unit.text);
+/// Whether a unit of `block` satisfies a rule's shape, silently: its own
+/// shape or its format's, and the key it demands, read without the unit's
+/// label.
+fn satisfies(c: &Checker<'_>, unit: &Unit, rule: &UnitRule, block: &Rule) -> bool {
+    let read = c.read(unit, block, Some(rule));
+    let squashed = &read.squashed;
+    let text = squashed.text.as_str();
     if let Some(shape) = &rule.shape
-        && !shape.matches(&text, |k| c.front_value(k))
+        && !shape.matches(text, |k| c.front_value(k))
     {
         return false;
     }
     if let Some(name) = &rule.format
         && let Some(f) = c.schema.core.formats.get(name)
-        && !f.conforms(&text)
+        && !(if f.prohibited.is_empty() {
+            f.conforms(text)
+        } else {
+            f.conforms_masked(text, &ban_text(c, unit, squashed, rule))
+        })
     {
         return false;
     }
@@ -377,12 +319,54 @@ fn satisfies(c: &Checker<'_>, unit: &Unit, rule: &UnitRule) -> bool {
         && rule
             .shape
             .as_ref()
-            .and_then(|s| captured(s, k, &text))
+            .and_then(|s| captured(s, k, text))
             .is_none()
     {
         return false;
     }
     true
+}
+
+/// The text that the bans of `rule` and of its format read: `squashed`,
+/// the squashed text of `unit`, with its code spans masked where a ban
+/// reads it.
+fn ban_text<'a>(
+    c: &Checker<'_>,
+    unit: &Unit,
+    squashed: &'a Squashed,
+    rule: &UnitRule,
+) -> Cow<'a, str> {
+    if !rule.bans_in(&c.schema.core.formats) {
+        return Cow::Borrowed(&squashed.text);
+    }
+    markdown::mask_code(&squashed.text, &code_of(c, unit, squashed))
+}
+
+/// What a ban leaves out of `squashed`, the squashed text of `unit`: the
+/// byte ranges that lie in a code span, in order.
+// sokf-implements: TLMD_111
+fn code_of(c: &Checker<'_>, unit: &Unit, squashed: &Squashed) -> Vec<Range<usize>> {
+    let code = c.doc.body.code_in(unit);
+    let mut out: Vec<Range<usize>> = Vec::new();
+    if code.is_empty() {
+        return out;
+    }
+    // Both run in the order of the text, so one pass walks them together.
+    let mut k = 0;
+    for i in 0..squashed.text.len() {
+        let at = squashed.original(i);
+        while code.get(k).is_some_and(|r| r.end <= at) {
+            k += 1;
+        }
+        if code.get(k).is_none_or(|r| r.start > at) {
+            continue;
+        }
+        match out.last_mut() {
+            Some(r) if r.end == i => r.end = i + 1,
+            _ => out.push(i..i + 1),
+        }
+    }
+    out
 }
 
 /// Whether a unit's squashed `text` has the shape of `rule`: its own
@@ -419,18 +403,18 @@ fn match_units(
             // one missing, and the positions after it keep their units. A
             // unit that starts as this position's shape does is this
             // position's, written wrong.
-            let take = satisfies(c, unit, rule)
+            let take = satisfies(c, unit, rule, block)
                 || (count == 0
                     && !rule.optional
-                    && (reach(c, rule, &squash(&unit.text)) > 0
+                    && (reach(c, rule, &c.read(unit, block, Some(rule)).squashed.text) > 0
                         || !seq[pi + 1..].iter().any(|later| {
                             (later.shape.is_some() || later.format.is_some())
-                                && satisfies(c, unit, later)
+                                && satisfies(c, unit, later, block)
                         })));
             if !take {
                 break;
             }
-            check_unit(c, unit, rule, block, section);
+            check_unit(c, unit, rule, block, section, true);
             ui += 1;
             count += 1;
             if !rule.repeat {
@@ -456,6 +440,7 @@ fn match_units(
             "TLMD_161",
             format!("`{}` is beyond the sequence", short(&unit.text)),
         );
+        c.broke(unit);
     }
 }
 
@@ -501,10 +486,11 @@ fn capture(
         heading_slug: None,
         scope: rule.unique.clone(),
         rule_id: rule
-            .rule_id
-            .clone()
-            .or_else(|| block.rule_id.clone())
-            .or_else(|| c.group_rule.clone()),
+            .files_under(&[block.rule_id.as_deref(), c.group_rule.as_deref()])
+            .map(str::to_string),
+        rule_name: rule
+            .named_by(&[block.rule_id.as_deref(), c.group_rule.as_deref()])
+            .map(str::to_string),
         section,
         pairs: rule.for_each_key_of.clone().map(|with| Paired {
             with,
@@ -526,12 +512,15 @@ fn line_at(unit: &Unit, squashed: &Squashed, offset: usize) -> usize {
 // sokf-implements: TL_23
 // sokf-implements: TLMD_6
 // sokf-implements: TL_30
+/// Where several rules check the unit, only the one that takes it judges
+/// its label, which `judges_label` says.
 pub(super) fn check_unit(
     c: &mut Checker<'_>,
     unit: &Unit,
     rule: &UnitRule,
     block: &Rule,
     section: Option<usize>,
+    judges_label: bool,
 ) {
     // An item whose first line markdown reads as a block, as `- 1.` or
     // `- > note`, has no text to hold to its rule: the block where its text
@@ -540,12 +529,18 @@ pub(super) fn check_unit(
         check_nested(c, unit, rule, section);
         return;
     }
-    let squashed = Squashed::new(&unit.text);
+    // Every reading of the unit by its rule leaves out its label.
+    // sokf-implements: TLMD_248
+    let read = c.read(unit, block, Some(rule));
+    let squashed = &read.squashed;
     let text = squashed.text.as_str();
+    let reported = c.out.findings.len();
+    // Every ban of the rule and of its format reads this text.
+    let masked = ban_text(c, unit, squashed, rule);
     if c.records_accepted && accepts(c, unit_noun(c, block.kind), text, rule) {
         c.accept(rule, unit.line, unit.end_line.max(unit.line));
     }
-    check_text(c, unit, rule);
+    check_text(c, unit, rule, block, &read);
     let schema = c.schema;
     let format = rule.format_in(&schema.core.formats);
     let example = rule
@@ -557,7 +552,7 @@ pub(super) fn check_unit(
     {
         // sokf-implements: TL_74
         let line = match shape {
-            Shape::Template(t) => line_at(unit, &squashed, t.failure(text).offset),
+            Shape::Template(t) => line_at(unit, squashed, t.failure(text).offset),
             _ => unit.line,
         };
         c.emit(
@@ -576,7 +571,9 @@ pub(super) fn check_unit(
     // names in it is one the text should carry.
     let mut format_matched = rule.format.is_none();
     if let Some(name) = &rule.format {
-        let checked = format.map(|f| f.check_as(text, unit_noun(c, block.kind)));
+        // A format's bans leave out code spans, as the schema's do.
+        // sokf-implements: TLMD_111
+        let checked = format.map(|f| f.check_masked(text, &masked, unit_noun(c, block.kind)));
         format_matched = matches!(checked, Some(FormatMatch::Ok(_)));
         match checked {
             // A key the format declares is as strict as a key the rule
@@ -610,7 +607,7 @@ pub(super) fn check_unit(
                 c.emit(&rule.common, Some(unit.line), "TL_75", msg);
             }
             Some(FormatMatch::Ok(Some(got))) => {
-                let cap = capture(c, unit, &squashed, got, rule, block, section);
+                let cap = capture(c, unit, squashed, got, rule, block, section);
                 c.out.captures.push(cap);
             }
             _ => {}
@@ -629,7 +626,7 @@ pub(super) fn check_unit(
         };
         match got {
             Some(got) => {
-                let cap = capture(c, unit, &squashed, got, rule, block, section);
+                let cap = capture(c, unit, squashed, got, rule, block, section);
                 c.out.captures.push(cap);
             }
             // A text that fails its shape or its format has had its finding;
@@ -656,18 +653,34 @@ pub(super) fn check_unit(
             None => {}
         }
     }
-    // A unit's bans read the unit's text, whatever it holds, and a failure
-    // shows the rule's example beside what matched.
+    // A unit's bans read the unit's text with its code spans masked, as a
+    // format's do, and a failure shows the rule's example beside what
+    // matched, quoted from the text.
     // sokf-implements: TL_48
     // sokf-implements: TLMD_94
     // sokf-implements: TL_76
-    if let Some(reason) = refused_as(
+    // sokf-implements: TLMD_111
+    if let Some(reason) = refused_masked(
         text,
+        &masked,
         &rule.prohibited_patterns,
         unit_noun(c, block.kind),
         example.as_deref(),
     ) {
         c.emit(&rule.common, Some(unit.line), "TL_75", reason);
+    }
+    // A unit that fails its shape has its finding, so a label that it lacks
+    // is not one more (TLMD_249). A label that its repair rewrites breaks
+    // no rule, as a unit that its repair rewrites doesn't.
+    let broke = c.out.findings.len() > reported;
+    let by_label = judges_label && {
+        let shaped = has_shape(c, text, rule);
+        c.check_label(unit, block, Some(rule), &read, shaped)
+    };
+    // The blocks the item holds are units of their own, which their own
+    // checks record.
+    if broke || by_label {
+        c.broke(unit);
     }
     check_nested(c, unit, rule, section);
 }
@@ -707,6 +720,12 @@ fn no_nested(c: &mut Checker<'_>, unit: &Unit, common: &RuleCommon) {
             "the item carries content beyond its text".to_string()
         };
         c.emit(common, Some(first.line), "TLMD_162", message);
+        // No rule takes what the item holds, so no check reads it either,
+        // and a repair of the item's text leaves it.
+        c.broke_beyond_text(unit);
+        for inner in &unit.nested {
+            c.broke_block(inner);
+        }
     }
 }
 

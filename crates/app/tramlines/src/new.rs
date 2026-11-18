@@ -4,7 +4,7 @@
 use serde_json::json;
 use tramlines_md::{
     Locator, RepoPath, Severity, Yaml,
-    check::{CheckOptions, NullHost, check_against},
+    check::{CheckOptions, check_against},
     derive::{derive_one, derived_title},
     document::Document,
     edit::{apply, line_edits},
@@ -13,7 +13,12 @@ use tramlines_md::{
     text, yaml,
 };
 
-use crate::{Stop, cli::NewArgs, load};
+use crate::{
+    Stop,
+    cli::NewArgs,
+    load,
+    texts::{Texts, Words},
+};
 
 /// Print the scaffold, or one JSON object with its id and the scaffold.
 // sokf-implements: CLI-12_AC-1
@@ -23,8 +28,10 @@ pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     let engine = load::engine(args.formats.as_deref())?;
     let shown = args.schema.display().to_string();
     let schema = load::compiled(&engine, &args.schema)?;
+    let texts = Texts::load(args.texts.as_deref())?;
+    let host = Words(&texts);
     let states = states(&schema, &args.state)?;
-    let scaffold = derive_one(&schema, &states, &NullHost).map_err(|refusals| {
+    let scaffold = derive_one(&schema, &states, &host).map_err(|refusals| {
         let mut why = format!("{shown}: the schema derives no scaffold:");
         for r in refusals {
             why.push_str(&format!("\n  {shown}:{}: {}", r.line, r.what));
@@ -55,7 +62,13 @@ pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     if let Some(title) = &title {
         document = fill(&document, "title", title);
     }
-    let document = bind(&schema, &states, &load::schema_id(&args.schema), &document)?;
+    let document = bind(
+        &schema,
+        &states,
+        &host,
+        &load::schema_id(&args.schema),
+        &document,
+    )?;
     if args.json {
         let mut one = json!({});
         if let Some(id) = id.or_else(|| value_of(&document, "id")) {
@@ -240,21 +253,33 @@ fn value_of(document: &str, key: &str) -> Option<String> {
 /// that the schema refuses stops the run.
 // sokf-implements: CLI-12_AC-8
 // sokf-implements: CLI-12_AC-12
-fn bind(schema: &Schema, states: &States, id: &str, document: &str) -> Result<String, Stop> {
+fn bind(
+    schema: &Schema,
+    states: &States,
+    host: &Words<'_>,
+    id: &str,
+    document: &str,
+) -> Result<String, Stop> {
     let check = |text: &str| {
         let parsed = Document::parse(RepoPath::root(), text, &Dialect::default());
         let out = check_against(
             parsed.view(),
             schema,
             states,
-            &NullHost,
+            host,
             CheckOptions { scaffold: true },
             Locator::schema(id),
         );
         (parsed, out)
     };
     let (parsed, out) = check(document);
-    let edits = line_edits(&parsed.text, &parsed.segments, &out.repairs, None);
+    let edits = line_edits(
+        &parsed.text,
+        &parsed.segments,
+        &out.repairs,
+        &out.label_repairs,
+        None,
+    );
     let bound = if edits.is_empty() {
         document.to_string()
     } else {

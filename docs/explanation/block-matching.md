@@ -90,7 +90,7 @@ When a block meets a position of its kind, the position checks it and either cla
 
 **A required position that occurs once claims its block, whatever the check reports.** The schema requires the block, so tramlines takes a block of that kind in that place as the required block, even when it's malformed. The errors land on that block, at its lines.
 
-**An optional, repeating, or group position claims a block only when the check reports no error.** When the check fails, the position releases the block. The engine throws away what the check found and offers the block to the later positions that declare its kind. When the check reports only warnings, the position still claims the block.
+**An optional, repeating, or group position claims a block only when the check reports no error.** When the check fails, the position releases the block. The engine throws away what the check found and offers the block to the later positions that declare its kind. When the check reports only warnings, the position still claims the block. It also claims the block when its only errors are units that don't fit within a hard `max`, because a limit never decides which position takes a block. A hard `max` of zero is the exception: it bans what it counts, so the position refuses the block.
 
 The second rule lets a schema declare two positions of one kind that differ by their rules. This schema allows an optional tip before a required warning, and both are blockquotes:
 
@@ -157,7 +157,7 @@ The claim test is the same whether the section fixes the block order or sets `bl
 
 A `group` repeats a sequence of blocks as one unit, such as a step and its quote, then the next step and its quote. A group always repeats. It takes every repetition it can, and its `min` and `max` bound how many.
 
-When a repetition is incomplete, the engine releases every block that the repetition claimed, so that later positions can take them. When releasing the blocks would hide the cause, the engine keeps them in the group and reports why the repetition failed. That happens in three cases: the group needs the repetition to reach its `min`, no later position takes the opening block of the repetition, or the group's own rule accepted that opening block. When a block fits an inner block other than the first, and no later position takes it, the engine reads it as a repetition whose opening blocks are missing. The error names the missing kind.
+When a repetition is incomplete, the engine releases every block that the repetition claimed, so that later positions can take them. When releasing the blocks would hide the cause, the engine keeps them in the group and reports why the repetition failed. That happens in three cases: the group needs the repetition to reach its `min` and the repetition isn't the first of an optional group, no later position takes the opening block of the repetition, or the group's own rule accepted that opening block. When a block fits an inner block other than the first, and no later position takes it, the engine reads it as a repetition whose opening blocks are missing. The error names the missing kind.
 
 This schema describes a method as steps. Each step is a paragraph followed by a quote with a tip:
 
@@ -172,12 +172,16 @@ sections:
       - kind: group
         blocks:
           - kind: prose
-            max: 1
+            max:
+              hard: 1
+              when-at-limit: 'Start the next step with its own Step line.'
             each:
               template: 'Step ${:int}: ${}'
               example: 'Step 1: whisk the eggs into the flour.'
           - kind: blockquote
-            max: 1
+            max:
+              hard: 1
+              when-at-limit: 'Put further tips in a section of their own.'
             example: Use a fork if you have no whisk.
 ```
 
@@ -225,9 +229,9 @@ pancakes.md:7: error[TLMD_69]: expected a prose block; found a blockquote block 
 
 ## Extents: dividing a run between rules
 
-Some runs of units are one block even when the schema declares separate positions for them. Consecutive paragraphs are one prose block, and two consecutive lists with the same marker are one list. When a section declares two or more positions of that kind in a fixed order, the positions divide the run between them. A `group` that opens and closes with a position of that kind counts its next repetition as one more position, so its repetitions divide a run too. A `group` that opens with a position of that kind counts as one more position, whatever closes it. Sometimes the block after the run fits such a group only after the group's opening, such as a code block after the sentence that introduces it. The run then leaves to the group the units that the group's opening needs.
+Some runs of units are one block even when the schema declares separate positions for them. Consecutive paragraphs are one prose block, and two consecutive lists with the same marker are one list. When a section declares two or more positions of that kind in a fixed order, the positions divide the run between them. A `group` that opens and closes with a position of that kind counts its next repetition as one more position, so its repetitions divide a run too. A `group` that opens with a position of that kind counts as one more position, whatever closes it. Sometimes the block after the run fits such a group only after the group's opening, such as a code block after the sentence that introduces it. The run then leaves to the group the units at its end that have the shape of the group's opening, such as a sentence that ends with a colon. Where the opening has no shape, the run leaves it nothing.
 
-The first position takes its extent. The extent is the longest run of units that passes the position's rule with no error, within its `min` and `max`. The next position starts where the first one stops. When a unit is left over after the last position that allows it, tramlines reports the unit at its own line. An optional block between the two positions doesn't change the division of the run. A position with no `max` and no shape takes the whole run. So tramlines can't derive a scaffold from a schema that puts another position of the same kind directly after it, and reports [TLMD_149][sokf:errors-scaffolds#tlmd_149].
+The first position takes its extent. The extent is the longest run of units that passes the position's rule with no error, other than units that don't fit within a hard `max`. Only the text of the units decides where a position ends: no `min` or `max` does. The next position starts where the first one stops. When a unit is left over after the last position that takes the run, tramlines reports the unit at its own line. An optional block between the two positions doesn't change the division of the run. A position whose units have no shape takes the whole run. So tramlines can't derive a scaffold from a schema that puts another position of the same kind after it with only optional positions between, and reports [TLMD_149][sokf:errors-scaffolds#tlmd_149]. To keep paragraphs apart when their text has no shape, put each under a heading of its own.
 
 This schema gives a recipe a paragraph that states how many people the recipe serves, then its method:
 
@@ -240,16 +244,17 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 2
         each:
           template: 'Serves ${:int}.'
           example: Serves 4.
       - kind: prose
-        max: 2
+        max:
+          hard: 2
+          when-at-limit: 'Put a longer method in a section of its own.'
         example: Whisk the eggs into the flour.
 ```
 
-The first position allows two paragraphs. The second paragraph isn't a serving line, so the extent of the first position is one paragraph. The second position takes the other two:
+The second paragraph isn't a serving line, so the extent of the first position is one paragraph. The second position takes the other two:
 
 **`pancakes.md`**
 
@@ -268,7 +273,7 @@ $ tramlines validate --schema recipe.yaml pancakes.md
 0 errors, 0 warnings
 ```
 
-A fourth paragraph is beyond the last position's `max`. tramlines reports it at its line, as a unit that remains after the last prose position:
+A fourth paragraph has no shape that stops the second position, so the second position takes it too. Its hard `max` doesn't divide the run, and tramlines reports the block as too long:
 
 **`pancakes.md`**
 
@@ -286,12 +291,12 @@ Serve warm.
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-pancakes.md:9: error[TLMD_50]: `Serve warm.` remains after the last prose position that takes the run (schema recipe, section "Pancakes")
+pancakes.md:5: error[TLMD_160]: the prose block allows at most 2 paragraphs; it has 3. When at the limit: Put a longer method in a section of its own. (schema recipe, section "Pancakes" block 2)
 1 error, 0 warnings
 [exit 1]
 ```
 
-A required position that occurs once claims its block, whatever the check reports. When no extent passes such a position, the position takes the longest extent that its bounds allow and reports the errors in that extent. A document that passes under the bounds alone never fails because of this division.
+A required position that occurs once claims its block, whatever the check reports. When no extent passes such a position, the position takes the whole run, less what a later group's opening takes, and reports the errors in that extent. A count never decides where a position ends.
 
 The division applies only to `prose`, `bullet-list`, and `numbered-list` blocks, only where the block order is fixed, and only where the section declares two or more positions of the kind. With `blocks-ordered: false`, a run is never divided.
 

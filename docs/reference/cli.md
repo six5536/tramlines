@@ -50,6 +50,7 @@ Options:
       --schema <FILE>   The schema file, in YAML
       --formats <FILE>  A file of line formats and types that the schema can use
       --format <NAME>   Read every document in this format, whatever its extension: `md`
+      --texts <FILE>    A file of the words of each label and each limit's count, by language
       --fix             Repair the headings and anchors that the schema derives, then check
       --json            One JSON object on stdout instead of text
       --query <EXPR>    A JMESPath expression applied to the JSON object. Requires --json
@@ -61,8 +62,9 @@ Options:
 - `--schema <FILE>`: the schema. The filename without its extension is the schema id, which each error message includes.
 - `--formats <FILE>`: a file with a `registry` map of line formats and an optional `types` map. A format or type that the schema defines replaces one of the same name in this file.
 - `--format <NAME>`: the format of every document. Without it, the command picks the format of each document from its extension.
+- `--texts <FILE>`: a file of texts, which gives the words of each label, as [The words of a label](#the-words-of-a-label) describes. Pass the file that `tramlines new` takes, so that a document that it starts passes.
 - `<DOC>`: a document to check. `-` reads one document from standard input. It needs `--format`, and the report names the document `-`. The command reads standard input once, so `-` can appear only once.
-- `--fix`: the command repairs the parts that the schema derives before it checks a document. These parts are a heading that repeats a frontmatter value, a heading listed in `renamed-from`, a paragraph or item bound to a frontmatter key, and the anchor of each key. The command writes a file only when the repairs change it. It keeps the file's line endings and its byte order mark. It reads every document before it writes any, so a file that can't be read stops the run with no file changed. With `-`, the command prints the repaired document on stdout and the report on stderr. It refuses `--json` and `--github` with `-`.
+- `--fix`: the command repairs the parts that the schema derives before it checks a document. These parts are a heading that repeats a frontmatter value, a heading listed in `renamed-from`, a paragraph or item bound to a frontmatter key, the anchor of each key, and a label written as its key where the file of texts gives other words for it. The command writes a file only when the repairs change it. It keeps the file's line endings and its byte order mark. It reads every document before it writes any, so a file that can't be read stops the run with no file changed. With `-`, the command prints the repaired document on stdout and the report on stderr. It refuses `--json` and `--github` with `-`.
 - `--warnings`: list each warning in the report. Without it, the count line counts the warnings, and no line lists them.
 - `--json`, `--query <EXPR>`, `--github`: the form of the report, which [Report forms](#report-forms) describes.
 
@@ -161,6 +163,7 @@ Usage: tramlines new [OPTIONS] --schema <FILE>
 Options:
       --schema <FILE>      The schema file, in YAML
       --formats <FILE>     A file of line formats and types that the schema can use
+      --texts <FILE>       A file of the words of each label and each limit's count, by language
       --slug <SLUG>        Fills the `slug` hole of the id template
       --id <ID>            The id, for a template with a `seq` hole or for no template
       --title <TEXT>       The title. Default: the words of the slug, or of the id
@@ -169,6 +172,7 @@ Options:
   -h, --help               Print help
 ```
 
+- `--texts <FILE>`: a file of the texts for the lead of each limit and the words of each label, as [The words of a limit](#the-words-of-a-limit) and [The words of a label](#the-words-of-a-label) describe.
 - `--state <KEY>=<STATE>`: the state of one lifecycle dimension, repeated for each dimension that you name. A dimension that you don't name takes its first state. The scaffold contains the parts that the states need, and no `only` marker.
 - `--slug <SLUG>`: fills the `slug` hole of the `id` template. A template with a `seq` hole needs the whole id from `--id`, because the number depends on the documents around the new one.
 - `--id <ID>`: the id, which must match the `id` template when the schema has one.
@@ -176,6 +180,91 @@ Options:
 - `--json`: one JSON object, with the `id` and the `document`, instead of the document.
 
 The command rewrites each heading, paragraph, and item that the schema binds to the id or the title. It stops with exit code 2 if the new document fails the schema.
+
+### The words of a limit
+
+The guidance line of a part with a limit holds a lead before the limit's `when-at-limit`. The lead states the count of the limit and what it counts, in the `language` of the schema. The command has English words of its own, which serve `en` and a tag such as `en-GB`:
+
+- A hard limit: `At most 9 items. Never leave out or merge content to stay within the count. When at the limit:`
+- A soft limit: `Usually up to 1 paragraph. Never leave out or merge content to stay within the count. When at the limit:`
+- A hard limit of 0: `No items. Instead:`
+- A line rule that binds the format `node`: ``At most 9 `node` lines. Never leave out or merge content to stay within the count. When at the limit:``
+- A unit rule with the `rule-id` `wait`: ``At most 1 `wait` item. Never leave out or merge content to stay within the count. When at the limit:``
+
+Where the schema declares no `language`, or the command has no words for its language, the line holds the limit in the syntax of the schema, such as `` `hard: 9`, `when-at-limit`: ``, before the `when-at-limit`.
+
+`--texts <FILE>` names a file of texts in another language, or in English to replace the command's own words. The file is YAML: a map from each language tag to its texts. It has the shape of sokf's file of texts, so that one file can serve both tools. Each language holds these texts:
+
+- `limit`: `hard` and `soft`, each a template with `{count}` and, where it names the unit, `{unit}`, and `ban`, the template for a hard limit of 0, which needs no placeholder but can hold `{count}` and `{unit}`.
+- `rule-unit`: the unit of a rule that binds a format or has a `rule-id`, a template with `{name}` and `{unit}`, such as `` `{name}` {unit} ``.
+- `units`: the two forms of each unit, `one` for a count of 1 and `other` for any other count and for a ban. The units are `paragraph`, `item`, `row`, `line`, `fence`, `image`, `definition`, `repetition`, `value`, and `unit`.
+
+A text of the file for `en` replaces the same text of the command's English. The texts of another language serve that language alone: a German schema never takes the English words. The command looks a text up by the schema's tag, ignoring case, then by the tag with its last subtags removed, one at a time, so a schema in `de-CH` takes the texts of `de`. A limit keeps the syntax of the schema where the texts lack its template in that language, or the unit or the `rule-unit` that the template needs. The command ignores each entry that it doesn't use, such as sokf's `description`. It stops with exit code 2 on a file that isn't a map of language tags, and on a text of the wrong shape or with the wrong placeholders, and names the file and the line.
+
+This schema declares German, and the file gives the German texts:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+language: de
+sections:
+  - heading: Notiz
+    level: 1
+    blocks:
+      - kind: prose
+        max:
+          soft: 1
+          when-at-limit: Jede Aufgabe gehört in die folgende Liste.
+        example: Der Wasserkocher muss entkalkt werden.
+      - kind: bullet-list
+        max:
+          hard: 3
+          when-at-limit: Weitere Aufgaben gehören in die nächste Notiz.
+        each:
+          template: 'Aufgabe: ${}'
+          example: 'Aufgabe: den Wasserkocher entkalken.'
+```
+
+**`texts.yaml`**
+
+```yaml
+de:
+  limit:
+    hard: "Höchstens {count} {unit}. An der Grenze:"
+    soft: "Meist bis zu {count} {unit}. An der Grenze:"
+    ban: "Keine {unit}. Stattdessen:"
+  rule-unit: "{unit} `{name}`"
+  units:
+    paragraph: { one: Absatz, other: Absätze }
+    item: { one: Punkt, other: Punkte }
+```
+
+```console
+$ tramlines new --schema note.yaml --texts texts.yaml
+# Notiz
+
+<!-- tramlines:guidance Meist bis zu 1 Absatz. An der Grenze: Jede Aufgabe gehört in die folgende Liste. -->
+Der Wasserkocher muss entkalkt werden.
+
+<!-- tramlines:guidance Höchstens 3 Punkte. An der Grenze: Weitere Aufgaben gehören in die nächste Notiz. -->
+- Aufgabe: den Wasserkocher entkalken.
+```
+
+### The words of a label
+
+A schema that declares `labels` marks units with labels, such as `[human]`, as [Label the units of a part][sokf:how-to-label-units] describes. The command has no words of its own for a label, so each label has its key as its words, as in `[human]`. To write a label in the `language` of the schema, give its words in the entry `labels` of that language in the file of texts: a map from the key of each label to its words. The command looks the words up as it looks up a text of a limit. It stops with exit code 2 on an entry `labels` that isn't a map, and on words that aren't a string, hold a placeholder, are blank, hold a square bracket, or begin with `^`. The command names no label for a new document, so each unit takes the label of its example, or else the first label of the schema.
+
+**`texts.yaml`**
+
+```yaml
+de:
+  labels:
+    human: Mensch
+    agent: KI
+```
+
+With this file, a German schema accepts `[Mensch]` and `[KI]`, and `tramlines validate --fix` writes `[Mensch]` in place of `[human]`.
 
 ## tramlines info
 
@@ -199,6 +288,7 @@ The JSON Schema checks the keys and the types of their values. The command check
 
 <!-- sokf:links -->
 
+[sokf:how-to-label-units]: /docs/how-to/label-units.md
 [sokf:how-to-repair-and-start-documents]: /docs/how-to/repair-and-start-documents.md
 [sokf:tramlines:tramlines-spec#tl_90]: /knowledge/spec/tramlines-spec.md#tl_90
 [sokf:tramlines:tramlines-spec#tl_91]: /knowledge/spec/tramlines-spec.md#tl_91

@@ -23,6 +23,7 @@
     "verify-version": "node scripts/verify-version.mjs"
   },
   "devDependencies": {
+    "@six5536/sokf": "0.2.0",
     "@types/node": "^26.1.2"
   }
 }

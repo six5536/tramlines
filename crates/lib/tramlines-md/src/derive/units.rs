@@ -14,7 +14,7 @@ impl Deriver<'_> {
     /// list, in order, and no more units than the `max` of the rule or of
     /// the block allows.
     pub(super) fn units_of(&mut self, block: &Block) -> Vec<String> {
-        let cap = block.max.unwrap_or(usize::MAX);
+        let cap = block.hard_max().unwrap_or(usize::MAX);
         let mut out: Vec<String> = Vec::new();
         if let Some(sequence) = &block.sequence {
             for rule in sequence {
@@ -43,7 +43,8 @@ impl Deriver<'_> {
             {
                 if let Some(paired) = self.paired_units(block, rule) {
                     for text in paired {
-                        self.record_capture(block, rule, &text);
+                        let bare = self.unlabel(block, Some(rule), text.clone()).0;
+                        self.record_capture(block, rule, &bare);
                         self.fit_columns(block, Some(rule), &text);
                         out.push(text);
                     }
@@ -53,8 +54,13 @@ impl Deriver<'_> {
                 // guard selects: it reads its keys out of them, and they count
                 // toward what it writes (TLMD_199).
                 // sokf-implements: TLMD_199
+                // The guard reads each unit without its label (TLMD_248).
                 let selected: Vec<String> = match &rule.select {
-                    Some(guard) => out.iter().filter(|u| guard.is_match(u)).cloned().collect(),
+                    Some(guard) => out
+                        .iter()
+                        .map(|u| self.read_as(block, rule, u))
+                        .filter(|u| guard.is_match(u))
+                        .collect(),
                     None => Vec::new(),
                 };
                 for text in &selected {
@@ -83,7 +89,8 @@ impl Deriver<'_> {
             && let Some(paired) = self.paired_units(block, rule)
         {
             for text in paired {
-                self.record_capture(block, rule, &text);
+                let bare = self.unlabel(block, Some(rule), text.clone()).0;
+                self.record_capture(block, rule, &bare);
                 self.fit_columns(block, Some(rule), &text);
                 out.push(text);
             }
@@ -129,10 +136,16 @@ impl Deriver<'_> {
                 return text;
             }
         }
-        let mut text = self.unit_text_at(block, rule, i);
+        // The rule reads the text without its label, which the scaffold
+        // writes again once the key is settled.
+        let text = self.unit_text_at(block, rule, i);
+        let (mut text, carried) = self.unlabel(block, rule, text);
         if let Some(r) = rule {
             text = self.derived_key(r, text);
             self.record_capture(block, r, &text);
+        }
+        text = self.relabel(block, rule, text, &carried);
+        if let Some(r) = rule {
             // A list item carries its nested blocks beyond its own text,
             // indented to the column of that text.
             // sokf-implements: MD-7_AC-5
@@ -143,12 +156,12 @@ impl Deriver<'_> {
                 _ => None,
             };
             if let (Some(indent), Some(inner)) = (indent, r.blocks.as_deref()) {
-                // The nested blocks are written apart, so they meet only
-                // one another, and the blocks around the list never see them.
+                // The nested blocks are written apart, and the kind of the
+                // first of them says how the item's text ends.
                 let mut nested = Vec::new();
                 let around = std::mem::take(&mut self.kinds);
                 self.blocks(Some(inner), &mut nested);
-                let first = self.kinds.first().map(|(kind, ..)| *kind);
+                let first = self.kinds.first().copied();
                 self.kinds = around;
                 while nested.last().is_some_and(String::is_empty) {
                     nested.pop();
@@ -249,7 +262,7 @@ impl Deriver<'_> {
 fn wanted(rule: &Unit, block: &Block) -> usize {
     rule.min
         .max(listed(Some(rule), block))
-        .min(rule.max.unwrap_or(usize::MAX))
+        .min(rule.hard_max().unwrap_or(usize::MAX))
 }
 
 /// The number of texts that the `example` list of a rule gives its units,

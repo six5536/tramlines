@@ -20,7 +20,10 @@ meta:
     frontmatter decides: a repair rewrites the body to match it, and the body of a new
     document takes its values from the frontmatter of that document. A
     `text-or-rule` value is either a `text` or one instance of the rule map that `of`
-    names.
+    names. A `condition` value is a map of lifecycle dimensions to a state or a list of
+    states, or a list of such maps. A map matches when the document's state is in the
+    set for every dimension that it names, and a list matches when any of its maps does.
+    A `boolean-or-condition` value is `true`, `false`, or a `condition`.
   types:
     - string
     - integer
@@ -32,6 +35,8 @@ meta:
     - string-or-map
     - text
     - text-or-rule
+    - condition
+    - boolean-or-condition
   keys:
     type:
       doc: The type of the value, one of the types listed above.
@@ -50,7 +55,8 @@ meta:
     format:
       doc: >
         A scalar shape or a reference. The shapes are `regex`, a regular expression in the Rust
-        dialect, and `slug`, lowercase letters and digits joined by single hyphens. A
+        dialect, `slug`, lowercase letters and digits joined by single hyphens, and
+        `language-tag`, a language tag in the syntax of BCP 47, such as `en` or `de-CH`. A
         reference must resolve. The references are `rule-id`, a rule in the same schema,
         and `format-name`, a format in the shared registry or in the schema's `formats`.
     requires:
@@ -98,15 +104,23 @@ schema:
     guidance:
       type: string
       doc: >
-        What the schema states that no example can show. The engine writes it into the
-        scaffold after the sentence that every scaffold opens with. No failure prints it.
+        What the schema states that no example can show. The engine opens the body of the
+        scaffold with it. No failure prints it.
+    language:
+      type: string
+      format: language-tag
+      doc: >
+        The language of the schema's text, as a BCP 47 tag, such as `en` or `de`. The
+        engine gives the tag to the host, which words each limit and each label in that
+        language. The engine writes no words of its own: where the host gives none, it
+        writes the limit in the syntax of the schema, and a label as its key.
     lifecycle:
       type: list
       of: lifecycle-dimension
       doc: >
         The states that the documents of the schema move through, with one entry per dimension, in
         order. Each dimension is a required frontmatter enum. Don't repeat it under
-        `frontmatter`. A dimension is what `only` can name. The engine derives one
+        `frontmatter`. A dimension is what a condition can name. The engine derives one
         scaffold for each combination of states.
     frontmatter:
       type: map
@@ -126,8 +140,9 @@ schema:
       of: prohibition
       doc: >
         Patterns that no body line may match, each with the message that states its rule. Fenced blocks, code spans, and the interiors
-        of regions are excluded. A unit rule and a format take the same key, which then
-        applies to the text that they govern instead.
+        of regions are excluded: the patterns read each code span as a run of backticks of
+        the same length, so they match no word inside it. A unit rule and a format take the
+        same key, which then applies to the text that they govern instead.
     formats:
       type: map
       of: format
@@ -213,8 +228,8 @@ schema:
         type: boolean
         doc: >
           Set to `true` when the value is a list. Then `const`, `pattern`, `enum`, and
-          `format` apply to every element, and `min` and `max` bound the number of
-          elements. A scalar where a list is declared, or a list where none is declared,
+          `format` apply to every element, and `min` and a hard `max` bound the number
+          of elements. A scalar where a list is declared, or a list where none is declared,
           is an error.
       min:
         type: integer
@@ -222,17 +237,19 @@ schema:
           - list
         doc: The minimum number of elements. When absent, there is no lower bound.
       max:
-        type: integer
+        type: object
+        of: limit
         requires:
           - list
-        doc: The maximum number of elements. When absent, there is no upper bound.
+        doc: >
+          The limit on the number of elements, and what the writer does with more. When
+          absent, there is no upper bound.
       optional:
         type: boolean
         doc: Set to `true` to let the key be absent. When absent, the key is required.
       only:
-        type: map
-        of: string-or-list
-        doc: Maps lifecycle dimensions to states, as on every rule that takes `only`.
+        type: condition
+        doc: The condition in which the key applies, as on every rule that takes `only`.
       example:
         type: string
         doc: The key's value, or one element of it when `list` is declared.
@@ -242,6 +259,38 @@ schema:
           What an example can't show about this key. The engine writes it into the
           scaffold as a YAML comment line before the key.
   # sokf:end frontmatter-constraint
+  # sokf:begin limit
+  limit:
+    doc: >
+      How many units, lines, or elements a part holds at most, and what the writer does
+      with more. A `soft` limit is the usual length: the engine never checks it, and
+      caps nothing by it, such as the number of units that a scaffold writes. A `hard`
+      limit is checked, and a part that holds more is an error. The engine writes
+      `when-at-limit` into the part's guidance line in the scaffold, after the part's
+      own guidance and the words that the host gives for the limit. Where the host
+      gives none, the engine writes the limit in the syntax of the schema, such as
+      `` `hard: 9`, `when-at-limit`: ``. The engine also returns `when-at-limit` with
+      the limit to a host that asks for the part's guidance. A finding on a part that
+      holds more than a hard limit quotes `when-at-limit` after the engine's own words.
+    exactly-one-of:
+      - soft
+      - hard
+    keys:
+      soft:
+        type: integer
+        doc: The number that the part usually holds at most. The engine never checks it.
+      hard:
+        type: integer
+        doc: The number that the part holds at most. A part that holds more is an error.
+      when-at-limit:
+        type: string
+        required: true
+        doc: >
+          What the writer does with the content that doesn't fit within the limit, such
+          as "Put the detail in the sections that follow." or "Put each further list in a
+          section of its own." Without such a text, the writer compresses the content to
+          fit. An empty text is an error.
+  # sokf:end limit
   # sokf:begin lifecycle-dimension
   lifecycle-dimension:
     doc: One ordered dimension of a lifecycle.
@@ -324,7 +373,12 @@ schema:
       prohibited-patterns:
         type: list
         of: prohibition
-        doc: Patterns that no bound line may match, checked after the shape, each with its message.
+        doc: >
+          Patterns that no bound line may match, checked after the shape, each with its
+          message. Code spans are excluded, as they are from the schema's patterns: the
+          patterns read each one as a run of backticks of the same length, so they match
+          no word inside it. A line of a fence or of an HTML block holds no code span, so
+          the patterns read all of it.
       example:
         type: string
         doc: >
@@ -385,7 +439,9 @@ schema:
       rule:
         type: string
         format: rule-id
-        doc: The rule whose keys are the allowed prefixes.
+        doc: >
+          The name of the set of keys that are the allowed prefixes. In a markdown
+          schema, it is the `rule-id` of a section or a block, or a `key-of`.
       from:
         type: string
         doc: The frontmatter key whose value is the only allowed prefix.

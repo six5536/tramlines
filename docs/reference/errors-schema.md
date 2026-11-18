@@ -102,6 +102,9 @@ A value of the schema doesn't have the type that the grammar defines for its key
 <file>:<line>: error[TL_101]: `<key>` items must be integers
 <file>:<line>: error[TL_101]: `<key>` items must be booleans
 <file>:<line>: error[TL_101]: `<key>` values must be strings or lists of strings
+<file>:<line>: error[TL_101]: `<key>` must be a map of states, or a list of such maps
+<file>:<line>: error[TL_101]: `<key>` must be `true`, `false`, a map of states, or a list of such maps
+<file>:<line>: error[TL_101]: `<key>` items must be maps of states
 <file>:<line>: error[TL_101]: `types` must be a map of types
 <file>:<line>: error[TL_101]: type `<name>` must be a regex or a list of choices
 <file>:<line>: error[TL_101]: type `<name>`: a list of choices holds one or more non-empty strings
@@ -169,17 +172,18 @@ A value of the schema has the right type, but it isn't one of the values that it
 ```text
 <file>:<line>: error[TL_102]: `<key>` must be one of <values>; `<value>` is not
 <file>:<line>: error[TL_102]: `<key>` must be a slug: `<value>` is not
+<file>:<line>: error[TL_102]: `<key>` must be a BCP 47 language tag, such as `en` or `de-CH`: `<value>` is not
 <file>:<line>: error[TL_102]: type `<name>` must be named by a slug
 <file>:<line>: error[TL_102]: template `<template>`: `seq-width` must be positive
 ```
 
 ### Cause
 
-Some keys take only a value from a list, such as `kind`, which names a kind of block. Others, such as `rule-id` and the name of a type, take only a slug: a string of lowercase letters, digits, and hyphens. A `seq-width` must be 1 or more.
+Some keys take only a value from a list, such as `kind`, which names a kind of block. Others, such as `rule-id` and the name of a type, take only a slug: a string of lowercase letters, digits, and hyphens. The `language` of a schema takes only a language tag in the syntax of BCP 47, such as `en`, `de-CH`, or `zh-Hant-TW`. A `seq-width` must be 1 or more.
 
 ### Fix
 
-Change the schema. Write one of the values that the message lists, write the value or the name of the type as a slug, or set `seq-width` to 1 or more.
+Change the schema. Write one of the values that the message lists, write the value or the name of the type as a slug, write the `language` as a language tag, or set `seq-width` to 1 or more.
 
 ### Example
 
@@ -521,7 +525,7 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TL_15
 
-Two rules of the schema declare the same `rule-id` ([TL_15][sokf:tramlines:tramlines-spec#tl_15]).
+Two sections or blocks of the schema declare the same `rule-id` ([TL_15][sokf:tramlines:tramlines-spec#tl_15]).
 
 ### Message
 
@@ -531,7 +535,7 @@ Two rules of the schema declare the same `rule-id` ([TL_15][sokf:tramlines:traml
 
 ### Cause
 
-Other rules refer to a rule by its `rule-id`, so each `rule-id` must name exactly one rule. The message names the id, on the line of the second rule that declares it.
+Other rules refer to a section or a block by its `rule-id`, so each such `rule-id` must name exactly one section or block. A unit rule's or a line rule's `rule-id` only names the rule, so several unit rules can share one. The message names the id, on the line of the second rule that declares it.
 
 ### Fix
 
@@ -603,15 +607,20 @@ A regular expression in the schema, or the expression that a template compiles t
 <file>:<line>: error[TL_118]: `<key>` is not a valid regex: <reason>
 <file>:<line>: error[TL_118]: type `<name>`: not a valid regex: <reason>
 <file>:<line>: error[TL_118]: template `<template>` does not compile: <reason>
+<file>:<line>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer: template `<template>` does not compile: <reason>
+<file>:<line>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the types `<type>`, `<type>` of this layer: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer and the type `<type>` of `<host file>`: template `<template>` does not compile: <reason>
 ```
 
 ### Cause
 
 The command reads each regular expression in the Rust dialect. That dialect has no lookaround, such as `(?=…)` or `(?<!…)`, and no backreference, such as `\1`. A `pattern`, a `select-pattern`, a `source-pattern`, an entry of `prohibited-patterns`, or a type doesn't compile if it uses either of these or isn't a valid regular expression at all. The `<reason>` comes from the regular expression library. For a template or a pattern of a format, the message starts with ``format `<format>`: ``, and for a variant, with ``format `<format>`: variant `<variant>`: ``.
 
+A type of the schema can also break a format of a farther layer, such as the formats file. The format compiles again against the type of the schema, and a long type in a template with many holes can exceed the size limit of a regular expression. The error then lies on the schema, at the line of the type, and names the format, the layer of the format, and the type. The command checks no line against the format ([TL_140][sokf:tramlines:tramlines-spec#tl_140]). A program that embeds the engine with a pack layer reports the last form of the message: a type of a pack breaks a shared format, a type of the program's own formats file also differs from the shared type and leaves the format broken, and the error lies on the file of the pack and names the program's file.
+
 ### Fix
 
-Change the schema. Correct the syntax that the `<reason>` names. Rewrite lookaround or a backreference without it: a word boundary `\b` or a character class often does the same work.
+Change the schema. Correct the syntax that the `<reason>` names. Rewrite lookaround or a backreference without it: a word boundary `\b` or a character class often does the same work. For a type that breaks a format of a farther layer, give the type a shorter bound, such as `\w{1,40}`, or rename it, so that the format keeps the type of its own layer.
 
 ### Example
 
@@ -671,4 +680,5 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-spec#tl_12]: /knowledge/spec/tramlines-spec.md#tl_12
 [sokf:tramlines:tramlines-spec#tl_13]: /knowledge/spec/tramlines-spec.md#tl_13
 [sokf:tramlines:tramlines-spec#tl_14]: /knowledge/spec/tramlines-spec.md#tl_14
+[sokf:tramlines:tramlines-spec#tl_140]: /knowledge/spec/tramlines-spec.md#tl_140
 [sokf:tramlines:tramlines-spec#tl_15]: /knowledge/spec/tramlines-spec.md#tl_15

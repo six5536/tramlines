@@ -2,175 +2,13 @@
 type: ErrorReference
 id: errors-lifecycle-and-ids
 title: 'Errors: lifecycle and ids'
-description: The errors that tramlines reports for the lifecycle of a schema, for the rules that it gates, and for the id template.
+description: The errors that tramlines reports for the lifecycle of a schema and for the id template.
 order: 13
 ---
 
 # Errors: lifecycle and ids
 
-These errors come from the lifecycle of a schema, from the `only` of a rule, and from the template of the `id` key. Sections 3 and 6 of the core specification define these errors.
-
-## TL_20
-
-The `only` of a rule names a lifecycle dimension or a state that the schema doesn't declare ([TL_20][sokf:tramlines:tramlines-spec#tl_20]).
-
-### Message
-
-```text
-<file>:<line>: error[TL_20]: `only` names a dimension the lifecycle does not declare: `<dimension>`
-<file>:<line>: error[TL_20]: `only` names `<state>`, which is no state of `<dimension>`
-```
-
-### Cause
-
-The key `only` restricts a rule to some states of a document. Each key of `only` is the `key` of a dimension under `lifecycle`, and each value is one of the `states` of that dimension.
-
-### Fix
-
-Change the schema. Correct the dimension or the state in `only`, or add it to the `lifecycle`.
-
-### Example
-
-This rule names a state `drafted`, which the lifecycle doesn't declare:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-lifecycle:
-  - key: status
-    states: [draft, done]
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-  - heading: Open questions
-    level: 2
-    only: { status: [drafted] }
-    blocks: []
-```
-
-**`note.md`**
-
-```markdown
----
-status: draft
----
-
-# Note
-
-## Open questions
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-note.yaml:11: error[TL_20]: `only` names `drafted`, which is no state of `status`
-1 error, 0 warnings
-[exit 1]
-```
-
-Name the state as the lifecycle does:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-lifecycle:
-  - key: status
-    states: [draft, done]
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-  - heading: Open questions
-    level: 2
-    only: { status: [draft] }
-    blocks: []
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-0 errors, 0 warnings
-```
-
-## TL_111
-
-A rule declares `only`, and the schema declares no lifecycle ([TL_111][sokf:tramlines:tramlines-spec#tl_111]).
-
-### Message
-
-```text
-<file>:<line>: error[TL_111]: `only` without a lifecycle
-```
-
-### Cause
-
-The key `only` restricts a rule to some states of a document, and the `lifecycle` of a schema declares those states. A schema without a `lifecycle` declares no states for `only` to name.
-
-### Fix
-
-Change the schema. Declare the dimension that `only` names under `lifecycle`, or remove `only` from the rule.
-
-### Example
-
-This schema gates a section on `status`, but declares no lifecycle:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-  - heading: Open questions
-    level: 2
-    only: { status: [draft] }
-    blocks: []
-```
-
-**`note.md`**
-
-```markdown
----
-status: draft
----
-
-# Note
-
-## Open questions
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-note.yaml:8: error[TL_111]: `only` without a lifecycle
-1 error, 0 warnings
-[exit 1]
-```
-
-Declare the lifecycle:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-lifecycle:
-  - key: status
-    states: [draft, done]
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-  - heading: Open questions
-    level: 2
-    only: { status: [draft] }
-    blocks: []
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-0 errors, 0 warnings
-```
+These errors come from the lifecycle of a schema and from the template of the `id` key. Section 6 of the core specification defines these errors.
 
 ## TL_58
 
@@ -765,13 +603,11 @@ $ tramlines validate --schema note.yaml note.md
 <!-- sokf:links -->
 
 [sokf:errors-schema#tl_103]: /docs/reference/errors-schema.md#tl_103
-[sokf:tramlines:tramlines-spec#tl_111]: /knowledge/spec/tramlines-spec.md#tl_111
 [sokf:tramlines:tramlines-spec#tl_112]: /knowledge/spec/tramlines-spec.md#tl_112
 [sokf:tramlines:tramlines-spec#tl_114]: /knowledge/spec/tramlines-spec.md#tl_114
 [sokf:tramlines:tramlines-spec#tl_115]: /knowledge/spec/tramlines-spec.md#tl_115
 [sokf:tramlines:tramlines-spec#tl_116]: /knowledge/spec/tramlines-spec.md#tl_116
 [sokf:tramlines:tramlines-spec#tl_122]: /knowledge/spec/tramlines-spec.md#tl_122
-[sokf:tramlines:tramlines-spec#tl_20]: /knowledge/spec/tramlines-spec.md#tl_20
 [sokf:tramlines:tramlines-spec#tl_58]: /knowledge/spec/tramlines-spec.md#tl_58
 [sokf:tramlines:tramlines-spec#tl_59]: /knowledge/spec/tramlines-spec.md#tl_59
 [sokf:tramlines:tramlines-spec#tl_95]: /knowledge/spec/tramlines-spec.md#tl_95

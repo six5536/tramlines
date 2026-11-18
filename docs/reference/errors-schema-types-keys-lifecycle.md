@@ -501,22 +501,24 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TL_117
 
-A `key-derives-from` names a rule or a frontmatter key that the schema doesn't declare ([TL_117][sokf:tramlines:tramlines-spec#tl_117]).
+A `key-derives-from` names a rule or a frontmatter key that the schema doesn't declare, a rule that holds no key, or the `rule-id` of a unit rule, which holds none ([TL_117][sokf:tramlines:tramlines-spec#tl_117]).
 
 ### Message
 
 ```text
 <file>:<line>: error[TL_117]: `key-derives-from` names no rule `<rule-id>`
 <file>:<line>: error[TL_117]: `key-derives-from` names no frontmatter key `<key>`
+<file>:<line>: error[TL_117]: `key-derives-from` names rule `<rule-id>`, which captures no key
+<file>:<line>: error[TL_117]: `key-derives-from` names `<rule-id>`, the `rule-id` of a unit rule, which holds no key: declare `key-of: <rule-id>` on each rule whose keys it means, or name the `key-of` that the rule declares
 ```
 
 ### Cause
 
-`key-derives-from: { rule: <rule-id>, separator: <separator> }` checks each key against the keys of the rule with that `rule-id`. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` checks it against the value of that frontmatter key. The schema declares no rule or frontmatter key of that name.
+`key-derives-from: { rule: <rule-id>, separator: <separator> }` checks each key against the keys filed under that name: the keys of the section or the block with that `rule-id`, and of each rule with that `key-of`. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` checks it against the value of that frontmatter key. The schema declares no rule or frontmatter key of that name, or no key is filed under the name.
 
 ### Fix
 
-Change the schema. Correct the name in `key-derives-from`, or declare the rule or the frontmatter key that it names.
+Change the schema. Correct the name in `key-derives-from`, or declare the rule or the frontmatter key that it names. Where it names the `rule-id` of a unit rule, give that rule `key-of` with the same name.
 
 ### Example
 
@@ -663,7 +665,7 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TL_98
 
-A rule or a frontmatter key declares a `min` greater than its `max` ([TL_98][sokf:tramlines:tramlines-spec#tl_98]).
+A rule or a frontmatter key declares a `min` greater than the count of its `max` ([TL_98][sokf:tramlines:tramlines-spec#tl_98]).
 
 ### Message
 
@@ -673,7 +675,7 @@ A rule or a frontmatter key declares a `min` greater than its `max` ([TL_98][sok
 
 ### Cause
 
-`min` and `max` bound how many units a block or a rule takes or counts, or how many elements a frontmatter list contains. When `min` is larger than `max`, no count meets both bounds. No document can then satisfy the rule.
+`min` and `max` bound how many units a block or a rule takes or counts, or how many elements a frontmatter list contains. When `min` is larger than the count of a hard `max`, no count meets both bounds, and no document can then satisfy the rule. When `min` is larger than the count of a soft `max`, every writer is told to stop short of the minimum.
 
 ### Fix
 
@@ -695,7 +697,10 @@ sections:
         rules:
           - template: '${:slug}'
             min: 2
-            max: 1
+            rule-id: grocery
+            max:
+              hard: 1
+              when-at-limit: 'Put further items in a second note.'
             example: milk
 ```
 
@@ -714,7 +719,7 @@ note.yaml:8: error[TL_98]: `min` 2 is above `max` 1
 [exit 1]
 ```
 
-Set `min` to a value no higher than `max`:
+Set `min` to a value no higher than the count of `max`:
 
 **`note.yaml`**
 
@@ -728,7 +733,10 @@ sections:
         rules:
           - template: '${:slug}'
             min: 1
-            max: 2
+            rule-id: grocery
+            max:
+              hard: 2
+              when-at-limit: 'Put further items in a second note.'
             example: milk
 ```
 

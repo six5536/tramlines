@@ -156,7 +156,7 @@ pancakes.md:4: error[TLMD_53]: `Fry the batter.` matches no rule of the block; d
 [exit 1]
 ```
 
-Keep a guard for a rule that picks its units by something other than its shape, such as a list item picked by its label to check its nested list, or a counter that bans a line.
+Keep a guard for a rule that picks its units by something other than its shape, such as a list item picked by the word that it begins with to check its nested list, or a counter that bans a line.
 
 ## Lookaround in a regular expression
 

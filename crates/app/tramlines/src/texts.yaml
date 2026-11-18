@@ -1,0 +1,27 @@
+# The tramlines command's own texts in English. The file that `--texts`
+# names gives the texts of another language in the same shape, and can
+# replace any entry of this file. sokf's file of texts has the same shape.
+# The command holds no words for a label, whose key is its words: a file
+# of texts gives them under `labels`, a map from each key to its words.
+en:
+  # The words before the `when-at-limit` of a limit.
+  limit:
+    hard: "At most {count} {unit}. Never leave out or merge content to stay within the count. When at the limit:"
+    soft: "Usually up to {count} {unit}. Never leave out or merge content to stay within the count. When at the limit:"
+    # A hard limit of 0.
+    ban: "No {unit}. Instead:"
+  # The unit of a rule that binds a format or has a `rule-id`.
+  rule-unit: "`{name}` {unit}"
+  # What a limit counts: `one` for a count of 1, `other` for any other
+  # count and for a ban.
+  units:
+    paragraph: { one: paragraph, other: paragraphs }
+    item: { one: item, other: items }
+    row: { one: row, other: rows }
+    line: { one: line, other: lines }
+    fence: { one: fence, other: fences }
+    image: { one: image, other: images }
+    definition: { one: definition, other: definitions }
+    repetition: { one: repetition, other: repetitions }
+    value: { one: value, other: values }
+    unit: { one: unit, other: units }

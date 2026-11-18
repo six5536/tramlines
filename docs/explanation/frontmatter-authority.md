@@ -39,7 +39,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          hard: 1
+          when-at-limit: 'Put the rest of the recipe in the sections that follow.'
         each: { text: { from: description } }
 ```
 

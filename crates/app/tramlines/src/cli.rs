@@ -58,6 +58,10 @@ pub struct ValidateArgs {
     /// Read every document in this format, whatever its extension: `md`.
     #[arg(long, value_name = "NAME")]
     pub format: Option<String>,
+    /// A file of the words of each label and each limit's count, by language.
+    // sokf-implements: CLI-17_AC-4
+    #[arg(long, value_name = "FILE")]
+    pub texts: Option<PathBuf>,
     /// The documents to check; `-` reads one from standard input. Without
     /// a document, the command checks the schema alone.
     #[arg(value_name = "DOC")]
@@ -93,6 +97,9 @@ pub struct NewArgs {
     /// A file of line formats and types that the schema can use.
     #[arg(long, value_name = "FILE")]
     pub formats: Option<PathBuf>,
+    /// A file of the words of each label and each limit's count, by language.
+    #[arg(long, value_name = "FILE")]
+    pub texts: Option<PathBuf>,
     /// Fills the `slug` hole of the id template.
     #[arg(long, value_name = "SLUG", conflicts_with = "id")]
     pub slug: Option<String>,

@@ -17,6 +17,7 @@ name = "tramlines"
 path = "src/main.rs"
 
 [dependencies]
+tramlines-core.workspace = true
 tramlines-md.workspace = true
 clap = { workspace = true }
 clap_complete.workspace = true

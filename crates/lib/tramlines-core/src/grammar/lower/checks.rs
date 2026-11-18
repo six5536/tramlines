@@ -2,7 +2,7 @@
 //! shares: the example a shape shows, and guidance that is not the example.
 
 use super::{Lowerer, list_of, str_of};
-use crate::Spanned;
+use crate::{Spanned, grammar::Limit};
 
 impl Lowerer<'_> {
     /// A rule that declares a shape shows an example of it. A regex is a
@@ -60,10 +60,10 @@ impl Lowerer<'_> {
         }
     }
 
-    /// A rule's `min` is at most its `max`.
+    /// A rule's `min` is at most the count of its `max`, soft or hard.
     // sokf-implements: TL_98
-    pub fn check_bounds(&mut self, line: usize, min: usize, max: Option<usize>) {
-        if let Some(max) = max
+    pub fn check_bounds(&mut self, line: usize, min: usize, max: Option<&Limit>) {
+        if let Some(max) = max.map(|m| m.count)
             && min > max
         {
             self.fail(line, "TL_98", format!("`min` {min} is above `max` {max}"));

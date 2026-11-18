@@ -137,7 +137,7 @@ tramlines looks up a type by its name in the following layers, the nearest first
 2. The `types` of the formats file, when `--formats` names one.
 3. The built-in types.
 
-An entry in a nearer layer replaces an entry of the same name in a farther one. tramlines builds each format of a schema with the types that the lookup finds for that schema. A schema can therefore redefine a type in a shared format.
+An entry in a nearer layer replaces an entry of the same name in a farther one. tramlines builds each format of a schema with the types that the lookup finds for that schema. A schema can therefore redefine a type in a shared format. Where the type of the schema makes a format of the formats file too large to compile, the command reports the format on the schema, at the line of the type, and checks no line against the format ([TL_140][sokf:tramlines:tramlines-spec#tl_140]).
 
 In the following example, the formats file defines the format `ingredient` and the types `unit` and `amount`. The schema adds `tsp` to `unit`, and uses `amount` from the formats file:
 
@@ -190,6 +190,7 @@ The specification defines the lookup in [TL_27][sokf:tramlines:tramlines-spec#tl
 [sokf:tramlines:tramlines-spec#tl_109]: /knowledge/spec/tramlines-spec.md#tl_109
 [sokf:tramlines:tramlines-spec#tl_118]: /knowledge/spec/tramlines-spec.md#tl_118
 [sokf:tramlines:tramlines-spec#tl_124]: /knowledge/spec/tramlines-spec.md#tl_124
+[sokf:tramlines:tramlines-spec#tl_140]: /knowledge/spec/tramlines-spec.md#tl_140
 [sokf:tramlines:tramlines-spec#tl_27]: /knowledge/spec/tramlines-spec.md#tl_27
 [sokf:tramlines:tramlines-spec#tl_28]: /knowledge/spec/tramlines-spec.md#tl_28
 [sokf:tramlines:tramlines-spec#tl_29]: /knowledge/spec/tramlines-spec.md#tl_29

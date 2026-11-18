@@ -3,15 +3,15 @@
 
 use std::borrow::Cow;
 
+pub(super) use super::trial::{Dropped, is_text_error};
 use super::{
-    Accepted, At, Checker,
+    At, Checker,
     blocks::{check_plain, has_shape},
     divide::{self, extent, extents},
-    short,
+    group, short,
 };
 use crate::{
-    Finding, Severity,
-    grammar::{Block as Rule, States, Unit as UnitRule, squash},
+    grammar::{Block as Rule, Unit as UnitRule},
     markdown::{Block, BlockKind, Unit},
 };
 
@@ -21,119 +21,82 @@ use crate::{
 /// cloned.
 pub(super) type Docs<'a> = Vec<Cow<'a, Block>>;
 
-/// The length of everything a check writes, taken before a trial.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct Savepoint {
-    findings: usize,
-    captures: usize,
-    repairs: usize,
-    gates: usize,
-    accepted: usize,
-}
-
-impl Checker<'_> {
-    /// Where the output stands now.
-    pub(super) fn save(&self) -> Savepoint {
-        Savepoint {
-            findings: self.out.findings.len(),
-            captures: self.out.captures.len(),
-            repairs: self.out.repairs.len(),
-            gates: self.out.gates.len(),
-            accepted: self.out.accepted.len(),
-        }
-    }
-
-    /// Whether an error was written since `at`. A warning is a document
-    /// that passed, so it is not one.
-    // sokf-implements: TLMD_65
-    pub(super) fn failed(&self, at: &Savepoint) -> bool {
-        self.out.findings[at.findings..]
-            .iter()
-            .any(|f| f.severity == Severity::Error)
-    }
-
-    /// Drop everything written since `at`, yielding the findings and the
-    /// records of accepted units dropped. Every list grows and none
-    /// shrinks, so savepoints nest.
-    // sokf-implements: TLMD_64
-    pub(super) fn rollback(&mut self, at: &Savepoint) -> Dropped {
-        self.out.captures.truncate(at.captures);
-        self.out.repairs.truncate(at.repairs);
-        self.out.gates.truncate(at.gates);
-        // sokf-implements: TLMD_213
-        // sokf-implements: MD-4_AC-15
-        let accepted = self.out.accepted.split_off(at.accepted);
-        Dropped {
-            findings: self.out.findings.split_off(at.findings),
-            accepted,
-        }
-    }
-
-    /// Keep what a refused position wrote after all, where the position
-    /// keeps the block: its findings, and the units its rules accepted.
-    // sokf-implements: TLMD_228
-    // sokf-implements: MD-4_AC-16
-    fn keep(&mut self, dropped: Dropped) {
-        self.out.findings.extend(dropped.findings);
-        self.out.accepted.extend(dropped.accepted);
-    }
-}
-
-/// What a rollback dropped: the findings, and the records of the units
-/// that the rules accepted.
-#[derive(Debug, Default)]
-pub(super) struct Dropped {
-    pub(super) findings: Vec<Finding>,
-    accepted: Vec<Accepted>,
-}
-
-/// The inner blocks of a group that `states` admit, in order.
-fn admitted<'r>(rule: &'r Rule, states: &States) -> impl Iterator<Item = &'r Rule> {
+/// The inner blocks of a group that the states the document could be in
+/// admit, in order.
+pub(super) fn admitted<'r>(rule: &'r Rule, c: &Checker<'_>) -> impl Iterator<Item = &'r Rule> {
+    let possible = &c.possible;
     rule.blocks
         .as_deref()
         .unwrap_or(&[])
         .iter()
-        .filter(move |b| b.common.only.admits(states))
+        .filter(move |b| b.common.only.admits(possible))
 }
 
-/// Whether `block` opens `rule`: a group opens with its first admitted
-/// inner block.
-fn matches_rule(block: &Block, rule: &Rule, states: &States) -> bool {
-    opens(rule, states) == Some(block.kind)
+/// Whether `block` opens `rule`, as [`opens`] reads it.
+pub(super) fn matches_rule(block: &Block, rule: &Rule, c: &Checker<'_>) -> bool {
+    opens_with(rule, block.kind, c)
 }
 
-/// The kind of block `rule` opens with: a group's first admitted inner
-/// block's.
-fn opens(rule: &Rule, states: &States) -> Option<BlockKind> {
+/// Whether `rule` can open with a block of `kind`, as [`opens`] reads it.
+fn opens_with(rule: &Rule, kind: BlockKind, c: &Checker<'_>) -> bool {
+    opening(rule, kind, c).is_some()
+}
+
+/// The position that opens `rule` with a block of `kind`: `rule` itself
+/// where it is no group and of that kind, else the position that an inner
+/// block that [`openers`] gives opens with, followed into a group that
+/// opens a group.
+fn opening<'r>(rule: &'r Rule, kind: BlockKind, c: &Checker<'_>) -> Option<&'r Rule> {
     if rule.kind != BlockKind::Group {
-        return Some(rule.kind);
+        return (rule.kind == kind).then_some(rule);
     }
-    admitted(rule, states)
-        .next()
-        .and_then(|first| opens(first, states))
+    openers(rule, c).find_map(|inner| opening(inner, kind, c))
+}
+
+/// The inner blocks that a group `rule` can open with: its first admitted
+/// one. Where the document's state is unknown, an inner block that its own
+/// states do not admit may be left out, so the group can also open with
+/// the inner blocks after it, up to the first that they admit (TLMD_230).
+/// A block that is no group has none.
+fn openers<'r>(rule: &'r Rule, c: &Checker<'_>) -> impl Iterator<Item = &'r Rule> {
+    let states = c.states;
+    let mut done = rule.kind != BlockKind::Group;
+    admitted(rule, c).take_while(move |inner| {
+        let take = !done;
+        done = done || inner.common.only.admits(states);
+        take
+    })
+}
+
+/// The kinds of block `rule` opens with: its own, or those of the inner
+/// blocks that [`openers`] gives for a group.
+fn opens(rule: &Rule, c: &Checker<'_>) -> Vec<BlockKind> {
+    if rule.kind != BlockKind::Group {
+        return vec![rule.kind];
+    }
+    openers(rule, c).flat_map(|inner| opens(inner, c)).collect()
 }
 
 /// The kinds of block that the positions of `rules` can open.
-fn opened(rules: &[&Rule], states: &States) -> Vec<BlockKind> {
-    rules.iter().filter_map(|r| opens(r, states)).collect()
+fn opened(rules: &[&Rule], c: &Checker<'_>) -> Vec<BlockKind> {
+    rules.iter().flat_map(|r| opens(r, c)).collect()
 }
 
 /// Whether `block` fits a group's inner block after its first: a
 /// repetition that is missing its opening blocks, such as a diagram with
 /// no caption before it.
-fn joins(block: &Block, rule: &Rule, states: &States) -> bool {
-    rule.kind == BlockKind::Group
-        && admitted(rule, states)
-            .skip(1)
-            .any(|b| matches_rule(block, b, states))
+pub(super) fn joins(block: &Block, rule: &Rule, c: &Checker<'_>) -> bool {
+    rule.kind == BlockKind::Group && admitted(rule, c).skip(1).any(|b| matches_rule(block, b, c))
 }
 
-/// The units at the end of the run at `docs[di]` that a later group needs
+/// The units at the end of the run at `docs[di]` that a later group takes
 /// for its opening: the block after the run fits that group only after its
 /// opening, and no later position takes it by itself. The group opens with
-/// the run's kind, and its opening needs at least one unit.
+/// the run's kind, and the units are those at the end of the run that have
+/// the shape of its opening position, none where the opening has no shape:
+/// a unit's own text says which position it belongs to, and no count does.
 // sokf-implements: TLMD_193
-fn reserve_for(rules: &[&Rule], ri: usize, docs: &Docs<'_>, di: usize, states: &States) -> usize {
+fn reserve_for(c: &Checker<'_>, rules: &[&Rule], ri: usize, docs: &Docs<'_>, di: usize) -> usize {
     let kind = rules[ri].kind;
     let Some(next) = docs.get(di + 1) else {
         return 0;
@@ -142,27 +105,35 @@ fn reserve_for(rules: &[&Rule], ri: usize, docs: &Docs<'_>, di: usize, states: &
         return 0;
     }
     let after = &rules[ri + 1..];
-    if after.iter().any(|r| matches_rule(next, r, states)) {
+    if after.iter().any(|r| matches_rule(next, r, c)) {
         return 0;
     }
     after
         .iter()
-        .find(|r| opens(r, states) == Some(kind) && joins(next, r, states))
-        .and_then(|g| admitted(g, states).next())
-        .map_or(0, |opening| opening.min.max(1))
+        .find(|r| opens_with(r, kind, c) && joins(next, r, c))
+        .and_then(|g| opening(g, kind, c))
+        .map_or(0, |opening| {
+            docs[di]
+                .units
+                .iter()
+                .rev()
+                .take_while(|u| shaped(c, std::slice::from_ref(u), opening) == Some(true))
+                .count()
+        })
 }
 
 /// Whether a position of this kind claims its candidate whatever it
-/// reports: the schema states the block must be there, and once.
-fn firm(rule: &Rule) -> bool {
-    !rule.optional && !rule.repeat && rule.kind != BlockKind::Group
+/// reports: the schema states the block must be there, in the states of
+/// the document, and once.
+fn firm(rule: &Rule, c: &Checker<'_>) -> bool {
+    !c.block_optional(rule) && !rule.repeat && rule.kind != BlockKind::Group
 }
 
 /// The kinds a block can hold more of than its author wrote as one: the
 /// parser gathers consecutive paragraphs into one prose block, and two
 /// lists of one marker are one list. Two quotes stay two blocks.
 // sokf-implements: TLMD_76
-pub(super) fn is_run(kind: BlockKind) -> bool {
+pub(crate) fn is_run(kind: BlockKind) -> bool {
     matches!(
         kind,
         BlockKind::Prose | BlockKind::BulletList | BlockKind::NumberedList
@@ -185,7 +156,7 @@ pub(super) fn check_blocks(
     let rules: Vec<&Rule> = match rules {
         Some(r) => r
             .iter()
-            .filter(|b| b.common.only.admits(c.states))
+            .filter(|b| b.common.only.admits(&c.possible))
             .collect(),
         None => {
             prose_only = default_prose();
@@ -220,15 +191,16 @@ fn match_free(
 ) {
     let mut used = vec![0usize; rules.len()];
     let mut di = 0;
+    let all_open = opened(rules, c);
     while di < docs.len() {
         let free: Vec<usize> = (0..rules.len())
             .filter(|&ri| {
-                matches_rule(&docs[di], rules[ri], c.states) && (used[ri] == 0 || rules[ri].repeat)
+                matches_rule(&docs[di], rules[ri], c) && (used[ri] == 0 || rules[ri].repeat)
             })
             .collect();
         let mut taken = None;
         let mut refusal = None;
-        c.later = opened(rules, c.states);
+        c.later.clone_from(&all_open);
         for ri in &free {
             // Dividing a run needs an order to divide it along, so the
             // free walk takes whole blocks (LANG-5_AC-4).
@@ -244,12 +216,15 @@ fn match_free(
             }
         }
         // Nothing clean: where a rule refused the block, the first of them
-        // takes it, so a malformed block keeps its own finding.
+        // takes it, so a malformed block keeps its own finding, with every
+        // block that the refusal covers.
+        // sokf-implements: TLMD_228
         let taken = taken.or_else(|| {
             let dropped = refusal.take()?;
             let ri = *free.first()?;
+            let blocks = dropped.blocks;
             c.keep(dropped);
-            Some((ri, 1))
+            Some((ri, blocks))
         });
         match taken {
             Some((ri, n)) => {
@@ -263,7 +238,7 @@ fn match_free(
         }
     }
     for (ri, rule) in rules.iter().enumerate() {
-        if used[ri] == 0 && !rule.optional {
+        if used[ri] == 0 && !c.block_optional(rule) {
             let at_rule = at_block(&c.at, rule);
             c.located(at_rule, |c| {
                 // sokf-implements: TLMD_152
@@ -287,6 +262,8 @@ fn match_free(
 /// its own, so it is reported at its first unit.
 // sokf-implements: TLMD_50
 fn unclaimed(c: &mut Checker<'_>, b: &Block, left_over: bool) {
+    // No rule takes the units of the block, so each breaks its rule.
+    c.broke_block(b);
     let kind = b.kind.name_in(&c.host.dialect());
     match b.units.first().filter(|_| left_over) {
         Some(first) => c.error(
@@ -305,7 +282,7 @@ fn default_prose() -> Rule {
     Rule {
         common: Default::default(),
         kind: BlockKind::Prose,
-        optional: false,
+        optional: None,
         repeat: false,
         min: 1,
         max: None,
@@ -320,6 +297,7 @@ fn default_prose() -> Rule {
         example_columns: None,
         source_pattern: None,
         inline_html: false,
+        label: None,
         blocks: None,
         rule_id: None,
         examples: Vec::new(),
@@ -335,7 +313,7 @@ fn default_prose() -> Rule {
 /// repetition is then one more position of that kind, which takes what a
 /// run leaves at the end of this one.
 #[allow(clippy::too_many_arguments)]
-fn match_sequence(
+pub(super) fn match_sequence(
     c: &mut Checker<'_>,
     rules: &[&Rule],
     docs: &mut Docs<'_>,
@@ -355,7 +333,7 @@ fn match_sequence(
     let group_opens: Vec<BlockKind> = rules
         .iter()
         .filter(|r| r.kind == BlockKind::Group)
-        .filter_map(|r| opens(r, c.states))
+        .flat_map(|r| opens(r, c))
         .collect();
     let divides = |kind: BlockKind| {
         let declared = rules.iter().filter(|r| r.kind == kind).count();
@@ -372,13 +350,13 @@ fn match_sequence(
         let mut stray = false;
         // The kinds the positions after this one open: a block of one of
         // them waits for its position.
-        let later = opened(&rules[ri + 1..], c.states);
+        let later = opened(&rules[ri + 1..], c);
         while di < docs.len() {
             // A block a later position declares waits for it; one only a
             // group's inner block fits is a repetition missing its opening.
             // sokf-implements: TLMD_72
-            let fits = matches_rule(&docs[di], rule, c.states)
-                || (joins(&docs[di], rule, c.states) && !later.contains(&docs[di].kind));
+            let fits = matches_rule(&docs[di], rule, c)
+                || (joins(&docs[di], rule, c) && !later.contains(&docs[di].kind));
             if !fits {
                 // A block of another kind. Where a position after this one
                 // declares it, the block waits for that position.
@@ -389,10 +367,10 @@ fn match_sequence(
                     // against this position and leaves the walk.
                     // sokf-implements: TLMD_169
                     if count == 0
-                        && !rule.optional
+                        && !c.block_optional(rule)
                         && rule.kind != BlockKind::Group
                         && let Some(j) = (di + 1..docs.len()).find(|&j| {
-                            matches_rule(&docs[j], rule, c.states) && !later.contains(&docs[j].kind)
+                            matches_rule(&docs[j], rule, c) && !later.contains(&docs[j].kind)
                         })
                     {
                         let block = docs.remove(j);
@@ -413,11 +391,7 @@ fn match_sequence(
                 // claims, and step over it.
                 // sokf-implements: TLMD_39
                 // sokf-implements: TLMD_68
-                if count == 0
-                    && docs[di + 1..]
-                        .iter()
-                        .any(|b| matches_rule(b, rule, c.states))
-                {
+                if count == 0 && docs[di + 1..].iter().any(|b| matches_rule(b, rule, c)) {
                     unclaimed(c, &docs[di], matches!(docs[di], Cow::Owned(_)));
                     di += 1;
                     continue;
@@ -430,12 +404,13 @@ fn match_sequence(
                 break;
             }
             c.later = later.clone();
-            c.reserve = reserve_for(rules, ri, docs, di, c.states);
+            c.reserve = reserve_for(c, rules, ri, docs, di);
             // The block as it stands before the claim cuts a run, for an
             // earlier position that may own it out of place.
-            let held = (firm(rule) && !skipped.is_empty()).then(|| docs[di].clone());
+            let firm = firm(rule, c);
+            let held = (firm && !skipped.is_empty()).then(|| docs[di].clone());
             let before = c.save();
-            let claimed = claim(c, docs, di, rule, section, firm(rule), divides(rule.kind));
+            let claimed = claim(c, docs, di, rule, section, firm, divides(rule.kind));
             c.reserve = 0;
             match claimed {
                 // A group whose `min` admits no repetition is satisfied by
@@ -501,9 +476,11 @@ fn match_sequence(
                     // it is set aside here with the reason it was refused.
                     // The positions after this one then see the blocks
                     // beyond it rather than stalling behind it.
+                    // sokf-implements: TLMD_228
+                    let blocks = dropped.blocks;
                     c.keep(dropped);
                     answered = true;
-                    di += 1;
+                    di += blocks;
                     continue;
                 }
             }
@@ -514,17 +491,21 @@ fn match_sequence(
                 break;
             }
         }
-        if count == 0 && rule.optional && rule.kind != BlockKind::Group {
+        if count == 0 && c.block_optional(rule) && rule.kind != BlockKind::Group {
             skipped.push(ri);
         }
-        if count == 0 && !rule.optional && !answered {
+        if count == 0 && !c.block_optional(rule) && !answered {
             match refusal {
                 // The position refused a block of its own kind: why it
                 // refused says more than the kind it declined. The block went
                 // on to the positions after it, so the units the position
-                // accepted are not its own.
+                // accepted are not its own. The units its findings report
+                // still break its rules.
                 // sokf-implements: TLMD_66
-                Some(dropped) => c.out.findings.extend(dropped.findings),
+                Some(dropped) => {
+                    c.out.findings.extend(dropped.findings);
+                    c.broken.extend(dropped.broken);
+                }
                 None => {
                     let (line, found) = match docs.get(di) {
                         Some(b) => (
@@ -554,6 +535,7 @@ fn match_sequence(
                     // what nobody claimed leaves it alone.
                     // sokf-implements: TLMD_70
                     if stray {
+                        c.broke_block(&docs[di]);
                         di += 1;
                     }
                 }
@@ -575,7 +557,7 @@ fn misplaced(c: &Checker<'_>, block: &Block) -> String {
 /// The first of the `skipped` positions whose block `block` is, out of
 /// place, with the number of its units that the position takes: the
 /// leading units of a run `divides` lets it divide that have the
-/// position's shape, within its `max`, else the whole block where every
+/// position's shape, whatever its `max`, else the whole block where every
 /// unit has it. The units it takes must fail `failed`, the position that
 /// claimed the block, by shape. Shapes alone decide, so a block that
 /// failed for another reason, such as a ban or a key, keeps its findings.
@@ -593,15 +575,13 @@ fn owner(
 ) -> Option<(usize, usize)> {
     skipped.iter().copied().find_map(|k| {
         let rule = rules[k];
-        if !matches_rule(block, rule, c.states) {
+        if !matches_rule(block, rule, c) {
             return None;
         }
         let take = if divides && is_run(rule.kind) {
-            let most = rule.max.unwrap_or(usize::MAX);
             block
                 .units
                 .iter()
-                .take(most)
                 .take_while(|u| shaped(c, std::slice::from_ref(u), rule) == Some(true))
                 .count()
         } else if shaped(c, &block.units, rule) == Some(true) {
@@ -627,8 +607,9 @@ fn shaped(c: &Checker<'_>, units: &[Unit], rule: &Rule) -> Option<bool> {
         return None;
     }
     Some(units.iter().all(|u| {
-        let text = squash(&u.text);
-        shapes.iter().any(|r| has_shape(c, &text, r))
+        shapes
+            .iter()
+            .any(|r| has_shape(c, &c.read(u, rule, Some(r)).squashed.text, r))
     }))
 }
 
@@ -682,91 +663,19 @@ fn claim_located(
     // A group's inner positions may divide a run, which is the one thing
     // a trial writes outside the checker's output.
     let blocks = (rule.kind == BlockKind::Group).then(|| docs.clone());
-    let n = check_block(c, docs, di, rule, section);
+    let checked = group::check_block(c, docs, di, rule, section);
+    let n = checked.taken;
     // A group that took blocks owns them and what it reports of them: the
     // repetitions it gave up were given back before it returned.
     // sokf-implements: TLMD_73
     let owns = rule.kind == BlockKind::Group && n > 0;
-    if firm || owns || !c.failed(&at) {
+    if firm || owns || !c.failed_by_text(&at) {
         return Ok(n);
     }
-    let dropped = c.rollback(&at);
+    let mut dropped = c.rollback(&at);
+    dropped.blocks = checked.covers;
     if let Some(blocks) = blocks {
         *docs = blocks;
     }
     Err(dropped)
-}
-
-/// Check one block against its rule; the number of blocks consumed. A
-/// group walks its inner rules over the blocks from `di`.
-fn check_block(
-    c: &mut Checker<'_>,
-    docs: &mut Docs<'_>,
-    di: usize,
-    rule: &Rule,
-    section: Option<usize>,
-) -> usize {
-    if rule.kind != BlockKind::Group {
-        check_plain(c, &docs[di], rule, section);
-        return 1;
-    }
-    let line = docs[di].line;
-    c.gate(&rule.common, line);
-    let inner: Vec<&Rule> = admitted(rule, c.states).collect();
-    // The group's `rule-id` names what its inner blocks capture.
-    let outer = c.group_rule.take();
-    c.group_rule = rule.rule_id.clone().or(outer.clone());
-    // What the positions after the group take, read before the inner walk
-    // sets its own.
-    let later = std::mem::take(&mut c.later);
-    let mut reps = 0;
-    let mut pos = di;
-    while pos < docs.len() {
-        let opening = inner
-            .first()
-            .is_some_and(|first| matches_rule(&docs[pos], first, c.states));
-        let claimed = later.contains(&docs[pos].kind);
-        if !opening && (claimed || !joins(&docs[pos], rule, c.states)) {
-            break;
-        }
-        let at = c.save();
-        let blocks = docs.clone();
-        let start = docs[pos].line;
-        let first = start..=docs[pos].end_line;
-        let wraps = (rule.max.is_none_or(|max| reps + 1 < max)
-            && inner.first().map(|r| r.kind) == inner.last().map(|r| r.kind))
-        .then(|| inner.first().map(|r| r.kind))
-        .flatten();
-        let n = match_sequence(c, &inner, docs, pos, section, start, wraps);
-        if n > 0 && !c.failed(&at) {
-            pos += n;
-            reps += 1;
-            continue;
-        }
-        // A repetition the group needs to reach its `min`, one whose blocks
-        // no position after it takes, and one whose opening block the group
-        // accepted, are kept with the reason they failed: the opening says
-        // whose they are.
-        // sokf-implements: TLMD_71
-        let owned = opening
-            && !c.out.findings[at.findings..].iter().any(|f| {
-                f.severity == Severity::Error && f.line.is_some_and(|l| first.contains(&l))
-            });
-        if n > 0 && (reps < rule.min || !claimed || owned) {
-            pos += n;
-            reps += 1;
-            continue;
-        }
-        // A repetition that cannot be completed is not a repetition, and
-        // a run one of its positions divided is put back together: the
-        // repetition after it would otherwise read the pieces.
-        // sokf-implements: TLMD_61
-        c.rollback(&at);
-        *docs = blocks;
-        break;
-    }
-    c.later = later;
-    c.group_rule = outer;
-    super::blocks::check_count(c, rule, reps, line);
-    pos - di
 }

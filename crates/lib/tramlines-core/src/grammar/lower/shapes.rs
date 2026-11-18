@@ -105,8 +105,9 @@ impl Lowerer<'_> {
                 }
             }
         }
+        let max = self.limit(node, "max");
         if let Some(min) = usize_of(node, "min") {
-            self.check_bounds(node.line, min, usize_of(node, "max"));
+            self.check_bounds(node.line, min, max.as_ref());
         }
         FrontmatterConstraint {
             common: self.common(node),
@@ -126,7 +127,7 @@ impl Lowerer<'_> {
             id_template,
             list: bool_of(node, "list"),
             min: usize_of(node, "min"),
-            max: usize_of(node, "max"),
+            max,
             optional: bool_of(node, "optional"),
             example: str_of(node, "example"),
             guidance: str_of(node, "guidance"),

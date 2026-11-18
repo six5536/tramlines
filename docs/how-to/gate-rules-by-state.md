@@ -235,8 +235,6 @@ state: closed
 kind: feature
 ---
 
-<!-- tramlines:guidance The writer replaces each of the following examples with their own text. -->
-
 # The parser rejects a tab
 
 A list item indented with a tab is read as a code block.
@@ -246,12 +244,97 @@ A list item indented with a tab is read as a code block.
 The parser now reads a tab as four spaces.
 ```
 
+7. To apply a rule under any of several conditions, give `only` a list of maps. The rule applies when the state of the document matches any map of the list, and each map matches as in step 2. To make a section or a block optional in some states and required in the others, give its `optional` a condition of the same form. In this schema, every bug and every closed issue includes a review. A bug includes a workaround, which is optional after the bug is closed:
+
+**`issue.yaml`**
+
+```yaml
+line-limit: 0
+lifecycle:
+  - { key: state, states: [open, closed] }
+  - { key: kind, states: [bug, feature] }
+frontmatter:
+  title:
+    example: The parser rejects a tab
+sections:
+  - heading: { from: title }
+    level: 1
+    blocks:
+      - kind: prose
+        example: A list item indented with a tab is read as a code block.
+  - heading: Workaround
+    level: 2
+    only: { kind: bug }
+    optional: { state: closed }
+    blocks:
+      - kind: prose
+        example: Indent the list item with spaces.
+  - heading: Review
+    level: 2
+    only: [{ kind: bug }, { state: closed }]
+    blocks:
+      - kind: prose
+        example: The parser reads a tab as four spaces.
+```
+
+An open bug needs both sections:
+
+**`tab.md`**
+
+```markdown
+---
+title: The parser rejects a tab
+state: open
+kind: bug
+---
+
+# The parser rejects a tab
+
+A list item indented with a tab is read as a code block.
+```
+
+```console
+$ tramlines validate --schema issue.yaml tab.md
+tab.md: error[TLMD_18]: section `## Review` is missing (schema issue, section "Review")
+tab.md: error[TLMD_18]: section `## Workaround` is missing (schema issue, section "Workaround")
+2 errors, 0 warnings
+[exit 1]
+```
+
+A closed bug needs only the review:
+
+**`tab.md`**
+
+```markdown
+---
+title: The parser rejects a tab
+state: closed
+kind: bug
+---
+
+# The parser rejects a tab
+
+A list item indented with a tab is read as a code block.
+
+## Review
+
+The parser reads a tab as four spaces.
+```
+
+```console
+$ tramlines validate --schema issue.yaml tab.md
+0 errors, 0 warnings
+```
+
+The scaffold of a closed bug writes the workaround inside an `optional` region, and the scaffold of an open bug writes it outside one.
+
 ## Troubleshooting
 
 - `TL_62`: a lifecycle key is missing. Add the key. See [TL_62][sokf:errors-frontmatter#tl_62].
 - `TL_108`: the value of a lifecycle key isn't one of its states. Set the key to one of the states that the message lists. See [TL_108][sokf:errors-frontmatter#tl_108].
-- `TL_20`: `only` names a dimension or a state that the lifecycle doesn't declare. Fix the name. See [TL_20][sokf:errors-lifecycle-and-ids#tl_20].
-- `TL_111`: a rule declares `only`, and the schema has no lifecycle. Declare the lifecycle. See [TL_111][sokf:errors-lifecycle-and-ids#tl_111].
+- `TL_20`: a condition names a dimension or a state that the lifecycle doesn't declare. Fix the name. See [TL_20][sokf:errors-conditions#tl_20].
+- `TL_111`: a rule declares a condition, and the schema has no lifecycle. Declare the lifecycle. See [TL_111][sokf:errors-conditions#tl_111].
+- `TL_136`: a condition is an empty list, or a map lists no state for a dimension. Give the list a map, or the dimension a state. See [TL_136][sokf:errors-conditions#tl_136].
 - `TL_95`: the lifecycle declares one dimension twice. Remove one. See [TL_95][sokf:errors-lifecycle-and-ids#tl_95].
 - `TL_112`: `frontmatter` declares the key of a lifecycle dimension. Remove it from `frontmatter`. See [TL_112][sokf:errors-lifecycle-and-ids#tl_112].
 - `TL_69`: an entry of `examples` fails the schema at its own states. Fix the example. See [TL_69][sokf:errors-examples#tl_69].
@@ -267,12 +350,13 @@ The parser now reads a tab as four spaces.
 
 <!-- sokf:links -->
 
+[sokf:errors-conditions#tl_111]: /docs/reference/errors-conditions.md#tl_111
+[sokf:errors-conditions#tl_136]: /docs/reference/errors-conditions.md#tl_136
+[sokf:errors-conditions#tl_20]: /docs/reference/errors-conditions.md#tl_20
 [sokf:errors-examples#tl_69]: /docs/reference/errors-examples.md#tl_69
 [sokf:errors-frontmatter#tl_108]: /docs/reference/errors-frontmatter.md#tl_108
 [sokf:errors-frontmatter#tl_62]: /docs/reference/errors-frontmatter.md#tl_62
-[sokf:errors-lifecycle-and-ids#tl_111]: /docs/reference/errors-lifecycle-and-ids.md#tl_111
 [sokf:errors-lifecycle-and-ids#tl_112]: /docs/reference/errors-lifecycle-and-ids.md#tl_112
-[sokf:errors-lifecycle-and-ids#tl_20]: /docs/reference/errors-lifecycle-and-ids.md#tl_20
 [sokf:errors-lifecycle-and-ids#tl_95]: /docs/reference/errors-lifecycle-and-ids.md#tl_95
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:explanation-strict-by-default]: /docs/explanation/strict-by-default.md

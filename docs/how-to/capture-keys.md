@@ -162,7 +162,7 @@ cart.md:14: error[TLMD_96]: section names key `CART-3`, which rule `reqs` did no
 
 8. To require an item for each key, set `for-each-key-of` on the unit rule instead. The rule must capture a key itself. A key with no item is an error, even when the whole block is absent.
 
-   A key captured from a line of a code block belongs to the `rule-id` of its line rule. When the line rule has no `rule-id`, the key belongs to the `rule-id` of the block. When two kinds of line in one block each pair with a different rule, give the unit rule or the line rule its own `rule-id`. In this example, each service of a configuration file needs an owner:
+   When its line rule declares `key-of`, a key captured from a line of a code block belongs to the set that `key-of` names. Otherwise it belongs to the `rule-id` of the block, else of its group, else of its section. When two kinds of line in one block each pair with a different set, give the unit rule or the line rule a `key-of`. A `rule-id` on a unit rule or a line rule only names the rule, and holds no key. In this example, each service of a configuration file needs an owner:
 
 **`services.yaml`**
 
@@ -223,7 +223,7 @@ $ tramlines validate --schema services.yaml services.md
 
 9. In a section that declares a `parent`, a pairing uses only the keys captured in the same occurrence of the parent, so each occurrence pairs with its own keys. Elsewhere it uses the keys of the whole document. [Describe sections and headings][sokf:how-to-describe-sections] shows `parent`.
 
-10. To pair with the keys of several rules, give `for-each-key-of` a list of `rule-id`s. Each distinct key of the rules needs one section or item. A rule that names one key on several units, such as the owner of each item, declares `key-repeats: true`. None of its captures then counts as a second capture. In this map, each group needs a design, and so does each block that provides a contract. The guarded rule `providers` reads the block from the line that the rule `contracts` takes. `Loading` is both a group and a provider, and needs one design:
+10. To pair with the keys of several rules, give `for-each-key-of` a list of names, each the `rule-id` of a section or a block, or a `key-of`. Each distinct key that the names hold needs one section or item. A rule that names one key on several units, such as the owner of each item, declares `key-repeats: true`. None of its captures then counts as a second capture. In this map, each group needs a design, and so does each block that provides a contract. The guarded rule with `key-of: providers` reads the block from the line that the rule with `key-of: contracts` takes. `Loading` is both a group and a provider, and needs one design:
 
 **`map.yaml`**
 
@@ -243,13 +243,13 @@ sections:
         rules:
           - template: "${name:slug} (${:word})"
             key: name
-            rule-id: contracts
+            key-of: contracts
             example: "format (Loading)"
           - select-pattern: '\('
             pattern: '\((?P<block>[A-Z][a-z]+)\)$'
             key: block
             key-repeats: true
-            rule-id: providers
+            key-of: providers
             min: 0
             example: "format (Loading)"
   - heading: Designs
@@ -297,7 +297,8 @@ The anchor of `Cache` sits on its first capture. The anchor of `Loading` sits on
 - `TL_31`: the `key` names no hole or named group of the shape. See [TL_31][sokf:errors-schema-types-keys-lifecycle#tl_31].
 - `TLMD_95`, `TLMD_96`: a key has no section or item that pairs with it, or a section or item names a key that the rule didn't capture. See [Errors: lines and pairings][sokf:errors-lines-and-pairings].
 - `TLMD_98`: a rule with `for-each-key-of` captures no key. See [TLMD_98][sokf:errors-lines-and-pairings#tlmd_98].
-- `TLMD_167`: a `for-each-key-of` names no rule that captures a key. See [TLMD_167][sokf:errors-lines-and-pairings#tlmd_167].
+- `TLMD_167`: a `for-each-key-of` names no section, block, or `key-of` that holds a key, or names the `rule-id` of a unit rule, which holds none. Give that rule a `key-of`. See [TLMD_167][sokf:errors-lines-and-pairings#tlmd_167].
+- `TLMD_237`: a rule with `key-of` captures no key. See [TLMD_237][sokf:errors-lines-and-pairings#tlmd_237].
 
 ## See also
 
@@ -316,6 +317,7 @@ The anchor of `Cache` sits on its first capture. The anchor of `Loading` sits on
 [sokf:errors-keys-markers-scaffolds]: /docs/reference/errors-keys-markers-scaffolds.md
 [sokf:errors-lines-and-pairings]: /docs/reference/errors-lines-and-pairings.md
 [sokf:errors-lines-and-pairings#tlmd_167]: /docs/reference/errors-lines-and-pairings.md#tlmd_167
+[sokf:errors-lines-and-pairings#tlmd_237]: /docs/reference/errors-lines-and-pairings.md#tlmd_237
 [sokf:errors-lines-and-pairings#tlmd_98]: /docs/reference/errors-lines-and-pairings.md#tlmd_98
 [sokf:errors-schema-types-keys-lifecycle#tl_31]: /docs/reference/errors-schema-types-keys-lifecycle.md#tl_31
 [sokf:errors-schema-types-keys-lifecycle#tl_33]: /docs/reference/errors-schema-types-keys-lifecycle.md#tl_33

@@ -20,11 +20,6 @@ fn heading_reader(section: &Section) -> Option<KeyReader> {
     KeyReader::of(&section.heading.shape, section.heading.key.as_deref()?)
 }
 
-/// The sentence every scaffold opens with, in the voice of the document. The
-/// scaffold is made of examples, and a model that fills it has to know that
-/// before it reads one.
-const OPENING: &str = "The writer replaces each of the following examples with their own text.";
-
 /// One `guidance` line. A marker is recognised a line at a time, so the
 /// text is joined onto one line whatever its length.
 fn guidance_line(dialect: &Dialect, text: &str) -> String {
@@ -40,21 +35,26 @@ impl Deriver<'_> {
     // sokf-implements: TLMD_114
     pub(super) fn body(&mut self) -> Vec<String> {
         let mut out = Vec::new();
-        // The scaffold says what it is before it says anything else, then
-        // what the schema says that no example can.
+        // The scaffold opens with what the schema says that no example
+        // can, in the schema's words alone, so that a schema in any
+        // language derives a scaffold wholly in that language.
         // sokf-implements: MD-7_AC-3
+        // sokf-implements: TLMD_115
         // sokf-implements: TLMD_118
-        let mut opening = match &self.schema.core.guidance {
-            Some(g) => format!("{OPENING} {g}"),
-            None => OPENING.to_string(),
-        };
         // sokf-implements: TLMD_195
-        for message in self.schema_bans() {
-            opening.push(' ');
-            opening.push_str(&message);
+        let opening = self
+            .schema
+            .core
+            .guidance
+            .iter()
+            .cloned()
+            .chain(self.schema_bans())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !opening.trim().is_empty() {
+            out.push(guidance_line(&self.dialect, &opening));
+            out.push(String::new());
         }
-        out.push(guidance_line(&self.dialect, &opening));
-        out.push(String::new());
         let schema = self.schema;
         if let Some(p) = &schema.preamble
             && p.common.only.admits(self.states)
@@ -69,7 +69,7 @@ impl Deriver<'_> {
         // sokf-implements: MD-7_AC-4
         // sokf-implements: TLMD_192
         for section in schema.sections.iter().filter(|s| s.parent.is_none()) {
-            if section.optional && !self.in_optional {
+            if section.optional_at(self.states, &self.schema.core.lifecycle) && !self.in_optional {
                 self.optional_region(&mut out, |d, out| d.section(section, out));
             } else {
                 self.section(section, &mut out);
@@ -107,7 +107,12 @@ impl Deriver<'_> {
         // a section optional still meant a reader to see it. Where a rule
         // inside offers nothing to write, the section is left out rather
         // than refused over, and the author is told which rule kept it out.
-        self.attempt(section.optional, out, |d, out| d.write_one(section, out));
+        // sokf-implements: TLMD_123
+        self.attempt(
+            section.optional_at(self.states, &self.schema.core.lifecycle),
+            out,
+            |d, out| d.write_one(section, out),
+        );
     }
 
     fn write_one(&mut self, section: &Section, out: &mut Vec<String>) {
@@ -236,7 +241,9 @@ impl Deriver<'_> {
                     }
                 }
                 Some(false) => {}
-                None if child.optional && !self.in_optional => {
+                None if child.optional_at(self.states, &self.schema.core.lifecycle)
+                    && !self.in_optional =>
+                {
                     self.optional_region(out, |d, out| d.section(child, out));
                 }
                 None => self.section(child, out),

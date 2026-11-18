@@ -392,13 +392,13 @@ A scaffold derived from the schema fails the schema ([TLMD_164][sokf:tramlines:t
 
 ### Cause
 
-Before it checks the documents, the command derives a scaffold for each combination of states and checks it against the schema. The scaffold contains every part of the schema, including each optional part that it has text for, and a rule in the schema rejects it. In the following example, the `line-limit` is too small for a document with the optional list.
+Before it checks the documents, the command derives a scaffold for each combination of states and checks it against the schema. The scaffold contains every part of the schema, including each optional part that it has text for, and a rule in the schema rejects it. In the following example, the `line-limit` is too small for a document with the optional list. A scaffold with no frontmatter whose body starts with a thematic break fails too, because its first line, `---`, reads as the start of frontmatter, as it does in each document of the schema.
 
 `<scaffold>` is `the scaffold`, or ``the scaffold derived for `<states>` `` when the schema has a lifecycle. `<key>` and `<message>` are those of the error in the scaffold. When that error has a line, `<text>` is that line of the scaffold. The error is on the line of the rule in the schema that the scaffold fails, or on the first line of the schema where no rule is to blame. The error quotes the key of the error in the scaffold. To find the rule, look up that key.
 
 ### Fix
 
-In the schema, change the rule that the quoted error names, so that a document with every allowed part can pass it.
+In the schema, change the rule that the quoted error names, so that a document with every allowed part can pass it. For a body that starts with a thematic break, declare a frontmatter key, or start the body with another block.
 
 ### Example
 
@@ -450,25 +450,25 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TLMD_149
 
-tramlines can't derive a scaffold from the schema, because two consecutive blocks of the scaffold read as one block, and the first takes all of it ([TLMD_149][sokf:tramlines:tramlines-md-spec#tlmd_149]).
+tramlines can't derive a scaffold from the schema, because a block whose units have no shape can stand directly before another block of its kind, and a document reads the two as one block, all of which the first takes ([TLMD_149][sokf:tramlines:tramlines-md-spec#tlmd_149]).
 
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_149]: the schema derives no scaffold: a `<kind>` block whose rule admits more units than the scaffold writes is followed by another `<kind>` block, which a document reads as one block, so the first takes all of it; give the first block a `max` of the units it holds
+<file>:<line>: error[TLMD_149]: the schema derives no scaffold: a `<kind>` block whose units have no shape of their own can stand directly before another `<kind>` block, which a document reads as one block, so the first takes all of it; give the units of the first block a shape that the units of the second do not have, or put the second under a heading of its own
 ```
 
 ### Cause
 
-A document reads paragraphs in a row as one prose block, and two lists of one kind as one list. When two such blocks follow each other, tramlines divides the run between their rules, and each rule takes as many units as it allows. A rule takes the whole run when two things hold: its `max` is absent or larger than the number of units that the scaffold writes for it, and its units state no shape, format, or prohibited pattern. Nothing is then left for the block after it. This happens between two blocks of a section, and between two repetitions of a `group`. The error is on the schema file, at the line of the first block.
+A document reads paragraphs in a row as one prose block, and two lists of one kind as one list. When two such blocks follow each other, tramlines divides the run between their rules by the text of the units alone: each rule takes the units that its shape accepts, and no `min` or `max` divides the run. A rule whose units state no shape, format, or prohibited pattern takes the whole run, and nothing is left for the block after it. This happens between two blocks of a section, even where only optional blocks stand between them, because a document can leave those out, and between two repetitions of a `group` that can repeat. A later group whose first block is required and has a shape, and whose second block is required and of another kind, takes the end of the run by that shape, as the sentence that ends with a colon before a worked example does, so the error doesn't arise for the block before such a group. The error is on the schema file, at the line of the first block.
 
 ### Fix
 
-In the schema, give the first block a `max` equal to the number of units that it holds, or a shape that the next block's text fails. Or put a block of another kind between the two.
+In the schema, give the units of the first block a shape that the units of the next block don't have, put the next block under a heading of its own, or make a repeated paragraph an item of a list.
 
 ### Example
 
-This schema repeats a paragraph at least twice, but the paragraph has no `max`:
+This schema repeats a paragraph at least twice, but the paragraph has no shape that ends one repetition:
 
 **`note.yaml`**
 
@@ -498,12 +498,12 @@ Buy bread.
 ```console
 $ tramlines validate --schema note.yaml note.md
 note.md:3: error[TLMD_146]: the group block needs at least 2 repetitions; it has 1 (schema note, section "Note" block 1)
-note.yaml:9: error[TLMD_149]: the schema derives no scaffold: a `prose` block whose rule admits more units than the scaffold writes is followed by another `prose` block, which a document reads as one block, so the first takes all of it; give the first block a `max` of the units it holds
+note.yaml:9: error[TLMD_149]: the schema derives no scaffold: a `prose` block whose units have no shape of their own can stand directly before another `prose` block, which a document reads as one block, so the first takes all of it; give the units of the first block a shape that the units of the second do not have, or put the second under a heading of its own
 2 errors, 0 warnings
 [exit 1]
 ```
 
-Give the paragraph a `max` of 1, so that each repetition takes one paragraph:
+Make each thing to buy an item of a list:
 
 **`note.yaml`**
 
@@ -513,12 +513,18 @@ sections:
   - heading: Note
     level: 1
     blocks:
-      - kind: group
+      - kind: bullet-list
         min: 2
-        blocks:
-          - kind: prose
-            max: 1
-            example: Buy milk.
+        example: Buy milk.
+```
+
+**`note.md`**
+
+```markdown
+# Note
+
+- Buy milk.
+- Buy bread.
 ```
 
 ```console

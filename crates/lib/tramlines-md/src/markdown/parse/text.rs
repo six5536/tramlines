@@ -55,7 +55,7 @@ impl Parser<'_> {
 }
 
 /// Strip list indentation and block-quote markers from a continuation line.
-pub(super) fn strip_prefix(line: &str) -> &str {
+pub(in crate::markdown) fn strip_prefix(line: &str) -> &str {
     let mut t = line.trim_start();
     while let Some(rest) = t.strip_prefix('>') {
         t = rest.trim_start();

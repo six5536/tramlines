@@ -73,7 +73,8 @@ fn check_document(schema: &Schema, path: &str, text: &str) -> Vec<String> {
 
 // sokf:begin repair
 /// The document with every repair of its check applied: headings bound to
-/// frontmatter, renamed and setext headings, and the anchors of its keys.
+/// frontmatter, renamed and setext headings, labels written as their keys,
+/// and the anchors of its keys.
 fn repair(schema: &Schema, text: &str) -> String {
     let dialect = Dialect::default();
     let document = Document::parse(RepoPath::root(), text, &dialect);
@@ -96,6 +97,7 @@ fn repair(schema: &Schema, text: &str) -> String {
         &document.text,
         &document.segments,
         &out.repairs,
+        &out.label_repairs,
         Some(&anchors),
     );
     apply(&document.text, &edits).expect("the edits of one check never clash")
@@ -210,7 +212,7 @@ fn layer_formats(
     // that two packs define.
     let own_path = RepoPath::parse("/formats.yaml").expect("a path");
     let host = layer(own, &own_path, FormatSource::Repo, packs.registry());
-    let (registry, said) = packs.with_host(&host);
+    let (registry, said) = packs.with_host(&host, &own_path);
     findings.extend(said);
     // The examples of each formats file are checked once, on that file.
     for ((name, _, _), (path, _)) in pack_files.iter().zip(&files) {

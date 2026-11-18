@@ -59,6 +59,76 @@ pub struct FormatRegistry {
 }
 // sokf:end format-registry
 
+// sokf:begin format-registry
+/// A format of the receiver of `layered` that no longer compiles against
+/// the types of the nearer layer, which `layered` leaves out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenFormat {
+    /// The name of the format.
+    pub name: String,
+    /// Each type of the nearer layer that the format uses and that differs
+    /// from the farther one, in the order in which its holes name them.
+    pub types: Vec<String>,
+    /// Each reason, its message naming the format, its layer, and the
+    /// types.
+    pub problems: Vec<Problem>,
+}
+// sokf:end format-registry
+
+impl BrokenFormat {
+    /// The format `name` of the layer `source`, which `types` break, with
+    /// each reason of `said`. Each line of `said` lies in the file of the
+    /// format, which no finding lies on, so the line is dropped.
+    fn of(name: &str, source: &FormatSource, types: &[&str], said: Vec<(usize, Problem)>) -> Self {
+        Self::of_layers(name, source, types, &[], &RepoPath::root(), said)
+    }
+
+    /// As `of`, where the types `host` of the host's file `path` take part
+    /// beside `types`, each group in the order of the holes, and a group
+    /// that is empty goes unnamed.
+    fn of_layers(
+        name: &str,
+        source: &FormatSource,
+        types: &[&str],
+        host: &[&str],
+        path: &RepoPath,
+        said: Vec<(usize, Problem)>,
+    ) -> Self {
+        let group = |types: &[&str], whose: &str| {
+            let quoted: Vec<String> = types.iter().map(|t| format!("`{t}`")).collect();
+            let what = if quoted.len() == 1 { "type" } else { "types" };
+            format!("the {what} {} of {whose}", quoted.join(", "))
+        };
+        let mut groups = Vec::new();
+        if !types.is_empty() {
+            groups.push(group(types, "this layer"));
+        }
+        if !host.is_empty() {
+            groups.push(group(host, &format!("`{path}`")));
+        }
+        let prefix = format!(
+            "format `{name}`: the entry of the layer `{}` no longer compiles against {}: ",
+            source.label(),
+            groups.join(" and ")
+        );
+        BrokenFormat {
+            name: name.to_string(),
+            types: types.iter().chain(host).map(|t| (*t).to_string()).collect(),
+            problems: said.into_iter().map(|(_, p)| p.prefixed(&prefix)).collect(),
+        }
+    }
+
+    /// Each reason as an error finding on `path` at `line`.
+    // sokf:begin format-registry
+    pub fn findings(&self, path: &RepoPath, line: Option<usize>) -> Vec<Finding> {
+        // sokf:end format-registry
+        self.problems
+            .iter()
+            .map(|p| p.clone().error(path.clone(), line))
+            .collect()
+    }
+}
+
 impl FormatRegistry {
     /// A host's embedded registry: the built-in types it adds, reserved as
     /// the engine's are, then the formats file `text`, whose entries are
@@ -100,7 +170,8 @@ impl FormatRegistry {
                     .join("; "),
             )
         })?;
-        Ok(base.layered(&own))
+        // The base holds no format, so no type of the file breaks one.
+        Ok(base.layered(&own).0)
     }
 
     /// Build a registry from a `registry` map with no types of its own,
@@ -265,47 +336,67 @@ impl FormatRegistry {
         TypeRegistry::built_ins().layered(&self.types)
     }
 
-    /// This registry with `over` on top: a same-named entry of `over`
-    /// replaces this one whole, and a same-named type likewise. An entry of
-    /// `over` that declared a patch was merged onto the farther one when it
-    /// was built. Where `over` declares types, this registry's entries are
-    /// compiled again against them, so a type means one thing to every
-    /// format a schema sees.
+    /// This registry with `over` on top, and each format of this registry
+    /// that no longer compiles against the types of `over`: a same-named
+    /// entry of `over` replaces this one whole, and a same-named type
+    /// likewise. An entry of `over` that declared a patch was merged onto
+    /// the farther one when it was built. Where `over` declares a type that
+    /// differs from this registry's, each entry that uses it is compiled
+    /// again against it, so a type means one thing to every format a schema
+    /// sees, and an entry that no longer compiles is left out, so the engine
+    /// checks no line against its old compile.
     // sokf-implements: TL_34
     // sokf-implements: TL_36
     // sokf:begin format-registry
     // sokf-implements: TL_51
-    pub fn layered(&self, over: &FormatRegistry) -> FormatRegistry {
+    pub fn layered(&self, over: &FormatRegistry) -> (FormatRegistry, Vec<BrokenFormat>) {
         // sokf:end format-registry
         let types = self.types.layered(&over.types);
         let seen = TypeRegistry::built_ins().layered(&types);
         let regexes = RegexCache::new();
         let mut entries = self.entries.clone();
+        let mut broken = Vec::new();
         // sokf-implements: CORE-5_AC-11
-        // Only a type this registry already defines can change one of its
-        // formats: a new name is one no farther template uses.
-        let redefined: Vec<&str> = over
+        // Only a type this registry defines otherwise can change one of its
+        // formats: a new name is one no farther template uses, and the same
+        // value compiles to the same format.
+        let changed: Vec<&str> = over
             .types
             .entries
-            .keys()
-            .filter(|n| self.types.entries.contains_key(*n))
-            .map(String::as_str)
+            .iter()
+            .filter(|(n, (def, _))| self.types.get(n).is_some_and(|d| d != def))
+            .map(|(n, _)| n.as_str())
             .collect();
-        if !redefined.is_empty() {
-            for (format, _) in entries.values_mut() {
-                if format.uses_any(&redefined)
-                    && let Ok(mut again) = lower_format(&format.raw, &seen, &regexes)
-                {
-                    again.patched = format.patched;
-                    *format = again;
+        if !changed.is_empty() {
+            entries.retain(|name, (format, source)| {
+                // An entry that `over` replaces is one that no schema sees.
+                if over.entries.contains_key(name) {
+                    return true;
                 }
-            }
+                let used = format.uses(&changed);
+                if used.is_empty() {
+                    return true;
+                }
+                match lower_format(&format.raw, &seen, &regexes) {
+                    Ok(mut again) => {
+                        again.patched = format.patched;
+                        *format = again;
+                        true
+                    }
+                    // sokf-implements: TL_140
+                    // sokf-implements: CORE-5_AC-17
+                    Err(said) => {
+                        broken.push(BrokenFormat::of(name, source, &used, said));
+                        false
+                    }
+                }
+            });
         }
         // sokf-implements: CORE-5_AC-10
         for (name, entry) in &over.entries {
             entries.insert(name.clone(), entry.clone());
         }
-        FormatRegistry { entries, types }
+        (FormatRegistry { entries, types }, broken)
     }
 
     /// This registry, the shared layer, with the pack layer on top: the
@@ -316,8 +407,12 @@ impl FormatRegistry {
     /// file's; where two files define one name, the entry of the first
     /// stands, and the layer keeps the clash for `PackLayer::with_host`.
     /// Each format that uses a type of the layer is compiled again against
-    /// it, so a type means one thing to every format that a schema sees,
-    /// and a format that no longer compiles is left out and reported.
+    /// it, so a type means one thing to every format that a schema sees. A
+    /// format of a file that no longer compiles is left out and reported on
+    /// that file. A format of this registry that no longer compiles stays
+    /// as this registry compiled it, for the host's layer to settle, and
+    /// `PackLayer::with_host` reports it where the host's layer leaves it
+    /// broken.
     // sokf-implements: TL_34
     // sokf-implements: TL_27
     // sokf-implements: CORE-5_AC-13
@@ -390,6 +485,7 @@ impl FormatRegistry {
                 }
             }
         }
+        let mut refused = Vec::new();
         for (name, format) in again {
             match format {
                 Some(format) => {
@@ -399,13 +495,39 @@ impl FormatRegistry {
                 }
                 None => {
                     packs.entries.remove(&name);
+                    refused.push(name);
                 }
             }
         }
+        // A shared format that a type of the layer breaks stays as this
+        // registry compiled it, so that the host's layer can patch it, and
+        // `with_host` decides it once the host's types are known. Its
+        // findings, kept for a host that changes no type of the format, lie
+        // on the file of the first type that it uses and that the layer
+        // changes: every type of the layer has a file. The shared format of
+        // a name that a refused format of a file takes stays out, because
+        // that format has its finding already.
+        let (mut registry, broken) = self.layered(&packs);
+        let mut pending = BTreeMap::new();
+        for b in broken {
+            if refused.contains(&b.name) {
+                continue;
+            }
+            let entry = self.entries[&b.name].clone();
+            registry.entries.insert(b.name.clone(), entry);
+            let findings = b.findings(type_origin[b.types[0].as_str()], None);
+            pending.insert(b.name, findings);
+        }
         PackLayer {
-            registry: self.layered(&packs),
+            registry,
             clashes,
             findings,
+            shared_types: self.types.clone(),
+            pending,
+            type_origin: type_origin
+                .into_iter()
+                .map(|(name, path)| (name.to_string(), path.clone()))
+                .collect(),
         }
     }
 
@@ -471,6 +593,14 @@ pub struct PackLayer {
     registry: FormatRegistry,
     clashes: Vec<Clash>,
     findings: Vec<Finding>,
+    /// The types of the shared layer, the built-ins apart.
+    shared_types: TypeRegistry,
+    /// Each shared format that a type of the layer breaks, which `registry`
+    /// holds as the shared layer compiled it, with its findings on the file
+    /// of the first such type.
+    pending: BTreeMap<String, Vec<Finding>>,
+    /// The first file of the layer that declares each type.
+    type_origin: BTreeMap<String, RepoPath>,
 }
 // sokf:end format-registry
 
@@ -488,29 +618,76 @@ struct Clash {
 
 impl PackLayer {
     /// The shared layer with the pack layer on top, the base of the host's
-    /// own layer.
+    /// own layer. It holds each shared format that a type of the layer
+    /// breaks as the shared layer compiled it, so that the host's layer can
+    /// patch it; a schema compiles against the registry of `with_host`.
+    // sokf-implements: CORE-5_AC-13
     // sokf:begin format-registry
     pub fn registry(&self) -> &FormatRegistry {
         // sokf:end format-registry
         &self.registry
     }
 
-    /// The registry with `host`, the host's own layer built on `registry`,
-    /// on top, and the findings of the pack layer: each format that does
-    /// not compile against the types of the layer, and each format and
-    /// type that two files define and `host` does not define in full. A
-    /// patch in `host` settles no clash, because it was merged onto the
-    /// entry of whichever file came first.
+    /// The registry with `host`, the host's own layer built on `registry`
+    /// from the file `path`, on top, and the findings of the pack layer and
+    /// of `host`: each format of a file that does not compile against the
+    /// types of the layer, each format and type that two files define and
+    /// `host` does not define in full, each format of a file that no longer
+    /// compiles against a type of `host`, on `path`, and each shared format
+    /// that no longer compiles against the types of the registry. A patch
+    /// in `host` settles no clash, because it was merged onto the entry of
+    /// whichever file came first. A shared format that a type of the layer
+    /// breaks is settled where `host` defines the format, patches it, or
+    /// defines a type against which it compiles.
     // sokf-implements: TL_128
     // sokf-implements: CORE-5_AC-14
     // sokf:begin format-registry
-    pub fn with_host(&self, host: &FormatRegistry) -> (FormatRegistry, Vec<Finding>) {
+    pub fn with_host(
+        &self,
+        host: &FormatRegistry,
+        path: &RepoPath,
+    ) -> (FormatRegistry, Vec<Finding>) {
         // sokf:end format-registry
         let settled = |c: &Clash| match c.what {
             "format" => host.entries.get(&c.name).is_some_and(|(f, _)| !f.patched),
             _ => host.types.entries.contains_key(&c.name),
         };
+        // A shared format that a type of the layer broke is decided apart,
+        // so that it compiles once, against the types of the layer under
+        // `host`; `layered` decides every other format.
+        let mut base = self.registry.clone();
+        base.entries
+            .retain(|name, _| !self.pending.contains_key(name));
+        let (mut registry, broken) = base.layered(host);
+        let seen = registry.types_seen();
+        let regexes = RegexCache::new();
+        let mut of_packs = Vec::new();
+        for (name, said) in &self.pending {
+            // An entry of `host` replaces the format, or patches it.
+            if host.entries.contains_key(name) {
+                continue;
+            }
+            let (format, source) = &self.registry.entries[name];
+            let hosts = self.host_types(format, host);
+            // sokf-implements: TL_140
+            // sokf-implements: CORE-5_AC-18
+            if hosts.is_empty() {
+                of_packs.extend(said.iter().cloned());
+                continue;
+            }
+            // sokf-implements: CORE-5_AC-20
+            match lower_format(&format.raw, &seen, &regexes) {
+                Ok(mut again) => {
+                    again.patched = format.patched;
+                    registry
+                        .entries
+                        .insert(name.clone(), (again, source.clone()));
+                }
+                Err(said) => of_packs.extend(self.still_broken(name, host, &hosts, said, path)),
+            }
+        }
         let mut findings = self.findings.clone();
+        findings.extend(of_packs);
         findings.extend(self.clashes.iter().filter(|c| !settled(c)).map(|c| {
             Problem::new(
                 "TL_128",
@@ -521,7 +698,76 @@ impl PackLayer {
             )
             .error(c.later.clone(), c.line)
         }));
-        (self.registry.layered(host), findings)
+        // sokf-implements: TL_140
+        // sokf-implements: CORE-5_AC-19
+        findings.extend(broken.iter().flat_map(|b| b.findings(path, None)));
+        (registry, findings)
+    }
+
+    /// Each type of `host` that `format` uses and that differs from the
+    /// type of the layer, in the order of the holes.
+    fn host_types<'h>(&self, format: &Format, host: &'h FormatRegistry) -> Vec<&'h str> {
+        let differ: Vec<&str> = host
+            .types
+            .entries
+            .iter()
+            .filter(|(n, (def, _))| self.registry.types.get(n) != Some(def))
+            .map(|(n, _)| n.as_str())
+            .collect();
+        format.uses(&differ)
+    }
+
+    /// The findings, for each reason of `said`, on the shared format `name`,
+    /// which a type of the layer broke and which the types `hosts` of the
+    /// host's layer `host`, of the file `path`, take part in and leave
+    /// broken. Each type that the format uses and that differs from the
+    /// shared one is named: one of `hosts` by `path`, and any other as a
+    /// type of the layer. The findings lie on the file of the first type of
+    /// the layer, because the layer broke the format first, or on `path`
+    /// where only `hosts` take part.
+    // sokf-implements: TL_140
+    // sokf-implements: CORE-5_AC-18
+    fn still_broken(
+        &self,
+        name: &str,
+        host: &FormatRegistry,
+        hosts: &[&str],
+        said: Vec<(usize, Problem)>,
+        path: &RepoPath,
+    ) -> Vec<Finding> {
+        let (format, source) = &self.registry.entries[name];
+        let differs = |n: &str| {
+            let now = if hosts.contains(&n) {
+                host.types.get(n)
+            } else {
+                self.registry.types.get(n)
+            };
+            now != self.shared_types.get(n)
+        };
+        let all: Vec<&str> = self
+            .registry
+            .types
+            .entries
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let used: Vec<&str> = format
+            .uses(&all)
+            .into_iter()
+            .filter(|t| differs(t))
+            .collect();
+        let (of_host, of_packs): (Vec<&str>, Vec<&str>) =
+            used.iter().partition(|t| hosts.contains(t));
+        match of_packs.first().and_then(|t| self.type_origin.get(*t)) {
+            Some(file) => {
+                let mut broken =
+                    BrokenFormat::of_layers(name, source, &of_packs, &of_host, path, said);
+                // The types in the order of the holes.
+                broken.types = used.iter().map(|t| (*t).to_string()).collect();
+                broken.findings(file, None)
+            }
+            None => BrokenFormat::of(name, source, &used, said).findings(path, None),
+        }
     }
 }
 

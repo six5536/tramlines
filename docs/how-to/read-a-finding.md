@@ -31,7 +31,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast.
   - heading: Ingredients
     level: 2
@@ -77,7 +79,7 @@ crepes.md:12: error[TL_74]: `a pinch of salt` fails at column 1: expected an `in
    - `crepes.md:12` is the file and the line number in it. An error with no line number, such as a missing section, applies to the whole document.
    - `error` is the severity. An `error` fails the check, and the command exits with `1`. A `warning` doesn't fail the check.
    - `TL_74` is the key of the rule that the document breaks.
-   - The message describes the fault. A message about the shape of a line names the column where the text stops matching, what the rule expects there, and an example of a correct line: here, `200 g plain flour`.
+   - The message describes the fault. A message about the shape of a line names the column where the text stops matching, what the rule expects there, and an example of a correct line: here, `200 g plain flour`. A message about a hard limit then gives `When at the limit:` and the schema's text that says where more content goes, and the place follows.
    - `schema recipe` is the id of the schema, the name of its file without the extension.
    - The place names the rule of the schema: `section "Ingredients" block 1` is the first block under the `Ingredients` heading. A place can also name a rule by its `rule-id`, as in ``rule `reqs` ``. The place `section "<title>"` names a section whose heading the schema takes from the frontmatter.
 

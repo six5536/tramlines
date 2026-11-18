@@ -1,11 +1,13 @@
 //! What a check sees of a document, and what the engine asks of its
 //! host: everything that lies outside the document.
 
+use serde::Serialize;
+
 use super::{CheckOptions, CheckOutput};
 use crate::{
     Locator, RepoPath, Spanned,
-    grammar::States,
-    markdown::{Body, Dialect, Segments},
+    grammar::{LimitKind, States},
+    markdown::{BlockKind, Body, Dialect, Segments},
 };
 
 // sokf:begin doc-view
@@ -48,6 +50,9 @@ pub enum Subject {
 // sokf-implements: MD-5_AC-9
 // sokf-implements: MD-5_AC-13
 // sokf-implements: MD-5_AC-14
+// sokf-implements: MD-5_AC-16
+// sokf-implements: MD-5_AC-21
+// sokf-implements: MD-5_AC-22
 // sokf:begin host
 /// What the engine asks of its host in the middle of a check: everything
 /// that lies outside the document.
@@ -66,6 +71,35 @@ pub trait Host: tramlines_core::frontmatter::Host {
     /// when the documents have no frontmatter.
     fn scaffold_front(&self, _states: &States) -> Option<ScaffoldFront> {
         Some(ScaffoldFront::default())
+    }
+
+    /// The words that a guidance line holds before the `when-at-limit` of
+    /// the limit that `facts` describe, in the language of the schema, such
+    /// as the count and its subject worded for the writer. Where the host
+    /// gives none, which it does by default, the line holds the limit in
+    /// the syntax of the schema, such as `` `hard: 9`, `when-at-limit`: ``,
+    /// before the `when-at-limit`.
+    fn limit_lead(&self, _facts: &LimitFacts<'_>) -> Option<String> {
+        None
+    }
+
+    /// The words of the label that `facts` describe, in the language of
+    /// the schema, which a document writes between the label's square
+    /// brackets, such as `Mensch` for the key `human` in German. Where the
+    /// host gives none, which it does by default, or words that are blank,
+    /// hold a square bracket, or begin with `^`, the label's key is its
+    /// words.
+    fn label_words(&self, _facts: &LabelFacts<'_>) -> Option<String> {
+        None
+    }
+
+    /// The key of the label that a scaffold writes on each unit that
+    /// carries one, such as `agent`, of `labels`, the keys that the schema
+    /// declares. Where the host names none, which it does by default, or a
+    /// key that `labels` lacks, a unit takes the label of its example, else
+    /// the first of `labels`.
+    fn scaffold_label(&self, _labels: &[String]) -> Option<String> {
+        None
     }
 
     /// Whether the engine records in `CheckOutput::accepted` each unit that
@@ -92,6 +126,106 @@ pub trait Host: tramlines_core::frontmatter::Host {
 // sokf:end host
 
 // sokf:begin host-answers
+/// The facts of one limit that the host words before its `when-at-limit`:
+/// its kind, its count, what it is applied to, and the language of the
+/// schema.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct LimitFacts<'a> {
+    /// `soft` or `hard`.
+    pub kind: LimitKind,
+    /// The number that `soft` or `hard` states.
+    pub count: usize,
+    /// What the limit is applied to.
+    pub subject: LimitSubject<'a>,
+    /// The `language` of the schema, a BCP 47 tag as the schema writes it,
+    /// or `None` where the schema declares none. A tag's case has no
+    /// meaning, so compare tags ignoring case.
+    pub language: Option<&'a str>,
+}
+
+impl<'a> LimitFacts<'a> {
+    /// The facts of a limit, for a host's own tests of its words.
+    pub fn new(
+        kind: LimitKind,
+        count: usize,
+        subject: LimitSubject<'a>,
+        language: Option<&'a str>,
+    ) -> Self {
+        LimitFacts {
+            kind,
+            count,
+            subject,
+            language,
+        }
+    }
+}
+
+/// The facts of one label that the host words: its key, and the language
+/// of the schema.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct LabelFacts<'a> {
+    /// The key of the label, as the schema's `labels` writes it.
+    pub key: &'a str,
+    /// The `language` of the schema, a BCP 47 tag as the schema writes it,
+    /// or `None` where the schema declares none. A tag's case has no
+    /// meaning, so compare tags ignoring case.
+    pub language: Option<&'a str>,
+}
+
+impl<'a> LabelFacts<'a> {
+    /// The facts of a label, for a host's own tests of its words.
+    pub fn new(key: &'a str, language: Option<&'a str>) -> Self {
+        LabelFacts { key, language }
+    }
+}
+
+/// What a limit is applied to, as the schema states it, for the host to
+/// word with the limit's count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitSubject<'a> {
+    /// A block's own limit, on the units of a block of this kind: its
+    /// paragraphs, items, rows, fences, or repetitions.
+    Block(BlockKind),
+    /// The limit of a unit rule or a line rule.
+    Rule {
+        /// The kind of the block that the rule governs.
+        block: BlockKind,
+        /// Whether the rule counts units of the block or content lines.
+        counts: Counts,
+        /// The format that the rule binds, or else its `rule-id`, or
+        /// `None` where it has neither. Only a `Schema` that a host builds
+        /// or changes itself holds such a rule, because `compile` refuses
+        /// a rule with a `max` and no name (TLMD_235).
+        name: Option<RuleName<'a>>,
+    },
+    /// A frontmatter key's limit, on the elements of the list of this key.
+    Key(&'a str),
+}
+
+/// What the limit of a rule counts.
+// sokf-implements: MD-13_AC-3
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Counts {
+    /// The units of a block, under a unit rule: its paragraphs, items,
+    /// rows, fences, or repetitions.
+    Units,
+    /// The content lines of a code block or an HTML block, under a line
+    /// rule.
+    Lines,
+}
+
+/// The name by which the schema names a rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuleName<'a> {
+    /// The name of the format that the rule binds.
+    Format(&'a str),
+    /// The rule's `rule-id`, where it binds no format.
+    RuleId(&'a str),
+}
+
 /// The host's part of a scaffold's frontmatter.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScaffoldFront {

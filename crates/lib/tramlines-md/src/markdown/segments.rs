@@ -1,9 +1,12 @@
-//! Finds a host's region and trailer markers outside fenced code, before
-//! block grouping, so generated content never reaches block matching.
+//! Finds a host's region and trailer markers outside the fenced code
+//! blocks that comrak reads, before block grouping, so generated content
+//! never reaches block matching.
+
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Dialect, Marker};
+use super::{Dialect, Marker, code};
 
 /// A region as found on disk: the host's marker pair and what lies
 /// between.
@@ -71,62 +74,6 @@ impl Segments {
     }
 }
 
-/// Strip block-quote and list markers, as a fence inside them is still a
-/// fence.
-fn strip_container_markers(line: &str) -> &str {
-    let mut t = line.trim_start();
-    loop {
-        if let Some(rest) = t.strip_prefix('>') {
-            t = rest.trim_start();
-            continue;
-        }
-        if let Some(rest) = t
-            .strip_prefix("- ")
-            .or_else(|| t.strip_prefix("* "))
-            .or_else(|| t.strip_prefix("+ "))
-        {
-            t = rest.trim_start();
-            continue;
-        }
-        let digits = t.bytes().take_while(u8::is_ascii_digit).count();
-        if digits > 0 && digits <= 9 {
-            let after = &t[digits..];
-            if let Some(rest) = after
-                .strip_prefix(". ")
-                .or_else(|| after.strip_prefix(") "))
-            {
-                t = rest.trim_start();
-                continue;
-            }
-        }
-        return t;
-    }
-}
-
-/// A fence line: the fence character and its length.
-fn fence(line: &str) -> Option<(char, usize)> {
-    let t = strip_container_markers(line);
-    let c = t.chars().next()?;
-    if c != '`' && c != '~' {
-        return None;
-    }
-    let len = t.chars().take_while(|&x| x == c).count();
-    if len < 3 {
-        return None;
-    }
-    // A backtick fence's info string may not contain a backtick.
-    if c == '`' && t[len..].contains('`') {
-        return None;
-    }
-    Some((c, len))
-}
-
-fn closes(line: &str, open: (char, usize)) -> bool {
-    let t = strip_container_markers(line).trim_end();
-    let n = t.chars().take_while(|&x| x == open.0).count();
-    n >= open.1 && t.chars().all(|x| x == open.0)
-}
-
 /// Find the markers of `body`, whose first line is file line `first_line`,
 /// as `dialect` spells them.
 // sokf-implements: TLMD_13
@@ -135,17 +82,23 @@ fn closes(line: &str, open: (char, usize)) -> bool {
 pub fn segments(body: &str, first_line: usize, dialect: &Dialect) -> Segments {
     let mut out = Segments::default();
     let lines: Vec<&str> = body.lines().collect();
-    let mut open_fence: Option<(char, usize)> = None;
+    // The bytes of each fenced code block, which only a marker needs.
+    let mut fences: Option<Vec<Range<usize>>> = None;
     let mut open: Option<(String, usize, usize)> = None; // target, line, index
-    for (i, line) in lines.iter().copied().enumerate() {
+    let mut start = 0;
+    for (i, raw) in body.split_inclusive('\n').enumerate() {
+        let line = lines[i];
         let file_line = first_line + i;
-        if let Some(f) = open_fence {
-            if closes(line, f) {
-                open_fence = None;
-            }
-            continue;
-        }
-        match dialect.marker(line) {
+        let at = start;
+        start += raw.len();
+        let marker = dialect.marker(line).filter(|_| {
+            // The fences are in order and apart, so the one that could hold
+            // the line is the first that ends after it starts.
+            let fences = fences.get_or_insert_with(|| code::fenced(body));
+            let k = fences.partition_point(|f| f.end <= at);
+            !fences.get(k).is_some_and(|f| f.contains(&at))
+        });
+        match marker {
             Some(Marker::Open(target)) if open.is_none() => {
                 open = Some((target, file_line, i));
             }
@@ -169,8 +122,7 @@ pub fn segments(body: &str, first_line: usize, dialect: &Dialect) -> Segments {
                 out.definition = Some(definition(&lines[i..], file_line));
                 return finish(out, open);
             }
-            Some(Marker::Trailer) => {}
-            None => open_fence = fence(line),
+            Some(Marker::Trailer) | None => {}
         }
     }
     finish(out, open)
@@ -289,19 +241,54 @@ mod tests {
         assert_eq!(def.entries.len(), 1);
     }
 
+    // sokf-tests: TLMD_16
     #[test]
     fn fences_hide_markers_including_tildes_and_longer_closers() {
         let body = "~~~\n<!-- host:links -->\n~~~\n````md\n```\n<!-- host:include a -->\n````\n- ```\n  <!-- host:include a -->\n  ```\n<!-- host:links -->\n";
         let s = segments(body, 1);
         assert!(s.regions.is_empty());
         assert_eq!(s.definition.unwrap().line, 11);
-        assert_eq!(fence("``` a ` b"), None);
-        assert_eq!(fence("``"), None);
-        assert_eq!(fence("> ```"), Some(('`', 3)));
-        assert_eq!(fence("- ```"), Some(('`', 3)));
-        assert_eq!(fence("1. ~~~~"), Some(('~', 4)));
-        assert_eq!(fence("- text"), None);
-        assert_eq!(fence("x"), None);
+    }
+
+    /// The target of each region of `body`.
+    fn targets(body: &str) -> Vec<String> {
+        segments(body, 1)
+            .regions
+            .into_iter()
+            .map(|r| r.target)
+            .collect()
+    }
+
+    // sokf-tests: TLMD_16
+    #[test]
+    fn a_fence_in_a_footnote_hides_a_marker() {
+        let body = "Text[^1].\n\n[^1]: Note.\n\n    ```\n    <!-- host:include a -->\n    <!-- /host:include -->\n    ```\n";
+        assert!(targets(body).is_empty());
+    }
+
+    // sokf-tests: TLMD_16
+    #[test]
+    fn a_fence_ends_with_the_quote_or_the_item_that_holds_it() {
+        let region = "\n<!-- host:include a -->\nx\n<!-- /host:include -->\n";
+        for fence in [
+            "> - ```\n>   code\n",
+            "- a\n  - b\n\n    > ```\n    > code\n",
+            ">\t```\n>\tcode\n",
+            "- ```\n  code\n",
+        ] {
+            assert_eq!(targets(&format!("{fence}{region}")), ["a"], "{fence:?}");
+        }
+    }
+
+    // sokf-tests: TLMD_16
+    #[test]
+    fn only_a_fence_hides_a_marker() {
+        // A line of backticks inside an indented block, or after a fence's
+        // info string holds a backtick, opens no fence.
+        for text in ["    ```\n", "``` a ` b\n", "``\n"] {
+            let body = format!("{text}\n<!-- host:include a -->\nx\n<!-- /host:include -->\n");
+            assert_eq!(targets(&body), ["a"], "{text:?}");
+        }
     }
 
     #[test]

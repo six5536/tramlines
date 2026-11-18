@@ -4,7 +4,7 @@
 
 use crate::{
     Spanned,
-    grammar::{CoreSchema, FmFormat, FrontmatterConstraint, Only, RuleCommon, States, squash},
+    grammar::{Condition, CoreSchema, FmFormat, FrontmatterConstraint, RuleCommon, States, squash},
     text::{self, is_slug, is_url},
 };
 
@@ -52,7 +52,7 @@ pub enum Event {
     /// A gated rule matched the value at `line`.
     Gate {
         /// The gate.
-        only: Only,
+        only: Condition,
         /// The line of the value.
         line: usize,
         /// The line of the rule in the schema.
@@ -240,7 +240,9 @@ fn check_value(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, va
                 ),
             );
         }
-        if let Some(max) = constraint.max
+        // A soft limit is never checked.
+        if let Some(limit) = &constraint.max
+            && let Some(max) = limit.hard()
             && items.len() > max
         {
             // sokf-implements: TL_107
@@ -248,10 +250,13 @@ fn check_value(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, va
                 common,
                 Some(value.line),
                 "TL_107",
-                format!(
-                    "`{key}` allows at most {}; it has {}",
-                    text::count(max, "entry", "entries"),
-                    items.len()
+                text::at_limit(
+                    format!(
+                        "`{key}` allows at most {}; it has {}",
+                        text::count(max, "entry", "entries"),
+                        items.len()
+                    ),
+                    &limit.when_at_limit,
                 ),
             );
         }

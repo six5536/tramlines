@@ -3,7 +3,7 @@
 
 use crate::{
     Finding,
-    grammar::{KeyDerivation, KeyScope, Only},
+    grammar::{Condition, KeyDerivation, KeyScope},
 };
 
 /// A key a rule captured.
@@ -17,8 +17,14 @@ pub struct Capture {
     pub heading_slug: Option<String>,
     /// `unique`.
     pub scope: KeyScope,
-    /// The `rule-id` of the capturing rule.
+    /// The name that the key is filed under: the `key-of` of the
+    /// capturing rule, else the `rule-id` of its block, its group, or its
+    /// section. No key is filed under a unit rule's own `rule-id`
+    /// (TLMD_236).
     pub rule_id: Option<String>,
+    /// The `rule-id` that names the capturing rule in a finding: the
+    /// rule's own, else its block's, its group's, or its section's.
+    pub rule_name: Option<String>,
     /// The declared section the capture lies in.
     pub section: Option<usize>,
     /// The pairing the capturing rule declares, where it declares one.
@@ -52,12 +58,14 @@ impl Spot {
     }
 }
 
-/// The anchor one key needs: its id, the key, and where it goes.
+/// The anchor one key needs, or one that a unit which breaks its rule
+/// holds (TLMD_139): its id, the key, and where it goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
     /// The key's slug.
     pub id: String,
-    /// The key.
+    /// The key, or the id of an anchor that a unit which breaks its rule
+    /// holds, because that unit captures no key.
     pub key: String,
     /// Where it goes.
     pub spot: Spot,
@@ -116,13 +124,28 @@ impl Repair {
 }
 
 // sokf:begin check-output
+/// Text of one line that a repair rewrites where it stands: a label
+/// written as its key, rewritten in the words that the host gives for it
+/// (TLMD_254).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelRepair {
+    /// The line.
+    pub line: usize,
+    /// The byte column in the line, anchors removed, where `old` starts.
+    pub col: usize,
+    /// The text as written.
+    pub old: String,
+    /// The text that replaces it.
+    pub new: String,
+}
+
 /// A gated rule that matched a part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Gate {
     /// The line of the part.
     pub line: usize,
     /// The rule's `only`.
-    pub only: Only,
+    pub only: Condition,
     /// The rule's line in the schema.
     pub rule: usize,
 }
@@ -150,6 +173,9 @@ pub struct CheckOutput {
     pub captures: Vec<Capture>,
     /// The line rewrites: headings and bound units.
     pub repairs: Vec<Repair>,
+    /// The rewrites of text where it stands: each label written as its
+    /// key where the host gives other words for it.
+    pub label_repairs: Vec<LabelRepair>,
     /// Each gated rule that matched a part: what an `only` marker there
     /// must agree with.
     pub gates: Vec<Gate>,
@@ -157,7 +183,9 @@ pub struct CheckOutput {
     /// lines in the document, where `Host::records_accepted` asks for them;
     /// otherwise none.
     pub accepted: Vec<Accepted>,
-    /// The anchor each key needs, in the order the keys were captured.
+    /// The anchor each key needs, in the order the keys were captured,
+    /// then each anchor that a unit which breaks its rule holds, where it
+    /// stands.
     pub anchors: Vec<Placement>,
     /// Whether the anchors the body holds differ from `anchors`.
     pub anchors_stale: bool,

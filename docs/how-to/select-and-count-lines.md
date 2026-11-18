@@ -2,7 +2,7 @@
 type: HowTo
 id: how-to-select-and-count-lines
 title: Select and count units and lines
-description: Write the rules of a block whose units come in more than one kind, pick units by a label, count or ban them, and check the lines of a code block.
+description: Write the rules of a block whose units come in more than one kind, pick units by the word that they begin with, count or ban them, and check the lines of a code block.
 order: 80
 ---
 
@@ -20,11 +20,13 @@ When one list mixes items of several kinds, or a code block must contain certain
 1. Replace `each` or `sequence` with `rules`, a list of unit rules. A rule must take every unit. A rule acts in one of four ways:
 
    - A rule with a shape and no `select-pattern` is a production. It takes the units that its shape matches. Each unit goes to the first production that matches it, so list the narrowest production first.
-   - A rule with a `select-pattern` is a guard. It takes the units whose text the regular expression matches, and checks them. Use a guard to pick units by a label rather than by their shape, such as an item whose nested blocks you check.
+   - A rule with a `select-pattern` is a guard. It takes the units whose text the regular expression matches, and checks them. Use a guard to pick units by the word that they begin with rather than by their shape, such as an item whose nested blocks you check.
    - A rule with only a `select-pattern` and a count is a counter. It counts the units that it matches and takes none, so a production still checks them.
    - A rule with neither a shape nor a `select-pattern` takes every unit.
 
-2. Bound each rule with `min` and `max`. By default, a production requires at least one unit, and `min: 0` allows none. A rule with a `select-pattern` has no default, so you must set its `min`. A counter with `max: 0` bans what it matches.
+2. Bound each rule with `min` and `max`. `max` is a map of a limit and `when-at-limit`: `soft` for the usual count, which tramlines never checks, or `hard` for the most that the rule takes, which it checks. By default, a production requires at least one unit, and `min: 0` allows none. A rule with a `select-pattern` has no default, so you must set its `min`. A counter with a hard `max` of zero bans what it matches.
+
+   Give each rule that has a `max` and binds no format a `rule-id` that says what the rule counts, such as `breaking`. The words that a host writes before the limit's `when-at-limit` name the rule by it, as in ``At most 1 `breaking` item. Never leave out or merge content to stay within the count. When at the limit:``. The `rule-id` only names the rule, so the keys that the rule captures stay with its block, or with its `key-of`.
 
    A guard selects units independently of other rules: two guards can select one unit, and both check it. A counter counts a unit that a production takes.
 
@@ -49,7 +51,10 @@ sections:
             example: "Fixed: the crash on start."
           - select-pattern: "^Breaking: "
             min: 0
-            max: 1
+            rule-id: breaking
+            max:
+              hard: 1
+              when-at-limit: 'Move further breaking changes to the next release.'
             example: "Breaking: the config file moved."
             blocks:
               - kind: code
@@ -57,7 +62,10 @@ sections:
                 example: "$ app migrate"
           - select-pattern: "TODO"
             min: 0
-            max: 0
+            rule-id: todo
+            max:
+              hard: 0
+              when-at-limit: 'Finish each TODO, or leave its change out of the release.'
 ```
 
 3. Check a document:
@@ -97,7 +105,7 @@ $ tramlines validate --schema changelog.yaml CHANGELOG.md
 ```console
 $ tramlines validate --schema changelog.yaml CHANGELOG.md
 CHANGELOG.md:4: error[TLMD_57]: `Fixed: the slow search` matches no rule of the block; the nearest fails at column 23: expected `.`, found the end; an item of this kind reads Fixed: the crash on start. (schema changelog, section "${:int}.${:int}.${:int}" block 1)
-CHANGELOG.md:5: error[TLMD_159]: the items matching `TODO`: at most 0 are allowed; there is 1 (schema changelog, section "${:int}.${:int}.${:int}" block 1)
+CHANGELOG.md:5: error[TLMD_159]: the items matching `TODO`: at most 0 are allowed; there is 1. When at the limit: Finish each TODO, or leave its change out of the release. (schema changelog, section "${:int}.${:int}.${:int}" block 1)
 CHANGELOG.md:6: error[TLMD_53]: `Removed: the old menu.` matches no rule of the block; declare it or set `units-open` (schema changelog, section "${:int}.${:int}.${:int}" block 1)
 3 errors, 0 warnings
 [exit 1]
@@ -124,11 +132,17 @@ sections:
             - text: "[server]"
             - template: "${name:slug} = ${}"
               min: 1
-              max: 3
+              rule-id: setting
+              max:
+                hard: 3
+                when-at-limit: 'Put further settings in a section of their own.'
               example: "port = 8080"
             - select-pattern: "^#"
               min: 0
-              max: 0
+              rule-id: comment
+              max:
+                hard: 0
+                when-at-limit: 'Explain a setting in the text before the block.'
 ```
 
 **`settings.md`**
@@ -149,7 +163,7 @@ debug: true
 ```console
 $ tramlines validate --schema settings.yaml settings.md
 settings.md:8: error[TLMD_87]: `# TODO` matches no rule of the fence; declare it or set `lines-open` (schema settings, section "Settings" block 1)
-settings.md:8: error[TLMD_159]: the lines matching `^#`: at most 0 are allowed; there is 1 (schema settings, section "Settings" block 1)
+settings.md:8: error[TLMD_159]: the lines matching `^#`: at most 0 are allowed; there is 1. When at the limit: Explain a setting in the text before the block. (schema settings, section "Settings" block 1)
 settings.md:9: error[TLMD_57]: `debug: true` matches no rule of the fence; the nearest fails at column 6: expected ` = `, found `: true`; a line of this kind reads port = 8080 (schema settings, section "Settings" block 1)
 3 errors, 0 warnings
 [exit 1]
@@ -220,8 +234,9 @@ Move the `Urgent` rule before the other, and the schema passes.
 - `TLMD_53`, `TLMD_57`: no rule takes a unit or a line. Correct the unit or line from the column that the message names, add a rule for it, or set `units-open` or `lines-open`. See [TLMD_53][sokf:errors-units#tlmd_53] and [TLMD_57][sokf:errors-units#tlmd_57].
 - `TLMD_87`: no rule of `lines` takes a line. See [TLMD_87][sokf:errors-lines-and-pairings#tlmd_87].
 - `TLMD_93`: a rule takes or counts fewer units than its `min`. See [TLMD_93][sokf:errors-units#tlmd_93].
-- `TLMD_159`: a rule takes or counts more units than its `max`. See [TLMD_159][sokf:errors-units#tlmd_159].
+- `TLMD_159`: a rule takes or counts more units than its hard `max`. See [TLMD_159][sokf:errors-units#tlmd_159].
 - `TLMD_92`: a rule with a `select-pattern` lacks a `min`. Add `min: 0` to check the units without requiring any. See [TLMD_92][sokf:errors-units#tlmd_92].
+- `TLMD_235`: a rule with a `max` binds no format and declares no `rule-id`. Give it a `rule-id` that says what it counts. See [TLMD_235][sokf:errors-units#tlmd_235].
 - `TLMD_91`: a unit rule declares `select-pattern`, `min`, or `max` outside `rules` and `lines`. See [TLMD_91][sokf:errors-units#tlmd_91].
 - `TLMD_142`: a rule declares `text` beside `select-pattern`. A repair of `text` rewrites the whole unit and would drop what the guard selected on. See [TLMD_142][sokf:errors-units#tlmd_142].
 - `TLMD_90`: a rule declares `lines` under a block that isn't a code block or an `html` block. See [TLMD_90][sokf:errors-lines-and-pairings#tlmd_90].
@@ -243,6 +258,7 @@ Move the `Urgent` rule before the other, and the schema passes.
 [sokf:errors-units]: /docs/reference/errors-units.md
 [sokf:errors-units#tlmd_142]: /docs/reference/errors-units.md#tlmd_142
 [sokf:errors-units#tlmd_159]: /docs/reference/errors-units.md#tlmd_159
+[sokf:errors-units#tlmd_235]: /docs/reference/errors-units.md#tlmd_235
 [sokf:errors-units#tlmd_53]: /docs/reference/errors-units.md#tlmd_53
 [sokf:errors-units#tlmd_57]: /docs/reference/errors-units.md#tlmd_57
 [sokf:errors-units#tlmd_91]: /docs/reference/errors-units.md#tlmd_91

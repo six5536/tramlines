@@ -41,7 +41,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast.
   - heading: Ingredients
     level: 2
@@ -142,7 +144,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put the ingredients and the method in their own sections.'
         example: Thin pancakes for a weekend breakfast.
   - heading: Ingredients
     level: 2
@@ -222,7 +226,9 @@ line-limit: 60
 preamble:
   blocks:
     - kind: prose
-      max: 1
+      max:
+        hard: 1
+        when-at-limit: 'Change the date rather than add a second line.'
       example: "Updated: 2026-09-30"
 sections:
   - heading: Menu

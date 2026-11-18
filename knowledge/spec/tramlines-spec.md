@@ -39,6 +39,7 @@ Each normative rule of this specification is an EARS criterion, keyed `TL_n`.
 - <a id="example"></a>`example` - Text of the kind that a rule demands, which the engine checks against the rule.
 - <a id="guidance"></a>`guidance` - What an example cannot express, which the scaffold includes and no finding prints.
 - <a id="lifecycle-dimension"></a>`lifecycle dimension` - One ordered list of states, stored in one frontmatter key.
+- <a id="condition"></a>`condition` - A map of lifecycle dimensions to states, or a list of such maps. Every `only` takes one, and so can the `optional` of a rule where the format grammar allows it.
 - <a id="key"></a>`key` - An identifier that a rule captures from a document.
 - <a id="scaffold"></a>`scaffold` - The document that a schema derives, which a new document starts from.
 - <a id="finding"></a>`finding` - One failure of a rule, on one line of one file.
@@ -55,7 +56,7 @@ base: tramlines
 version: "0.1"
 ```
 
-- <a id="tl_1"></a>TL_1 [ubiquitous]: the core grammar SHALL contain the `meta` vocabulary and the schema keys that do not depend on the format of a document: `line-limit`, `guidance`, `lifecycle`, `frontmatter`, `frontmatter-open`, `prohibited-patterns`, `formats`, `types`, and `examples`.
+- <a id="tl_1"></a>TL_1 [ubiquitous]: the core grammar SHALL contain the `meta` vocabulary and the schema keys that do not depend on the format of a document: `line-limit`, `guidance`, `language`, `lifecycle`, `frontmatter`, `frontmatter-open`, `prohibited-patterns`, `formats`, `types`, and `examples`.
 - <a id="tl_2"></a>TL_2 [ubiquitous]: the format grammar SHALL name itself with `grammar` and name the core grammar with `base: tramlines`.
 - <a id="tl_3"></a>TL_3 [ubiquitous]: the engine SHALL merge a format grammar onto the core grammar: new keys, new rule maps, values of an enum, block kinds that a key requires, text of a `doc`, and the constraint groups `exactly-one-of` and `at-least-one-of` of any rule map.
 - <a id="tl_4"></a>TL_4 [unwanted]: IF a format grammar contains a `meta` section, or changes the type, the `of`, or the `required` of a key of the core grammar, THEN the engine SHALL reject the format grammar.
@@ -78,16 +79,21 @@ A schema is strict: the engine requires what the schema declares, rejects what t
 - <a id="tl_104"></a>TL_104 [unwanted]: IF a map of a schema contains more than one key of a group of which the grammar admits one, other than a group of shapes, THEN the engine SHALL report a finding on the schema that names the group.
 - <a id="tl_13"></a>TL_13 [unwanted]: IF a schema does not parse as YAML 1.2, core schema, THEN the engine SHALL report a finding on the schema.
 - <a id="tl_14"></a>TL_14 [unwanted]: IF a schema, or the file that `--formats` names, contains a YAML anchor, alias, or tag, THEN the engine SHALL report a finding on that file.
-- <a id="tl_15"></a>TL_15 [unwanted]: IF two rules of one schema declare the same `rule-id`, THEN the engine SHALL report a finding on the second of them that names the id.
+- <a id="tl_15"></a>TL_15 [unwanted]: IF two sections or blocks of one schema declare the same `rule-id`, THEN the engine SHALL report a finding on the second of them that names the id.
 - <a id="tl_16"></a>TL_16 [ubiquitous]: the engine SHALL read each regular expression of a schema in the Rust dialect, with no lookaround and no backreference, and with no anchor that the regular expression does not contain.
 - <a id="tl_118"></a>TL_118 [unwanted]: IF a regular expression of a schema, or the expression that a template compiles to, does not compile in that dialect, THEN the engine SHALL report a finding on the schema that names the key and the reason.
 - <a id="tl_17"></a>TL_17 [ubiquitous]: the engine SHALL accept `prohibited-patterns`, a list of bans, each a `pattern` and a `message`, on a schema, a rule that has a shape, and a format.
 - <a id="tl_18"></a>TL_18 [ubiquitous]: the engine SHALL report each failure of a rule that declares `severity: warn`, or of a rule inside one that declares it where the inner rule declares no `severity` of its own, as a warning, and each failure of any other rule as an error.
-- <a id="tl_19"></a>TL_19 [optional]: WHERE a rule declares `only`, the engine SHALL apply the rule only when the state of the document is in the listed set for every dimension that `only` names.
-- <a id="tl_20"></a>TL_20 [unwanted]: IF `only` names a dimension that the lifecycle does not declare, or a state that its dimension does not declare, THEN the engine SHALL report a finding on the schema that names it.
-- <a id="tl_111"></a>TL_111 [unwanted]: IF a rule declares `only` and the schema declares no lifecycle, THEN the engine SHALL report a finding on the schema.
+- <a id="tl_19"></a>TL_19 [optional]: WHERE a rule declares `only`, the engine SHALL apply the rule only when the state of the document matches the condition of `only`, where a map matches when the state of the document is in the listed set for every dimension that the map names.
+- <a id="tl_135"></a>TL_135 [optional]: WHERE a condition is a list of maps, the engine SHALL count the state of a document as matching the condition when it matches any map of the list, each map matching as [TL_19](#tl_19) says.
+- <a id="tl_20"></a>TL_20 [unwanted]: IF a condition names a dimension that the lifecycle does not declare, or a state that its dimension does not declare, THEN the engine SHALL report a finding on the schema that names it and the key that holds the condition.
+- <a id="tl_111"></a>TL_111 [unwanted]: IF a rule declares a condition and the schema declares no lifecycle, THEN the engine SHALL report a finding on the schema that names the key that holds the condition.
+- <a id="tl_136"></a>TL_136 [unwanted]: IF a condition is an empty list, or one of its maps lists no state for a dimension that the lifecycle declares, THEN the engine SHALL report a finding on the schema that names the key that holds the condition.
 - <a id="tl_21"></a>TL_21 [unwanted]: IF a schema declares a `line-limit` greater than zero and a document has more lines than the limit, THEN the engine SHALL report a finding on the document.
-- <a id="tl_98"></a>TL_98 [unwanted]: IF a rule declares a `min` greater than its `max`, THEN the engine SHALL report a finding on the schema.
+- <a id="tl_98"></a>TL_98 [unwanted]: IF a rule declares a `min` greater than the count of its `max`, soft or hard, THEN the engine SHALL report a finding on the schema.
+- <a id="tl_137"></a>TL_137 [unwanted]: IF a `max` is a number, THEN the engine SHALL report a finding on the schema that shows the map to write in its place, with `hard`, the number, and `when-at-limit`.
+- <a id="tl_138"></a>TL_138 [unwanted]: IF the `when-at-limit` of a `max` is empty, THEN the engine SHALL report a finding on the schema that names the key.
+- <a id="tl_139"></a>TL_139 [optional]: WHERE a `max` declares `soft`, the engine SHALL report no finding on the count that it limits, and cap nothing by it, such as the number of units that a scaffold writes.
 
 ## 4. Shapes and types
 
@@ -119,7 +125,7 @@ Each shape matches the text with each run of whitespace collapsed to one space.
 - <a id="tl_33"></a>TL_33 [unwanted]: IF a key starts with no prefix that its `key-derives-from` allows followed by the separator, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_126"></a>TL_126 [event]: WHEN a key starts with more than one prefix that its `key-derives-from` allows followed by the separator, the engine SHALL derive the key from the longest of them.
 - <a id="tl_96"></a>TL_96 [unwanted]: IF a `key-derives-from` sits on a unit rule that captures no key, THEN the engine SHALL report a finding on the schema.
-- <a id="tl_117"></a>TL_117 [unwanted]: IF a `key-derives-from` names a rule or a frontmatter key that the schema does not declare, THEN the engine SHALL report a finding on the schema that names it.
+- <a id="tl_117"></a>TL_117 [unwanted]: IF a `key-derives-from` names a set that holds no key, or a frontmatter key that the schema does not declare, THEN the engine SHALL report a finding on the schema that names it, and that says to declare `key-of` where the name is the `rule-id` of a unit rule.
 - <a id="tl_127"></a>TL_127 [unwanted]: IF the key of the example of a rule that declares `key-derives-from` does not start with a value that the schema states for the parent that `key-derives-from` names, as [TL_129](#tl_129) defines, followed by the separator, THEN the engine SHALL report a finding on the schema at the example that names the key and those values.
 - <a id="tl_129"></a>TL_129 [ubiquitous]: the engine SHALL take as the values that the schema states for the parent of a `key-derives-from`, for a frontmatter key, the value that a scaffold at the first state of each lifecycle key writes from the schema: its `const`, else the id that its `id` template renders, else its `example`, else the first value of its `enum`; and for a rule, each key that its examples capture, once.
 
@@ -130,6 +136,7 @@ A format names the shape of one line, so that rules in many schemas share it. A 
 - <a id="tl_34"></a>TL_34 [ubiquitous]: the engine SHALL resolve a format by name through the `formats` of the schema, of the host, of the pack layer, and of the shared registry, the nearest first.
 - <a id="tl_128"></a>TL_128 [unwanted]: IF two formats files of the pack layer define one format name or one type name, and the host's layer does not define it in full, as an entry that declares no `patch`, THEN the engine SHALL report a finding on the later of the two files in the order of their paths that names the format or the type and both files.
 - <a id="tl_134"></a>TL_134 [unwanted]: IF a format of a formats file of the pack layer does not compile against the types of the pack layer, THEN the engine SHALL report each reason on that file, at the line of the format, and leave the format out of the pack layer.
+- <a id="tl_140"></a>TL_140 [unwanted]: IF a type of a layer makes a format of a farther layer fail to compile, THEN the engine SHALL report each reason on the layer that declares the type, in a finding that names the format and the type, and check no line against the format.
 - <a id="tl_35"></a>TL_35 [ubiquitous]: the engine SHALL compile each format that is visible to a schema against the types that are visible to the schema.
 - <a id="tl_36"></a>TL_36 [optional]: WHERE the nearer entry declares no patch, the engine SHALL replace a farther entry whole.
 - <a id="tl_37"></a>TL_37 [ubiquitous]: the engine SHALL merge a format entry that declares itself a patch onto the entry that it shadows, by RFC 7386.
@@ -163,7 +170,7 @@ Frontmatter is the authority over the body. A repair rewrites the body to agree 
 - <a id="tl_55"></a>TL_55 [unwanted]: IF a frontmatter key is not declared, not reserved by the host, and not the key of a lifecycle dimension, and the schema declares no `frontmatter-open`, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_56"></a>TL_56 [unwanted]: IF a frontmatter value, or an element of the value of a key that declares `list`, fails its `const`, `template`, `pattern`, `enum`, or `format`, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_106"></a>TL_106 [unwanted]: IF the value of a key that declares `list` has fewer elements than its `min`, THEN the engine SHALL report a finding that names the key, the bound, and the count.
-- <a id="tl_107"></a>TL_107 [unwanted]: IF the value of a key that declares `list` has more elements than its `max`, THEN the engine SHALL report a finding that names the key, the bound, and the count.
+- <a id="tl_107"></a>TL_107 [unwanted]: IF the value of a key that declares `list` has more elements than the count of a hard `max`, THEN the engine SHALL report a finding that names the key, the bound, and the count, and quotes the `when-at-limit` of the `max`, as [TL_77](#tl_77) states.
 - <a id="tl_57"></a>TL_57 [unwanted]: IF a key that declares `list` has a value that is not a list, or a key that does not declare `list`, or an element of a list, has a value that is not a scalar, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_58"></a>TL_58 [unwanted]: IF the template of `id` contains a hole other than a `seq` hole, a `slug` hole, and a hole with no type named for a lifecycle key, THEN the engine SHALL report a finding on the schema that names the template.
 - <a id="tl_114"></a>TL_114 [unwanted]: IF the template of `id` contains more than one `seq` hole, THEN the engine SHALL report a finding on the schema.
@@ -202,11 +209,11 @@ A finding has a file, a line where one applies, a severity, the key of the crite
 - <a id="tl_74"></a>TL_74 [unwanted]: IF a text fails the shape of a rule or a format, THEN the engine SHALL report the text, the shape, or the column where a template stops matching, and the example of that shape.
 - <a id="tl_75"></a>TL_75 [unwanted]: IF a text matches a prohibited pattern, THEN the engine SHALL report the span that the pattern matched and the message of the ban.
 - <a id="tl_76"></a>TL_76 [unwanted]: IF a text matches a prohibited pattern of a rule or a format, THEN the engine SHALL report the example of that rule beside the span and the message.
-- <a id="tl_77"></a>TL_77 [ubiquitous]: the engine SHALL include in a finding no text that a schema writes to explain it.
+- <a id="tl_77"></a>TL_77 [ubiquitous]: the engine SHALL include in a finding no text that a schema writes to explain it, other than the message of a ban, which [TL_75](#tl_75) reports, and the `when-at-limit` of a hard `max`, which the finding on a count above that `max` quotes after the engine's own words and the label `When at the limit:`.
 - <a id="tl_78"></a>TL_78 [ubiquitous]: the host SHALL handle a scope, a format, or a block kind that it added.
 - <a id="tl_79"></a>TL_79 [unwanted]: IF the host cannot supply what a rule needs to know, THEN the engine SHALL skip the rule.
 - <a id="tl_80"></a>TL_80 [invariant]: FOR ANY format and any line that it rejects on shape, the engine SHALL report text that contains the example of the expected shape and nothing else that a schema wrote.
-- <a id="tl_81"></a>TL_81 [invariant]: FOR ANY ban and any line that it matches, the engine SHALL report a span that is a substring of the line and that the pattern of the ban matches.
+- <a id="tl_81"></a>TL_81 [invariant]: FOR ANY ban and any line that it matches, the engine SHALL report a span that is a substring of the line and that covers what the ban's pattern matched.
 
 ## 9. Repairs
 
@@ -224,7 +231,7 @@ The command `tramlines validate` checks documents against one schema, with the n
 tramlines validate --schema contract.yaml --formats formats.yaml docs/contract-cache.md
 ```
 
-- <a id="tl_85"></a>TL_85 [ubiquitous]: the command SHALL check each document that it names against the schema that `--schema` names, with the null host.
+- <a id="tl_85"></a>TL_85 [ubiquitous]: the command SHALL check each document that it names against the schema that `--schema` names, with the null host and the words of the command's texts and of the file that `--texts` names.
 - <a id="tl_86"></a>TL_86 [event]: WHEN `--formats` names a file, the command SHALL read it as a `registry` map of formats and an optional `types` map, the layer under the schema.
 - <a id="tl_87"></a>TL_87 [unwanted]: IF the file that `--formats` names does not parse or has no `registry` key, THEN the command SHALL exit with code 2 and name the file.
 - <a id="tl_124"></a>TL_124 [unwanted]: IF the registry or the types of the file that `--formats` names break a criterion that applies to the `formats` or the `types` of a schema, THEN the command SHALL exit with code 2 and print each finding with the key of that criterion and the name of the file.

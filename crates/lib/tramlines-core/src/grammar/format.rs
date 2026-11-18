@@ -97,13 +97,35 @@ impl Format {
 
     /// Whether a template of the format holds a hole of one of `types`.
     pub(super) fn uses_any(&self, types: &[&str]) -> bool {
-        self.shapes().any(|(_, shape)| match shape {
-            Shape::Template(t) => t
-                .segments
-                .iter()
-                .any(|s| matches!(s, Segment::Hole { ty, .. } if types.contains(&ty.as_str()))),
-            _ => false,
-        })
+        self.hole_types().any(|ty| types.contains(&ty))
+    }
+
+    /// Each of `types` that a hole of a template of the format names, once,
+    /// in the order of the holes.
+    pub(super) fn uses<'t>(&self, types: &[&'t str]) -> Vec<&'t str> {
+        let mut used = Vec::new();
+        for ty in self.hole_types() {
+            if let Some(&name) = types.iter().find(|n| **n == ty)
+                && !used.contains(&name)
+            {
+                used.push(name);
+            }
+        }
+        used
+    }
+
+    /// The type of each hole of each template of the format, in order.
+    fn hole_types(&self) -> impl Iterator<Item = &str> {
+        self.shapes()
+            .filter_map(|(_, shape)| match shape {
+                Shape::Template(t) => Some(t),
+                _ => None,
+            })
+            .flat_map(|t| t.segments.iter())
+            .filter_map(|s| match s {
+                Segment::Hole { ty, .. } => Some(ty.as_str()),
+                _ => None,
+            })
     }
 
     /// The first example, which stands for the format where one is needed.
@@ -127,11 +149,19 @@ impl Format {
 
     /// As `check`, for a unit that a failure calls `noun`, such as `item`.
     pub fn check_as(&self, text: &str, noun: &str) -> FormatMatch {
+        self.check_masked(text, text, noun)
+    }
+
+    /// As `check_as`, where the bans read `masked`: `text` with what they
+    /// leave out, such as a code span, overwritten byte for byte, so that
+    /// every offset of `text` stays where it was. A failure quotes the
+    /// span as `text` holds it.
+    pub fn check_masked(&self, text: &str, masked: &str, noun: &str) -> FormatMatch {
         let (shape, example) = match self.matching_as(text, noun) {
             Ok(m) => m,
             Err(reason) => return FormatMatch::Fail(reason),
         };
-        if let Some(reason) = refused_as(text, &self.prohibited, noun, Some(example)) {
+        if let Some(reason) = refused_masked(text, masked, &self.prohibited, noun, Some(example)) {
             return FormatMatch::Refused(reason);
         }
         FormatMatch::Ok(self.key.as_ref().and_then(|k| captured(shape, k, text)))
@@ -154,7 +184,13 @@ impl Format {
 
     /// Whether `text` has the format's shape and passes its bans, silently.
     pub fn conforms(&self, text: &str) -> bool {
-        self.shape_for(text).is_some() && !self.prohibited.iter().any(|b| b.pattern.is_match(text))
+        self.conforms_masked(text, text)
+    }
+
+    /// As `conforms`, where the bans read `masked`, as for `check_masked`.
+    pub fn conforms_masked(&self, text: &str, masked: &str) -> bool {
+        self.shape_for(text).is_some()
+            && !self.prohibited.iter().any(|b| b.pattern.is_match(masked))
     }
 
     /// The shape `text` has and its example, or why it has none. A variant
@@ -248,8 +284,31 @@ pub fn refused_as(
     noun: &str,
     example: Option<&str>,
 ) -> Option<String> {
+    refused_masked(text, text, bans, noun, example)
+}
+
+/// As `refused_as`, where the bans read `masked`, as for
+/// `Format::check_masked`. Where `masked` has the length of `text`, the
+/// span quotes `text`, from the start of the character where the match
+/// starts to the end of the one where it ends; otherwise it quotes
+/// `masked`.
+// sokf-implements: TL_75
+// sokf-implements: TL_81
+pub fn refused_masked(
+    text: &str,
+    masked: &str,
+    bans: &[Prohibition],
+    noun: &str,
+    example: Option<&str>,
+) -> Option<String> {
     bans.iter().find_map(|ban| {
-        let span = ban.pattern.find(text)?.as_str();
+        let found = ban.pattern.find(masked)?;
+        let span = if text.len() == masked.len() {
+            let start = text.floor_char_boundary(found.start());
+            &text[start..text.ceil_char_boundary(found.end())]
+        } else {
+            found.as_str()
+        };
         let message = ban.message.trim_end();
         Some(match example {
             Some(e) => {

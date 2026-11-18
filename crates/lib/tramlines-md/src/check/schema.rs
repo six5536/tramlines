@@ -7,7 +7,7 @@ use crate::{
     Finding, Locator, RepoPath, Severity,
     derive::derive,
     document::Document,
-    grammar::{Block, Only, RuleCommon, Schema, States, squash},
+    grammar::{Block, Condition, Only, RuleCommon, Schema, States, squash},
     markdown::Dialect,
 };
 
@@ -27,7 +27,7 @@ pub fn check_schema(schema: &Schema, host: &dyn Host, path: &RepoPath, id: &str)
     let dialect = host.dialect();
     // sokf-implements: MD-6_AC-1
     // sokf-implements: MD-6_AC-7
-    let (mut findings, failed) = example::check_examples(schema, path, id);
+    let (mut findings, failed) = example::check_examples(schema, host, path, id);
     // sokf-implements: MD-6_AC-2
     let scaffolds = match derive(schema, host) {
         Ok(derived) => {
@@ -149,8 +149,8 @@ fn inner(f: &Finding) -> String {
 }
 
 /// The line of each `only` that one rule of the schema alone carries.
-fn gated_rules(schema: &Schema) -> Vec<(Only, usize)> {
-    let mut lines: Vec<(Only, usize)> = Vec::new();
+fn gated_rules(schema: &Schema) -> Vec<(Condition, usize)> {
+    let mut lines: Vec<(Condition, usize)> = Vec::new();
     let mut add = |c: &RuleCommon| {
         if c.only.is_gated() {
             lines.push((c.only.clone(), c.line));
@@ -251,7 +251,7 @@ fn check_markers(
     dialect: &Dialect,
     text: &str,
     gates: &[Gate],
-    gated: &[(Only, usize)],
+    gated: &[(Condition, usize)],
 ) -> Vec<(Option<usize>, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let part = |line: usize| {
@@ -260,7 +260,7 @@ fn check_markers(
     };
     let only = dialect.spell("only");
     let mut out = Vec::new();
-    let mut marked: Vec<(usize, Only)> = Vec::new();
+    let mut marked: Vec<(usize, Condition)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         if !dialect.is_only_marker(line) {
             continue;
@@ -280,18 +280,18 @@ fn check_markers(
             out.push((
                 at.first().map(|g| g.rule),
                 format!(
-                    "the `{only}` marker `{}` is malformed; write `{only} <key>=<state>[,<state>]…`",
+                    "the `{only}` marker `{}` is malformed; write `{only} <key>=<state>[,<state>]…`, and join the maps of a condition with ` | `",
                     short(line.trim())
                 ),
             ));
             continue;
         };
         if let Some(p) = target {
-            marked.push((p, Only(m.clone())));
+            marked.push((p, m.clone()));
         }
         let problem = if at.is_empty() {
             "gates nothing: the part it marks is not matched by a gated rule".to_string()
-        } else if at.iter().any(|g| g.only.0 == m) {
+        } else if at.iter().any(|g| g.only == m) {
             continue;
         } else {
             format!(
@@ -302,10 +302,10 @@ fn check_markers(
         let rule = at
             .first()
             .map(|g| g.rule)
-            .or_else(|| gated.iter().find(|(o, _)| o.0 == m).map(|(_, l)| *l));
+            .or_else(|| gated.iter().find(|(o, _)| *o == m).map(|(_, l)| *l));
         out.push((rule, format!("{marker} {problem}")));
     }
-    let mut said: Vec<(usize, &Only)> = Vec::new();
+    let mut said: Vec<(usize, &Condition)> = Vec::new();
     for gate in gates {
         if marked
             .iter()
@@ -331,19 +331,17 @@ fn check_markers(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use proptest::prelude::*;
 
     use super::*;
 
     type Mark = Option<&'static str>;
 
-    fn only(state: &str) -> Only {
-        Only(BTreeMap::from([(
-            "state".to_string(),
-            vec![state.to_string()],
-        )]))
+    /// The condition that a marker writes as `text`.
+    fn only(text: &str) -> Condition {
+        Dialect::default()
+            .only_marker(&format!("<!-- tramlines:only {text} -->"))
+            .unwrap()
     }
 
     /// A text of sections, each gated or not and marked or not, with the
@@ -356,14 +354,14 @@ mod tests {
         let mut unmarked = Vec::new();
         for (i, (gate, mark)) in sections.iter().enumerate() {
             if let Some(m) = mark {
-                lines.push(format!("<!-- tramlines:only state={m} -->"));
+                lines.push(format!("<!-- tramlines:only {m} -->"));
                 let heading = format!("`## S{i}`");
                 match gate {
                     None => expected.push(format!(
                         "the `tramlines:only` marker before {heading} gates nothing: the part it marks is not matched by a gated rule"
                     )),
                     Some(g) if g != m => expected.push(format!(
-                        "the `tramlines:only` marker before {heading} disagrees with its rule, whose `only` is `state={g}`"
+                        "the `tramlines:only` marker before {heading} disagrees with its rule, whose `only` is `{g}`"
                     )),
                     Some(_) => {}
                 }
@@ -377,7 +375,7 @@ mod tests {
                 });
                 if mark.as_ref() != Some(g) {
                     unmarked.push(format!(
-                        "the part `## S{i}` is matched by a rule whose `only` is `state={g}` and carries no `tramlines:only` marker"
+                        "the part `## S{i}` is matched by a rule whose `only` is `{g}` and carries no `tramlines:only` marker"
                     ));
                 }
             }
@@ -388,7 +386,14 @@ mod tests {
     }
 
     fn arb_section() -> impl Strategy<Value = (Mark, Mark)> {
-        let state = prop::sample::select(vec![None, Some("a"), Some("b")]);
+        // A condition of two maps is one more gate, which a marker of
+        // either map alone disagrees with.
+        let state = prop::sample::select(vec![
+            None,
+            Some("state=a"),
+            Some("state=b"),
+            Some("kind=x | state=a"),
+        ]);
         (state.clone(), state)
     }
 

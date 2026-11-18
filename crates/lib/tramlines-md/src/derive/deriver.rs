@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::Refusal;
 use crate::{
     check::Host,
-    grammar::{RuleCommon, Schema, States},
+    grammar::{RuleCommon, Schema, States, Words},
     markdown::{BlockKind, Dialect},
 };
 
@@ -21,16 +21,16 @@ pub(crate) struct Deriver<'a> {
     pub(super) states: &'a States,
     /// The keys captured so far, by the `rule-id` that captured them.
     pub(super) keys: BTreeMap<String, Vec<String>>,
-    /// Each block written so far, in order: its kind, whether its rule
-    /// takes every unit of a run beyond those the scaffold wrote, the line
-    /// of its rule, and the output line after it. Where two blocks of one
-    /// run meet, the first may take the second.
-    pub(super) kinds: Vec<(BlockKind, bool, usize, usize)>,
+    /// The kind of each block written so far, in order.
+    pub(super) kinds: Vec<BlockKind>,
     /// The frontmatter as it was written, for a `text: { from: <key> }`.
     pub(super) values: BTreeMap<String, String>,
     /// The `rule-id` of the section being written, which names the keys
     /// captured inside it where the block declares none of its own.
     pub(super) section_rule: Option<String>,
+    /// The `rule-id` of the group being written, nearest first, which
+    /// names the keys captured inside it where the block declares none.
+    pub(super) group_rule: Option<String>,
     pub(super) refusals: Vec<Refusal>,
     /// The optional parts the derivation could not write, which it left
     /// out rather than refuse over.
@@ -42,6 +42,11 @@ pub(crate) struct Deriver<'a> {
     /// had captured when that occurrence of the parent began: a pairing
     /// there reads the keys captured since.
     pub(super) scope: Option<BTreeMap<String, usize>>,
+    /// The labels of the schema, in the words that the host gives.
+    pub(super) labels: Words,
+    /// The key of the label that the host names for the units of a
+    /// scaffold, where it names one that the schema declares.
+    pub(super) named_label: Option<String>,
 }
 
 /// What a trial of an optional part writes, so it can be put back.

@@ -28,7 +28,7 @@ In this guide, you write the frontmatter of a requirement list: a fixed type, a 
    - `template` or `pattern`: the value must match the shape. Give the key an `example`, as on any rule.
    - `format`: `url` for an absolute URL, or `slug` for lowercase letters and digits joined by single hyphens.
 
-3. For a key whose value is a list, set `list: true`. The constraint then applies to every element, and `min` and `max` bound the number of elements. A list where no list is declared, or a single value where a list is declared, is an error.
+3. For a key whose value is a list, set `list: true`. The constraint then applies to every element, and `min` and a hard `max` bound the number of elements. `max` is a map of a limit and `when-at-limit`, as on a block. A list where no list is declared, or a single value where a list is declared, is an error.
 
 4. Give `id` a template. The template uses only the holes that the engine fills when it writes a new document:
 
@@ -58,7 +58,9 @@ frontmatter:
     list: true
     format: url
     min: 1
-    max: 2
+    max:
+      hard: 2
+      when-at-limit: 'Link any further homepages in the body of the document.'
     example: https://example.com/link-checker
   tags:
     list: true
@@ -152,7 +154,9 @@ frontmatter:
     list: true
     format: url
     min: 1
-    max: 2
+    max:
+      hard: 2
+      when-at-limit: 'Link any further homepages in the body of the document.'
     example: https://example.com/link-checker
   tags:
     list: true
@@ -236,7 +240,7 @@ The command reserves no frontmatter key. A program that embeds the engine can re
 - `TL_54`: a declared key is missing. Add it, or set `optional: true` on the key. See [TL_54][sokf:errors-frontmatter#tl_54].
 - `TL_55`: a key isn't declared. Remove it, declare it, or set `frontmatter-open: true`. See [TL_55][sokf:errors-frontmatter#tl_55].
 - `TL_56`: a value fails its `const`, `template`, `pattern`, `enum`, or `format`. See [TL_56][sokf:errors-frontmatter#tl_56].
-- `TL_106`, `TL_107`: a list has fewer elements than its `min`, or more than its `max`. See [TL_106][sokf:errors-frontmatter#tl_106] and [TL_107][sokf:errors-frontmatter#tl_107].
+- `TL_106`, `TL_107`: a list has fewer elements than its `min`, or more than its hard `max`. See [TL_106][sokf:errors-frontmatter#tl_106] and [TL_107][sokf:errors-frontmatter#tl_107].
 - `TL_57`: a list is declared and the value is a single value, or the other way round. See [TL_57][sokf:errors-frontmatter#tl_57].
 - `TL_58`: the `id` template contains a hole that the engine can't fill for a new document. See [TL_58][sokf:errors-lifecycle-and-ids#tl_58].
 - `TL_114`: the `id` template contains more than one `${:seq}`. See [TL_114][sokf:errors-lifecycle-and-ids#tl_114].

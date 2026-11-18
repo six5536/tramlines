@@ -122,11 +122,15 @@ impl Deriver<'_> {
         capture_of(&self.key_reader(rule, text)?, text)
     }
 
-    /// Record the key `rule` captures from `text`, against the rule's
-    /// `rule-id`, else the block's.
+    /// Record the key `rule` captures from `text` under the name that the
+    /// check files it under: the rule's `key-of`, else the `rule-id` of
+    /// its block, its group, or its section.
     pub(super) fn record_capture(&mut self, block: &Block, rule: &Unit, text: &str) {
         let key = self.captured(rule, text);
-        self.record(rule.rule_id.as_ref().or(block.rule_id.as_ref()), key);
+        let id = rule
+            .files_under(&[block.rule_id.as_deref(), self.group_rule.as_deref()])
+            .map(str::to_string);
+        self.record(id.as_ref(), key);
     }
 
     /// A key whose rule derives it takes a prefix the rule it derives from
@@ -264,11 +268,12 @@ impl Deriver<'_> {
     pub(super) fn paired_units(&mut self, block: &Block, rule: &Unit) -> Option<Vec<String>> {
         let with = rule.for_each_key_of.as_deref()?;
         let example = self.unit_text_at(block, Some(rule), 0);
+        let (example, carried) = self.unlabel(block, Some(rule), example);
         let reader = self.key_reader(rule, &example)?;
         let mut out = Vec::new();
         for key in self.keys_in_scope(with) {
             match respell(&reader, &example, &key) {
-                Some(text) => out.push(text),
+                Some(text) => out.push(self.relabel(block, Some(rule), text, &carried)),
                 // sokf-implements: TLMD_154
                 None => self.refuse_on(
                     rule.common.line,

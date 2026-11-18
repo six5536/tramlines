@@ -13,8 +13,8 @@ use tramlines_core::grammar::{
 };
 
 use super::{
-    Block, FormatRegistry, Grammar, Lang, Preamble, ProhibitedHeading, RegexCache, RuleCommon,
-    Schema, Section, Unit, squash,
+    Block, FormatRegistry, Grammar, Label, Lang, Preamble, ProhibitedHeading, RegexCache,
+    RuleCommon, Schema, Section, Unit, squash,
 };
 use crate::{
     Finding, RepoPath, Severity, Spanned,
@@ -27,6 +27,7 @@ const MD_SCHEMA_KEYS: &[&str] = &[
     "sections",
     "sections-ordered",
     "sections-prohibited",
+    "labels",
 ];
 
 /// The keys of `unit` the markdown format grammar declares, and the
@@ -43,8 +44,10 @@ const UNIT_KEYS: &[&str] = &[
     "key-repeats",
     "unique",
     "rule-id",
+    "key-of",
     "for-each-key-of",
     "prohibited-patterns",
+    "label",
     "optional",
     "repeat",
     "blocks",
@@ -81,15 +84,17 @@ pub fn lower(
         schema_id,
         &mut findings,
     );
-    // A format the schema declares and that did not load has its own
-    // finding already.
+    // A format the schema declares and that did not load, or one under the
+    // schema that a type of the schema breaks, has its own finding already.
     let unloaded = yaml
         .get("formats")
         .and_then(|f| f.as_map())
         .unwrap_or(&[])
         .iter()
-        .map(|(name, _)| name.value.clone())
+        .map(|(name, _)| &name.value)
+        .chain(registry.entries.keys())
         .filter(|name| formats.get(name).is_none())
+        .cloned()
         .collect();
     let mut l = MdLowerer {
         core: Lowerer::new(regexes, schema, formats.types_seen()),
@@ -105,9 +110,10 @@ pub fn lower(
 
 /// The lowering of a markdown schema: the core lowering, the dialect that
 /// names a host's region kind, the `severity` of the rule being lowered,
-/// which the rules inside it take unless they declare their own, and the
-/// formats the schema declares that did not load, and the number of unit
-/// rules lowered so far, which gives each its `index`.
+/// which the rules inside it take unless they declare their own, the
+/// formats the schema declares that did not load and the formats under the
+/// schema that a type of the schema breaks, and the number of unit rules
+/// lowered so far, which gives each its `index`.
 struct MdLowerer<'a> {
     core: Lowerer<'a>,
     dialect: Dialect,
@@ -231,6 +237,14 @@ impl MdLowerer<'_> {
             sections,
             sections_ordered,
             sections_prohibited,
+            // sokf-implements: TLMD_239
+            // A key given twice is one label.
+            labels: {
+                let mut keys = list_of(yaml, "labels");
+                let mut seen = HashSet::new();
+                keys.retain(|k| seen.insert(k.clone()));
+                keys
+            },
             // sokf-implements: TL_9
             // sokf-implements: MD-2_AC-6
             extensions: extensions(yaml, &known),
@@ -270,7 +284,7 @@ impl MdLowerer<'_> {
             renamed_from: list_of(node, "renamed-from"),
             rule_id: str_of(node, "rule-id"),
             level,
-            optional: bool_of(node, "optional"),
+            optional: self.optional(node),
             repeat: bool_of(node, "repeat"),
             headings_open: bool_of(node, "headings-open"),
             subheadings_open: bool_of(node, "subheadings-open"),
@@ -397,10 +411,10 @@ impl MdLowerer<'_> {
         Block {
             common,
             kind,
-            optional: bool_of(node, "optional"),
+            optional: self.optional(node),
             repeat: bool_of(node, "repeat"),
             min: usize_of(node, "min").unwrap_or(1),
-            max: usize_of(node, "max"),
+            max: self.limit(node, "max"),
             each,
             sequence,
             rules,
@@ -412,6 +426,7 @@ impl MdLowerer<'_> {
             example_columns: node.get("example-columns").and_then(|c| c.as_str_or_list()),
             source_pattern: self.regex(node, "source-pattern"),
             inline_html: bool_of(node, "inline-html"),
+            label: label(node),
             blocks,
             rule_id: str_of(node, "rule-id"),
             examples,
@@ -481,6 +496,23 @@ impl MdLowerer<'_> {
                 "a guarded rule states `min`: `min: 0` governs such units without demanding one, and a number demands that many",
             );
         }
+        // A host words the lead of a rule's limit with the rule's name, the
+        // format that it binds or else its `rule-id`. A rule with neither
+        // would take the unit of its block alone, which reads as a limit on
+        // the whole block. A ban is a limit too, and its lead names the
+        // units that it bans.
+        // sokf-implements: TLMD_235
+        if guarded
+            && node.get("max").is_some()
+            && node.get("format").is_none()
+            && node.get("rule-id").is_none()
+        {
+            self.fail(
+                node.line,
+                "TLMD_235",
+                "a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`",
+            );
+        }
         let min = match usize_of(node, "min") {
             Some(n) => n,
             // One default, whatever sits beside it: a rule demands one unit.
@@ -520,17 +552,19 @@ impl MdLowerer<'_> {
             key_repeats: bool_of(node, "key-repeats"),
             key_derives_from: node.get("key-derives-from").map(derivation),
             rule_id: str_of(node, "rule-id"),
+            key_of: str_of(node, "key-of"),
             for_each_key_of: node
                 .get("for-each-key-of")
                 .and_then(Spanned::as_str_or_list),
             prohibited_patterns: self.prohibitions(node),
+            label: label(node),
             optional: bool_of(node, "optional"),
             repeat: bool_of(node, "repeat"),
             blocks,
             lines,
             lines_open: bool_of(node, "lines-open"),
             min,
-            max: usize_of(node, "max"),
+            max: self.limit(node, "max"),
             select,
             examples,
             example_list,
@@ -572,6 +606,17 @@ pub fn compile(
 
 mod checks;
 mod shapes;
+
+/// The `label` of a block or a unit rule `node`, where it declares one.
+// sokf-implements: TLMD_240
+// sokf-implements: MD-2_AC-11
+fn label(node: &Spanned) -> Option<Label> {
+    match str_of(node, "label")?.as_str() {
+        "required" => Some(Label::Required),
+        "optional" => Some(Label::Optional),
+        _ => None,
+    }
+}
 
 /// Whether a `*-ordered` key of `node` holds its parts in order, which it
 /// does unless it says otherwise.

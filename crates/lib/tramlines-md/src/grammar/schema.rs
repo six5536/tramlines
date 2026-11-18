@@ -8,8 +8,9 @@ use regex::Regex;
 use tramlines_core::grammar::Scope;
 
 use super::{
-    CoreSchema, DerivationSource, Format, FormatRegistry, KeyDerivation, Only, RuleCommon, Shape,
-    States, captured, squash,
+    Condition, CoreSchema, DerivationSource, Format, FormatRegistry, KeyDerivation, Label,
+    LifecycleDimension, Limit, Only, RuleCommon, RuleLookup, Shape, States, Words, captured,
+    squash,
 };
 use crate::{Spanned, markdown::BlockKind};
 
@@ -42,8 +43,9 @@ pub struct Section {
     pub rule_id: Option<String>,
     /// `level`.
     pub level: u8,
-    /// `optional`.
-    pub optional: bool,
+    /// `optional`: the condition in which the section can be absent, which
+    /// admits every state for `true`; `None` where it is always required.
+    pub optional: Option<Condition>,
     /// `repeat`.
     pub repeat: bool,
     /// `headings-open`.
@@ -68,7 +70,26 @@ pub struct Section {
     pub examples: Vec<String>,
 }
 
+/// Whether a part whose `optional` is `optional` can be absent from a
+/// document in `states`: never for `None`, and otherwise where the
+/// condition admits the states, as [`Condition::admits_known`] reads them.
+// sokf-implements: TLMD_229
+// sokf-implements: TLMD_230
+fn optional_at(
+    optional: Option<&Condition>,
+    states: &States,
+    lifecycle: &[LifecycleDimension],
+) -> bool {
+    optional.is_some_and(|c| c.admits_known(states, lifecycle))
+}
+
 impl Section {
+    /// Whether the section can be absent from a document in `states`: where
+    /// the condition of its `optional` admits them.
+    pub fn optional_at(&self, states: &States, lifecycle: &[LifecycleDimension]) -> bool {
+        optional_at(self.optional.as_ref(), states, lifecycle)
+    }
+
     /// The heading as the schema would print it.
     pub fn label(&self) -> String {
         self.heading.shape.label()
@@ -110,14 +131,15 @@ pub struct Block {
     pub common: RuleCommon,
     /// `kind`.
     pub kind: BlockKind,
-    /// `optional`.
-    pub optional: bool,
+    /// `optional`: the condition in which the block can be absent, which
+    /// admits every state for `true`; `None` where it is always required.
+    pub optional: Option<Condition>,
     /// `repeat`.
     pub repeat: bool,
     /// `min`; absent means one.
     pub min: usize,
-    /// `max`; absent means unbounded.
-    pub max: Option<usize>,
+    /// `max`: the limit on the units; absent means unbounded.
+    pub max: Option<Limit>,
     /// `each`.
     pub each: Option<Unit>,
     /// `sequence`.
@@ -141,6 +163,9 @@ pub struct Block {
     pub source_pattern: Option<Regex>,
     /// `inline-html`.
     pub inline_html: bool,
+    /// `label`: whether each unit carries a label, where its unit rule
+    /// declares no `label` of its own.
+    pub label: Option<Label>,
     /// `blocks`, of a group.
     pub blocks: Option<Vec<Block>>,
     /// `rule-id`.
@@ -178,13 +203,20 @@ pub struct Unit {
     pub key_repeats: bool,
     /// `key-derives-from`: the prefix the key takes.
     pub key_derives_from: Option<KeyDerivation>,
-    /// `rule-id`: the name the keys this rule captures belong to.
+    /// `rule-id`: the rule's name, which no reference can use, and under
+    /// which no key is filed (TLMD_236).
     pub rule_id: Option<String>,
-    /// `for-each-key-of`: the rules whose keys this rule's keys pair with,
-    /// one rule when the schema names one.
+    /// `key-of`: the name that the keys this rule captures belong to, in
+    /// place of the id of its block, its group, or its section (TLMD_89).
+    pub key_of: Option<String>,
+    /// `for-each-key-of`: the names whose keys this rule's keys pair with,
+    /// one name when the schema gives one.
     pub for_each_key_of: Option<Vec<String>>,
     /// `prohibited-patterns`: what the unit's text may not match.
     pub prohibited_patterns: Vec<tramlines_core::grammar::Prohibition>,
+    /// `label`: whether each unit the rule governs carries a label, in
+    /// place of the `label` of its block.
+    pub label: Option<Label>,
     /// `optional`, in a sequence.
     pub optional: bool,
     /// `repeat`, in a sequence.
@@ -199,8 +231,9 @@ pub struct Unit {
     pub select: Option<Regex>,
     /// `min` selected lines; a guarded rule states it, else one.
     pub min: usize,
-    /// `max` selected lines; absent means unbounded.
-    pub max: Option<usize>,
+    /// `max`: the limit on the selected units or lines; absent means
+    /// unbounded.
+    pub max: Option<Limit>,
     /// `example`: the texts of the units this rule governs, in order. A
     /// single string is a list of one.
     pub examples: Vec<String>,
@@ -216,9 +249,42 @@ pub struct Unit {
 }
 
 impl Unit {
+    /// The name that a key this rule captures is filed under: its
+    /// `key-of`, else the first of `around`, the `rule-id`s of its block,
+    /// its group, and its section, in that order. The rule's own
+    /// `rule-id` files nothing. The check, the derivation, and the
+    /// lookup of a reference all file a key through this.
+    // sokf-implements: TLMD_89
+    // sokf-implements: TLMD_236
+    pub(crate) fn files_under<'a>(&'a self, around: &[Option<&'a str>]) -> Option<&'a str> {
+        self.key_of.as_deref().or_else(|| nearest(around))
+    }
+
+    /// The `rule-id` that names the rule in a finding on its capture: its
+    /// own, else the first of `around`, as `files_under` reads them.
+    pub(crate) fn named_by<'a>(&'a self, around: &[Option<&'a str>]) -> Option<&'a str> {
+        self.rule_id.as_deref().or_else(|| nearest(around))
+    }
+
+    /// The most units or lines the rule may take or count: the count of a
+    /// hard `max`, and `None` for a soft `max` or no `max`, neither of
+    /// which bounds anything.
+    pub fn hard_max(&self) -> Option<usize> {
+        self.max.as_ref().and_then(Limit::hard)
+    }
+
     /// The format the rule binds, as `formats` defines it.
     pub(crate) fn format_in<'f>(&self, formats: &'f FormatRegistry) -> Option<&'f Format> {
         formats.get(self.format.as_deref()?)
+    }
+
+    /// Whether the rule, or the format it binds as `formats` defines it,
+    /// bans any text.
+    pub(crate) fn bans_in(&self, formats: &FormatRegistry) -> bool {
+        !self.prohibited_patterns.is_empty()
+            || self
+                .format_in(formats)
+                .is_some_and(|f| !f.prohibited.is_empty())
     }
 
     /// The key the rule captures from the squashed `text`: its own `key` of
@@ -326,6 +392,8 @@ pub struct Schema {
     pub sections_ordered: bool,
     /// `sections-prohibited`.
     pub sections_prohibited: Vec<ProhibitedHeading>,
+    /// `labels`: the key of each label that a unit can carry, in order.
+    pub labels: Vec<String>,
     /// The keys a host's extension adds, as written, for the host to lower.
     pub extensions: BTreeMap<String, Spanned>,
 }
@@ -341,6 +409,7 @@ impl Schema {
             sections: vec![],
             sections_ordered: true,
             sections_prohibited: vec![],
+            labels: vec![],
             extensions: BTreeMap::new(),
         }
     }
@@ -360,14 +429,27 @@ impl Schema {
     /// Each `rule-id`, in schema order, with the line of its rule.
     pub fn rule_id_lines(&self) -> Vec<(String, usize)> {
         let mut ids = Vec::new();
+        self.each_name(&mut |kind, id, line, _| {
+            if kind != Name::KeyOf {
+                ids.push((id.to_string(), line));
+            }
+        });
+        ids
+    }
+
+    /// Call `f` with each name that the schema declares, in schema order:
+    /// what declares it, the name, the line of its rule, and the unit rule
+    /// where a unit rule declares it.
+    fn each_name<'s>(&'s self, f: &mut impl FnMut(Name, &str, usize, Option<&'s Unit>)) {
         for s in &self.sections {
-            ids.extend(s.rule_id.clone().map(|id| (id, s.common.line)));
-            collect_block_ids(s.blocks.as_deref(), &mut ids);
+            if let Some(id) = &s.rule_id {
+                f(Name::Referable, id, s.common.line, None);
+            }
+            each_block_name(s.blocks.as_deref(), f);
         }
         if let Some(p) = &self.preamble {
-            collect_block_ids(p.blocks.as_deref(), &mut ids);
+            each_block_name(p.blocks.as_deref(), f);
         }
-        ids
     }
 
     /// The unit rule whose `Unit::index` is `index`: a rule of a block, of
@@ -404,13 +486,15 @@ impl Schema {
                 .is_some_and(|f| f.key.is_some())
     }
 
-    /// Whether the rule `id` names captures a key. A key belongs to the
-    /// nearest `rule-id` around the rule that captures it: the unit rule's
-    /// own, else its block's, else the enclosing group's, else its
-    /// section's; a section's heading key is the section's. This is the
-    /// one definition every reference to a rule's keys (`for-each-key-of`,
-    /// a host's rule) resolves through, and it mirrors how the check
-    /// attributes a capture.
+    /// Whether the name `id` holds a key. A key belongs to the `key-of` of
+    /// the unit rule that captures it, else to the nearest `rule-id`
+    /// around the rule: its block's, else the enclosing group's, else its
+    /// section's; a section's heading key is the section's. A unit rule's
+    /// own `rule-id` holds no key (TLMD_236). This is the one definition
+    /// every reference to a set of keys (`for-each-key-of`,
+    /// `key-derives-from`, a host's rule) resolves through, and it mirrors
+    /// how the check attributes a capture (TLMD_238).
+    // sokf-implements: TLMD_238
     pub fn rule_captures_key(&self, id: &str) -> Result<(), RuleLookup> {
         let mut owners = HashSet::new();
         for s in &self.sections {
@@ -425,12 +509,50 @@ impl Schema {
             self.key_owners(p.blocks.as_deref(), None, None, &mut owners);
         }
         if owners.contains(id) {
-            Ok(())
-        } else if self.rule_ids().iter().any(|r| r == id) {
-            Err(RuleLookup::NoKey)
-        } else {
-            Err(RuleLookup::NoRule)
+            return Ok(());
         }
+        // A unit rule's `rule-id` on a rule that captures a key is the
+        // likeliest meaning of the name, as a schema written before
+        // `key-of` means it.
+        let (mut unit, mut declared) = (false, false);
+        self.each_name(&mut |kind, name, _, rule| {
+            if name == id {
+                // A pairing rule's keys are references, so they make no set.
+                unit |= kind == Name::Unit
+                    && rule
+                        .is_some_and(|u| u.for_each_key_of.is_none() && self.unit_captures_key(u));
+                declared = true;
+            }
+        });
+        Err(if unit {
+            RuleLookup::NameOnly
+        } else if declared {
+            RuleLookup::NoKey
+        } else {
+            RuleLookup::NoRule
+        })
+    }
+
+    /// Every name that the schema declares: each `rule-id` and each
+    /// `key-of`.
+    pub(crate) fn declared_names(&self) -> HashSet<String> {
+        let mut names = HashSet::new();
+        self.each_name(&mut |_, id, _, _| {
+            names.insert(id.to_string());
+        });
+        names
+    }
+
+    /// Each `rule-id` that a reference can name, of a section or a block,
+    /// in schema order, with the line of its rule (TL_15).
+    pub(crate) fn referable_id_lines(&self) -> Vec<(String, usize)> {
+        let mut ids = Vec::new();
+        self.each_name(&mut |kind, id, line, _| {
+            if kind == Name::Referable {
+                ids.push((id.to_string(), line));
+            }
+        });
+        ids
     }
 
     /// The keys that the examples of the rule `id` names capture, owned as
@@ -493,6 +615,7 @@ impl Schema {
         section: Option<&str>,
         out: &mut Vec<String>,
     ) {
+        let words = Words::keys_of(self);
         for b in blocks.unwrap_or(&[]) {
             if b.kind == BlockKind::Group {
                 let group = b.rule_id.as_deref().or(group);
@@ -506,13 +629,13 @@ impl Schema {
                 next += 1;
                 units.extend(u.lines.iter().flatten());
                 self.example_keys_in(u.blocks.as_deref(), id, group, section, out);
-                let owner = u
-                    .rule_id
-                    .as_deref()
-                    .or(b.rule_id.as_deref())
-                    .or(group)
-                    .or(section);
-                if owner != Some(id) {
+                let owner = u.files_under(&[b.rule_id.as_deref(), group, section]);
+                // A rule that derives from the name gives it no parent.
+                let derives_here = u
+                    .key_derives_from
+                    .as_ref()
+                    .is_some_and(|d| matches!(&d.source, DerivationSource::Rule(r) if r == id));
+                if owner != Some(id) || derives_here {
                     continue;
                 }
                 let formats = &self.core.formats;
@@ -523,10 +646,11 @@ impl Schema {
                 } else {
                     b.examples.iter().map(String::as_str).collect()
                 };
+                // An example's key is read without its label (TLMD_248).
                 out.extend(
-                    texts
-                        .into_iter()
-                        .filter_map(|t| u.key_in(formats, &squash(t))),
+                    texts.into_iter().filter_map(|t| {
+                        u.key_in(formats, &self.unlabelled(&words, b, Some(u), t).0)
+                    }),
                 );
             }
         }
@@ -562,12 +686,7 @@ impl Schema {
         owners: &mut HashSet<String>,
     ) {
         if self.unit_captures_key(u)
-            && let Some(owner) = u
-                .rule_id
-                .as_deref()
-                .or(block.rule_id.as_deref())
-                .or(group)
-                .or(section)
+            && let Some(owner) = u.files_under(&[block.rule_id.as_deref(), group, section])
         {
             owners.insert(owner.to_string());
         }
@@ -578,44 +697,86 @@ impl Schema {
     }
 }
 
-/// Why `Schema::rule_captures_key` found no rule that captures a key.
+/// The first id of `around`, the ids around a rule, nearest first.
+fn nearest<'a>(around: &[Option<&'a str>]) -> Option<&'a str> {
+    around.iter().find_map(|a| *a)
+}
+
+/// What declares a name of a schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuleLookup {
-    /// No rule of the schema carries the id.
-    NoRule,
-    /// A rule carries the id, and captures no key.
-    NoKey,
+enum Name {
+    /// The `rule-id` of a section or a block, which a reference can name.
+    Referable,
+    /// The `rule-id` of a unit rule or a line rule, which names the rule.
+    Unit,
+    /// The `key-of` of a unit rule or a line rule.
+    KeyOf,
 }
 
-impl RuleLookup {
-    /// The refusal, for the key `what` that named rule `id`.
-    pub fn message(self, what: &str, id: &str) -> String {
-        match self {
-            RuleLookup::NoRule => format!("`{what}` names no rule `{id}`"),
-            RuleLookup::NoKey => format!("`{what}` names rule `{id}`, which captures no key"),
-        }
-    }
-}
-
-fn collect_block_ids(blocks: Option<&[Block]>, ids: &mut Vec<(String, usize)>) {
+/// Call `f` with each name declared under `blocks`, at any depth.
+fn each_block_name<'s>(
+    blocks: Option<&'s [Block]>,
+    f: &mut impl FnMut(Name, &str, usize, Option<&'s Unit>),
+) {
     for b in blocks.unwrap_or(&[]) {
-        ids.extend(b.rule_id.clone().map(|id| (id, b.common.line)));
-        collect_block_ids(b.blocks.as_deref(), ids);
+        if let Some(id) = &b.rule_id {
+            f(Name::Referable, id, b.common.line, None);
+        }
+        each_block_name(b.blocks.as_deref(), f);
         for u in b.units() {
-            collect_unit_ids(u, ids);
+            each_unit_name(u, f);
         }
     }
 }
 
-fn collect_unit_ids(u: &Unit, ids: &mut Vec<(String, usize)>) {
-    ids.extend(u.rule_id.clone().map(|id| (id, u.common.line)));
-    collect_block_ids(u.blocks.as_deref(), ids);
+fn each_unit_name<'s>(u: &'s Unit, f: &mut impl FnMut(Name, &str, usize, Option<&'s Unit>)) {
+    if let Some(id) = &u.rule_id {
+        f(Name::Unit, id, u.common.line, Some(u));
+    }
+    if let Some(id) = &u.key_of {
+        f(Name::KeyOf, id, u.common.line, Some(u));
+    }
+    each_block_name(u.blocks.as_deref(), f);
     for line in u.lines.iter().flatten() {
-        collect_unit_ids(line, ids);
+        each_unit_name(line, f);
     }
 }
 
 impl Block {
+    /// Whether the block can be absent from a document in `states`: where
+    /// the condition of its `optional` admits them.
+    pub fn optional_at(&self, states: &States, lifecycle: &[LifecycleDimension]) -> bool {
+        optional_at(self.optional.as_ref(), states, lifecycle)
+    }
+
+    /// The inner blocks of a group that `states` admit, in order.
+    pub(crate) fn admitted<'a>(
+        &'a self,
+        states: &'a States,
+    ) -> impl DoubleEndedIterator<Item = &'a Block> + 'a {
+        self.blocks
+            .iter()
+            .flatten()
+            .filter(move |b| b.common.only.admits(states))
+    }
+
+    /// The position that the block opens with at `states`: a group's first
+    /// admitted inner position, followed into a group that opens a group,
+    /// else the block itself.
+    pub(crate) fn first_position<'a>(&'a self, states: &'a States) -> Option<&'a Block> {
+        if self.kind != BlockKind::Group {
+            return Some(self);
+        }
+        self.admitted(states).next()?.first_position(states)
+    }
+
+    /// The most units the block may hold: the count of a hard `max`, and
+    /// `None` for a soft `max` or no `max`, neither of which bounds
+    /// anything.
+    pub fn hard_max(&self) -> Option<usize> {
+        self.max.as_ref().and_then(Limit::hard)
+    }
+
     /// The first text of the block's `example`.
     pub fn example(&self) -> Option<&str> {
         self.examples.first().map(String::as_str)

@@ -477,6 +477,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 heading_slug: Some(h.slug.clone()),
                 scope: section.heading.unique.clone(),
                 rule_id: section.rule_id.clone(),
+                rule_name: section.rule_id.clone(),
                 section: Some(j),
                 pairs: section.for_each_key_of.clone().map(|with| Paired {
                     with,
@@ -515,26 +516,30 @@ pub(super) fn check(c: &mut Checker<'_>) {
         c.at = At::default();
     }
 
-    // A section's `rule-id` names the keys captured within it.
+    // A section's `rule-id` names the keys captured within it, and the
+    // rule that captured each where nothing nearer names it.
     for cap in &mut c.out.captures {
-        if cap.rule_id.is_none()
-            && let Some(j) = cap.section
-        {
-            cap.rule_id = declared[j].rule_id.clone();
+        if let Some(j) = cap.section {
+            if cap.rule_id.is_none() {
+                cap.rule_id = declared[j].rule_id.clone();
+            }
+            if cap.rule_name.is_none() {
+                cap.rule_name = declared[j].rule_id.clone();
+            }
         }
     }
 
     for (j, section) in declared.iter().enumerate() {
         if section.parent.is_some() {
             if let Some(pj) = parent_of[j]
-                && !section.optional
+                && !c.section_optional(section)
                 && section.for_each_key_of.is_none()
             {
                 missing_inside(c, section, j, pj);
             }
             continue;
         }
-        if seen[j] == 0 && !section.optional && section.for_each_key_of.is_none() {
+        if seen[j] == 0 && !c.section_optional(section) && section.for_each_key_of.is_none() {
             c.located(At::section(section), |c| {
                 c.emit(
                     &section.common,

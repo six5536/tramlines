@@ -450,21 +450,21 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TL_107
 
-A list in the frontmatter has more elements than the `max` of its key ([TL_107][sokf:tramlines:tramlines-spec#tl_107]).
+A list in the frontmatter has more elements than the hard `max` of its key ([TL_107][sokf:tramlines:tramlines-spec#tl_107]).
 
 ### Message
 
 ```text
-<file>:<line>: error[TL_107]: `<key>` allows at most <max> entries; it has <n> (schema <id>, key `<key>`)
+<file>:<line>: error[TL_107]: `<key>` allows at most <max> entries; it has <n>. When at the limit: <when-at-limit> (schema <id>, key `<key>`)
 ```
 
 ### Cause
 
-The key declares `list` and a `max`, and the list in the document is longer.
+The key declares `list` and a hard `max`, and the list in the document is longer. A soft `max` is never checked.
 
 ### Fix
 
-Remove elements from the list in the document. If documents of this kind need more, raise `max` on the key in the schema.
+Remove elements from the list in the document, and follow the text after `When at the limit:`, which says where more content goes. If documents of this kind need more, raise the count on the key in the schema, or make the limit `soft`.
 
 ### Example
 
@@ -477,7 +477,9 @@ line-limit: 0
 frontmatter:
   tags:
     list: true
-    max: 2
+    max:
+      hard: 2
+      when-at-limit: 'Name further topics in the note.'
     example: shopping
 sections:
   - heading: Note
@@ -499,7 +501,7 @@ tags: [shopping, weekly, food]
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:2: error[TL_107]: `tags` allows at most 2 entries; it has 3 (schema note, key `tags`)
+note.md:2: error[TL_107]: `tags` allows at most 2 entries; it has 3. When at the limit: Name further topics in the note. (schema note, key `tags`)
 1 error, 0 warnings
 [exit 1]
 ```

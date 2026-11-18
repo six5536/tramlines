@@ -4,7 +4,7 @@
 use super::{Grammar, KeyDef, RegexCache, TypeName};
 use crate::{
     Finding, RepoPath, Spanned, Yaml,
-    text::{self, is_slug},
+    text::{self, is_language_tag, is_slug},
 };
 
 /// Validate a schema against grammar `schema`.
@@ -285,6 +285,47 @@ impl Validator<'_> {
                 Yaml::Map(_) => {}
                 _ => self.mistyped(value.line, format!("`{key}` must be a string or a map")),
             },
+            TypeName::Condition => self.condition(value, key, def, kind, "a map of states"),
+            TypeName::BooleanOrCondition => {
+                if value.as_bool().is_none() {
+                    self.condition(value, key, def, kind, "`true`, `false`, a map of states");
+                }
+            }
+        }
+    }
+
+    /// A `condition`: a map of dimensions to states, or a list of such
+    /// maps. `what` names the forms the key takes before the list, for the
+    /// finding on a value of no such form.
+    fn condition(
+        &mut self,
+        value: &Spanned,
+        key: &str,
+        def: &KeyDef,
+        kind: Option<&str>,
+        what: &str,
+    ) {
+        match &value.value {
+            Yaml::Map(entries) => {
+                for (_, states) in entries {
+                    self.item(states, key, Some("string-or-list"), def, kind);
+                }
+            }
+            // Each item is a map, and the finding on one that is not sits
+            // on its own line.
+            Yaml::Seq(items) => {
+                for item in items {
+                    match &item.value {
+                        Yaml::Map(_) => self.condition(item, key, def, kind, what),
+                        _ => self
+                            .mistyped(item.line, format!("`{key}` items must be maps of states")),
+                    }
+                }
+            }
+            _ => self.mistyped(
+                value.line,
+                format!("`{key}` must be {what}, or a list of such maps"),
+            ),
         }
     }
 
@@ -323,6 +364,21 @@ impl Validator<'_> {
                         format!("`{key}` values must be strings or lists of strings"),
                     );
                 }
+            }
+            // A bare number was the form of a limit before a limit took
+            // the text for the writer, so the finding shows the map that
+            // keeps its check.
+            // sokf-implements: TL_137
+            // sokf-implements: CORE-4_AC-6
+            Some("limit") if item.as_int().is_some() => {
+                let n = item.as_int().unwrap_or_default();
+                self.fail_on(
+                    item.line,
+                    "TL_137",
+                    format!(
+                        "`{key}` is a map of a limit and its `when-at-limit` text, not a number: write `{key}: {{ hard: {n}, when-at-limit: \"…\" }}` to keep the check, or `soft` for a limit that is never checked"
+                    ),
+                );
             }
             Some(name) if self.grammar.rule(name).is_some() => {
                 let inner_kind = if name == "block" { None } else { kind };
@@ -367,6 +423,16 @@ impl Validator<'_> {
                     value.line,
                     "TL_102",
                     format!("`{key}` must be a slug: `{text}` is not"),
+                );
+            }
+            Some("language-tag") if !is_language_tag(text) => {
+                // sokf-implements: TL_102
+                self.fail_on(
+                    value.line,
+                    "TL_102",
+                    format!(
+                        "`{key}` must be a BCP 47 language tag, such as `en` or `de-CH`: `{text}` is not"
+                    ),
                 );
             }
             // References resolve when the schema is lowered.

@@ -18,6 +18,7 @@ mod load;
 mod man;
 mod new;
 mod report;
+mod texts;
 mod validate;
 
 use std::{io::Write, process::ExitCode};

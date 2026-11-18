@@ -7,9 +7,10 @@
 - [Describe sections and headings][sokf:how-to-describe-sections] - List the headings that a document must contain, which of them are optional or repeat, where writers can add headings of their own, and what comes before the first heading.
 - [Embed the engine in a Rust program][sokf:how-to-embed-the-engine] - Use the tramlines-md library to compile a schema, check documents, repair them, derive a starter document, and add schema keys of your own.
 - [Apply a rule in some states only][sokf:how-to-gate-rules-by-state] - Declare the states that a document moves through, and gate a section, a block, or a frontmatter key to some of them with `only`.
+- [Label the units of a part][sokf:how-to-label-units] - Declare the labels that the units of a document carry, such as who wrote each one, say which parts require a label or allow one, and give their words in the language of the schema.
 - [Read an error and fix the document][sokf:how-to-read-a-finding] - Read each part of an error from tramlines, find what its key means and which rule of the schema it breaks, and change the document so that it passes.
 - [Repair a document and start a new one][sokf:how-to-repair-and-start-documents] - Start a document from the scaffold of its schema with `tramlines new`, and let `tramlines validate --fix` rewrite the headings and anchors that the schema derives.
-- [Select and count units and lines][sokf:how-to-select-and-count-lines] - Write the rules of a block whose units come in more than one kind, pick units by a label, count or ban them, and check the lines of a code block.
+- [Select and count units and lines][sokf:how-to-select-and-count-lines] - Write the rules of a block whose units come in more than one kind, pick units by the word that they begin with, count or ban them, and check the lines of a code block.
 - [Share line formats across schemas][sokf:how-to-share-line-formats] - Define the shape of a line once in a formats file, so that two schemas check a kind of line in the same way.
 - [Write examples and guidance][sokf:how-to-write-examples-and-guidance] - Give each rule an example that shows the text it requires, and guidance for what no example can show, so that the error for every failure shows the writer what to write.
 - [Write the shape of a line][sokf:how-to-write-line-shapes] - Describe the text of a heading, a paragraph, a list item, or a frontmatter value with exact text, a template with typed holes, or a regular expression.
@@ -23,6 +24,7 @@
 [sokf:how-to-describe-sections]: /docs/how-to/describe-sections.md
 [sokf:how-to-embed-the-engine]: /docs/how-to/embed-the-engine.md
 [sokf:how-to-gate-rules-by-state]: /docs/how-to/gate-rules-by-state.md
+[sokf:how-to-label-units]: /docs/how-to/label-units.md
 [sokf:how-to-read-a-finding]: /docs/how-to/read-a-finding.md
 [sokf:how-to-repair-and-start-documents]: /docs/how-to/repair-and-start-documents.md
 [sokf:how-to-select-and-count-lines]: /docs/how-to/select-and-count-lines.md

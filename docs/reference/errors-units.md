@@ -256,7 +256,7 @@ sections:
     level: 1
     blocks:
       - kind: bullet-list
-        each: { template: '${}', max: 3, example: Milk }
+        each: { template: '${}', max: { hard: 3, when-at-limit: 'Leave further items for the next trip.' }, example: Milk }
 ```
 
 **`note.md`**
@@ -285,7 +285,9 @@ sections:
     level: 1
     blocks:
       - kind: bullet-list
-        max: 3
+        max:
+          hard: 3
+          when-at-limit: 'Leave further items for the next trip.'
         each: { template: '${}', example: Milk }
 ```
 
@@ -327,7 +329,7 @@ sections:
       - kind: bullet-list
         rules:
           - { template: '${}', example: Open the lid. }
-          - { select-pattern: '^TODO', max: 0 }
+          - { select-pattern: '^TODO', rule-id: todo, max: { hard: 0, when-at-limit: 'Put each TODO in a list of open work.' } }
 ```
 
 **`note.md`**
@@ -358,7 +360,81 @@ sections:
       - kind: bullet-list
         rules:
           - { template: '${}', example: Open the lid. }
-          - { select-pattern: '^TODO', min: 0, max: 0 }
+          - { select-pattern: '^TODO', min: 0, rule-id: todo, max: { hard: 0, when-at-limit: 'Put each TODO in a list of open work.' } }
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
+## TLMD_235
+
+A rule under `rules` or `lines` declares a `max`, and neither binds a format nor declares a `rule-id` ([TLMD_235][sokf:tramlines:tramlines-md-spec#tlmd_235]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_235]: a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`
+```
+
+### Cause
+
+The error is on the schema. Before the `when-at-limit` of each limit, a scaffold holds words that a host writes, and those words name the limit of a rule by the format that the rule binds, or else by its `rule-id`. A rule with neither leaves the words only the unit of the block, so words such as `At most 1 item.` read as a limit on every item of the block. A soft limit and a hard `max` of zero need the name as much as a hard count.
+
+### Fix
+
+In the schema, give the rule a `rule-id` that says what it counts, such as `wait` for a rule that selects the items that begin with `wait`.
+
+The `rule-id` only names the rule. The keys that the rule captures stay where they were, under its `key-of` or the `rule-id` of its block, so no pairing changes.
+
+### Example
+
+This schema allows one item that begins with `wait`, and the rule has no name, so the run reports the error on the schema:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Steps
+    level: 1
+    blocks:
+      - kind: bullet-list
+        rules:
+          - { template: '${}', example: Open the lid. }
+          - { select-pattern: '^wait', min: 0, max: { hard: 1, when-at-limit: 'Gather the waits into one item.' } }
+```
+
+**`note.md`**
+
+```markdown
+# Steps
+
+- Open the lid.
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+note.yaml:9: error[TLMD_235]: a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`
+1 error, 0 warnings
+[exit 1]
+```
+
+Add `rule-id: wait`:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Steps
+    level: 1
+    blocks:
+      - kind: bullet-list
+        rules:
+          - { template: '${}', example: Open the lid. }
+          - { select-pattern: '^wait', min: 0, rule-id: wait, max: { hard: 1, when-at-limit: 'Gather the waits into one item.' } }
 ```
 
 ```console
@@ -507,21 +583,21 @@ $ tramlines validate --schema note.yaml note.md
 
 ## TLMD_159
 
-A rule under `rules` or `lines` takes or counts more units than its `max` ([TLMD_159][sokf:tramlines:tramlines-md-spec#tlmd_159]).
+A rule under `rules` or `lines` takes or counts more units than its hard `max` ([TLMD_159][sokf:tramlines:tramlines-md-spec#tlmd_159]).
 
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_159]: <selector>: at most <max> are allowed; there are <count> (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_159]: <selector>: at most <max> are allowed; there are <count>. When at the limit: <when-at-limit> (schema <id>, <place of the rule>)
 ```
 
 ### Cause
 
-The rule sets `max`, the most units that it takes or counts, and the block contains more. The selector names the units by the guard or the shape of the rule. The error points at the first unit over the limit. A rule with `max: 0` bans the units that it selects.
+The rule sets a hard `max`, the most units that it takes or counts, and the block contains more. A soft `max` is never checked. The selector names the units by the guard or the shape of the rule. The error points at the first unit over the limit. A rule with a hard `max` of zero bans the units that it selects.
 
 ### Fix
 
-Remove units of this kind from the document. If the block can contain more, raise `max` on the rule in the schema.
+Remove units of this kind from the document, and follow the text after `When at the limit:`, which says where more content goes. If the block can contain more, raise the count on the rule in the schema, or make the limit `soft`.
 
 ### Example
 
@@ -538,7 +614,7 @@ sections:
       - kind: bullet-list
         rules:
           - { template: '${}', example: Open the lid. }
-          - { select-pattern: '^TODO', min: 0, max: 0 }
+          - { select-pattern: '^TODO', min: 0, rule-id: todo, max: { hard: 0, when-at-limit: 'Put each TODO in a list of open work.' } }
 ```
 
 **`note.md`**
@@ -552,7 +628,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:4: error[TLMD_159]: the items matching `^TODO`: at most 0 are allowed; there is 1 (schema note, section "Steps" block 1)
+note.md:4: error[TLMD_159]: the items matching `^TODO`: at most 0 are allowed; there is 1. When at the limit: Put each TODO in a list of open work. (schema note, section "Steps" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -576,6 +652,7 @@ $ tramlines validate --schema note.yaml note.md
 
 [sokf:tramlines:tramlines-md-spec#tlmd_142]: /knowledge/spec/tramlines-md-spec.md#tlmd_142
 [sokf:tramlines:tramlines-md-spec#tlmd_159]: /knowledge/spec/tramlines-md-spec.md#tlmd_159
+[sokf:tramlines:tramlines-md-spec#tlmd_235]: /knowledge/spec/tramlines-md-spec.md#tlmd_235
 [sokf:tramlines:tramlines-md-spec#tlmd_53]: /knowledge/spec/tramlines-md-spec.md#tlmd_53
 [sokf:tramlines:tramlines-md-spec#tlmd_57]: /knowledge/spec/tramlines-md-spec.md#tlmd_57
 [sokf:tramlines:tramlines-md-spec#tlmd_58]: /knowledge/spec/tramlines-md-spec.md#tlmd_58

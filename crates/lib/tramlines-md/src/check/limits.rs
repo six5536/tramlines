@@ -1,7 +1,7 @@
 //! `line-limit` and `prohibited-patterns`.
 
 use super::{At, Checker};
-use crate::grammar::refused;
+use crate::grammar::refused_masked;
 
 /// The line limit; document-scope bans.
 // sokf-implements: TL_21
@@ -67,13 +67,20 @@ pub(super) fn check(c: &mut Checker<'_>) {
             continue;
         }
         // A generated anchor is no part of the text (TLMD_107), and a
-        // pattern quoted as code is not prose (LANG-1_AC-2).
+        // pattern quoted as code is not prose (LANG-1_AC-2): the bans read
+        // each code span as backticks, and a failure quotes the line.
         let clean = c.doc.body.clean_line(file_line, line);
-        let line = &c.doc.body.mask_spans(file_line, &clean);
+        let masked = c.doc.body.mask_spans(file_line, &clean);
         // A document-wide ban guards no one rule, so its failure is the
         // span it matched and its pattern.
         // sokf-implements: TL_75
-        if let Some(reason) = refused(line, &schema.core.prohibited_patterns, None) {
+        if let Some(reason) = refused_masked(
+            &clean,
+            &masked,
+            &schema.core.prohibited_patterns,
+            "line",
+            None,
+        ) {
             c.located(key_line("prohibited-patterns"), |c| {
                 c.error(Some(file_line), "TL_75", reason);
             });

@@ -17,12 +17,13 @@ When a schema derives part of a document, such as a heading that repeats the tit
 
 ## Steps
 
-1. Write the schema. This one describes a decision: an id built from a slug, a title that the level-1 heading repeats, and a list of consequences, each with a key.
+1. Write the schema. This one describes a decision: an id built from a slug, a title that the level-1 heading repeats, and a list of consequences, each with a key. It declares its language, English.
 
 **`decision.yaml`**
 
 ```yaml
 line-limit: 0
+language: en
 types:
   consequence-id: 'C-\d+'
 frontmatter:
@@ -35,7 +36,9 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
+        max:
+          soft: 1
+          when-at-limit: 'Put each consequence in the section that follows.'
         example: The cart keeps its items for seven days, and then it empties.
   - heading: Consequences
     level: 2
@@ -47,7 +50,7 @@ sections:
           example: 'C-1: A returning customer finds the cart as they left it.'
 ```
 
-2. Print the scaffold of a new document. The option `--slug` fills the `slug` hole of the id. The title takes the words of the slug unless you set `--title`. The heading repeats the title, as the schema requires. Save the output as the new document:
+2. Print the scaffold of a new document. The option `--slug` fills the `slug` hole of the id. The title takes the words of the slug unless you set `--title`. The heading repeats the title, as the schema requires. The guidance line states the limit of the paragraph in English, before its `when-at-limit`. Save the output as the new document:
 
 ```console
 $ tramlines new --schema decision.yaml --slug cart-lifetime
@@ -56,10 +59,9 @@ id: decision-cart-lifetime
 title: Cart lifetime
 ---
 
-<!-- tramlines:guidance The writer replaces each of the following examples with their own text. -->
-
 # Cart lifetime
 
+<!-- tramlines:guidance Usually up to 1 paragraph. Never leave out or merge content to stay within the count. When at the limit: Put each consequence in the section that follows. -->
 The cart keeps its items for seven days, and then it empties.
 
 ## Consequences
@@ -67,7 +69,7 @@ The cart keeps its items for seven days, and then it empties.
 - C-1: A returning customer finds the cart as they left it.
 ```
 
-3. Write the content. Replace each example with your own text, and delete the `guidance` line. In this document, the writer also changed the title, and added a second consequence:
+3. Write the content. Replace each example with your own text. In this document, the writer also changed the title, and added a second consequence:
 
 **`cart.md`**
 

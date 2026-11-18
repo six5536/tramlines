@@ -55,7 +55,7 @@ sections:
         example: tramlines validate --schema list.yaml groceries.md
 ```
 
-4. Check a document. The command applies no ban inside fenced blocks or code spans, so text that you quote as code passes:
+4. Check a document. No ban matches a word inside a code span, and no ban on the schema applies inside a fenced block, so text that you quote as code passes:
 
 **`changelog.md`**
 
@@ -81,6 +81,8 @@ changelog.md:5: error[TL_75]: `...` is refused: A change ends with a full stop, 
 ```
 
 Each finding quotes the span that the pattern matched, and gives the message of the ban, not its pattern. When the ban is on a rule or a format, the finding also shows the example of that rule or format, so that you see a line that passes. The scaffold of the schema writes the message of each ban after the guidance of the part that the ban governs. It writes the message of a ban on the schema in its opening line.
+
+A ban reads each code span as a run of backticks of the same length, so it matches no word inside the code, but a ban on code itself still works. For example, the pattern `` ^` `` on the rule of a paragraph refuses a paragraph that begins with code.
 
 ## Troubleshooting
 

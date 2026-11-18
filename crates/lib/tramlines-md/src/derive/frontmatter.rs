@@ -2,7 +2,7 @@
 //! keys, the lifecycle keys and the host's trailing lines, each key with
 //! the guidance its rule carries on a comment line before it.
 
-use super::Deriver;
+use super::{Deriver, guide};
 use crate::{
     grammar::{FmFormat, FrontmatterConstraint, squash},
     markdown::Dialect,
@@ -47,7 +47,7 @@ impl Deriver<'_> {
             let Some(value) = self.leading_value(key, constraint).or_else(|| seed.clone()) else {
                 continue;
             };
-            self.guidance_of(constraint, &mut out);
+            self.guidance_of(key, constraint, &mut out);
             out.push(format!(
                 "{key}: {}{}",
                 scalar(&value),
@@ -65,7 +65,7 @@ impl Deriver<'_> {
                 continue;
             };
             written.push(key.clone());
-            self.guidance_of(Some(constraint), &mut out);
+            self.guidance_of(key, Some(constraint), &mut out);
             let rendered = if constraint.list {
                 let one = scalar(&value);
                 let items = vec![one; constraint.min.unwrap_or(1).max(1)];
@@ -100,9 +100,17 @@ impl Deriver<'_> {
     /// the line before the key, so it never shares a line with a trailing
     /// `only` marker.
     // sokf-implements: TLMD_120
-    fn guidance_of(&self, constraint: Option<&FrontmatterConstraint>, out: &mut Vec<String>) {
-        if let Some(g) = constraint.and_then(|c| c.guidance.as_ref()) {
-            out.push(guidance_comment(&self.dialect, g));
+    // sokf-implements: TLMD_232
+    // sokf-implements: MD-7_AC-14
+    fn guidance_of(
+        &self,
+        key: &str,
+        constraint: Option<&FrontmatterConstraint>,
+        out: &mut Vec<String>,
+    ) {
+        let language = self.schema.core.language.as_deref();
+        if let Some(g) = constraint.and_then(|c| guide::key_text(self.host, language, key, c)) {
+            out.push(guidance_comment(&self.dialect, &g));
         }
     }
 

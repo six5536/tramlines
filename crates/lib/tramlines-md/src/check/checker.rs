@@ -1,16 +1,22 @@
 //! The state one schema check carries, and `check_against`, which runs
 //! each check in order.
 
-use std::ops::Range;
+use std::{
+    collections::HashSet,
+    ops::{Range, RangeInclusive},
+};
 
 use super::{
-    Accepted, Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, frontmatter, keys,
+    Accepted, Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, frontmatter, keys, label,
     limits, markers, sections,
 };
 use crate::{
     Finding, Locator,
-    grammar::{RuleCommon, Schema, Section, States, Text, Unit as UnitRule},
-    markdown::BlockKind,
+    grammar::{
+        Block as Rule, LifecycleDimension, RuleCommon, Schema, Section, States, Text,
+        Unit as UnitRule, Words, squash,
+    },
+    markdown::{Block, BlockKind, Unit},
 };
 
 // sokf:begin check-against
@@ -34,6 +40,20 @@ pub(crate) struct Occurrence {
     pub level: u8,
     /// The heading's text.
     pub text: String,
+}
+
+/// A unit that breaks its rule (TLMD_109), by where it holds its anchors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Broken {
+    /// On the lines of its text: a paragraph, an item, or a row.
+    Text(RangeInclusive<usize>),
+    /// On the lines of its text: an item that holds a block its rule
+    /// refuses, after its text or in place of it. A repair of the text
+    /// leaves the block, so no repair sets the record aside.
+    Beyond(RangeInclusive<usize>),
+    /// On the line of anchors before the code or HTML block that starts on
+    /// this line, of which the unit is a line.
+    Before(usize),
 }
 
 /// Where in a schema the rule being checked sits. The reader a finding
@@ -71,7 +91,7 @@ impl At {
         let section = cap.section.and_then(|j| sections.get(j));
         At {
             region: section.map(|s| format!("section \"{}\"", s.label())),
-            rule_id: cap.rule_id.clone(),
+            rule_id: cap.rule_name.clone(),
             line: section.map(|s| s.common.line),
             ..At::default()
         }
@@ -106,12 +126,17 @@ impl At {
 pub(crate) struct Checker<'a> {
     pub doc: DocView<'a>,
     pub schema: &'a Schema,
-    /// The sections the states admit, in declared order. A section is
-    /// named by its index here.
+    /// The sections that `possible` admits, in declared order. A section
+    /// is named by its index here.
     pub sections: Vec<&'a Section>,
     /// Each admitted section's `parent`, by its index in `sections`.
     pub parent_of: Vec<Option<usize>>,
+    /// The document's own states, which decide whether a part is required.
     pub states: &'a States,
+    /// The states that the document could be in, which decide whether a
+    /// part is declared: its own, with every state of each dimension for
+    /// which it holds no state that the lifecycle declares.
+    pub possible: States,
     pub host: &'a dyn Host,
     pub options: CheckOptions,
     /// The schema that the findings name.
@@ -137,6 +162,14 @@ pub(crate) struct Checker<'a> {
     pub lines_block: Option<usize>,
     /// Whether the host asks for each unit a unit rule accepts.
     pub records_accepted: bool,
+    /// Each unit that breaks its rule, whose anchors the anchor check
+    /// leaves alone.
+    pub broken: Vec<Broken>,
+    /// The labels of the schema, in the words that the host gives.
+    pub labels: Words,
+    /// The label of each link reference definition of the document, in
+    /// lower case, which no label's words can be (TLMD_243).
+    pub links: HashSet<String>,
 }
 
 impl Checker<'_> {
@@ -191,7 +224,9 @@ impl Checker<'_> {
     }
 
     /// A finding for a rule, at the rule's `severity`. The text is the one
-    /// the check built; no schema writes a sentence into it.
+    /// the check built: the engine's words, and only the texts of the
+    /// schema that a criterion quotes, such as the message of a ban or the
+    /// `when-at-limit` of a hard limit.
     // sokf-implements: TL_77
     // sokf-implements: MD-4_AC-2
     // sokf-implements: MD-4_AC-3
@@ -233,6 +268,23 @@ impl Checker<'_> {
                 .any(|(k, rule)| k == key && !rule.optional && rule.common.only.admits(self.states))
     }
 
+    /// Whether `section` may be absent from the document: its `optional`
+    /// matches the states, or its `only` does not match the document's own
+    /// states, so that only the states it could be in declare the section.
+    // sokf-implements: TLMD_230
+    pub fn section_optional(&self, section: &Section) -> bool {
+        section.optional_at(self.states, &self.schema.core.lifecycle)
+            || !section.common.only.admits(self.states)
+    }
+
+    /// Whether `block` may be absent from its body, as for a section in
+    /// [`Checker::section_optional`].
+    // sokf-implements: TLMD_230
+    pub fn block_optional(&self, block: &Rule) -> bool {
+        block.optional_at(self.states, &self.schema.core.lifecycle)
+            || !block.common.only.admits(self.states)
+    }
+
     /// Record that a gated rule matched the part at `line`.
     // sokf-implements: MD-4_AC-10
     pub fn gate(&mut self, rule: &RuleCommon, line: usize) {
@@ -256,6 +308,57 @@ impl Checker<'_> {
             rule_index: rule.index,
             rule_id: rule.rule_id.clone(),
         });
+    }
+
+    /// Record that `unit` breaks its rule: the check of its rule reported
+    /// it, or the check reported that no rule or position took it. The
+    /// anchor check sets the record aside where a repair rewrites the unit.
+    // sokf-implements: TLMD_109
+    pub fn broke(&mut self, unit: &Unit) {
+        let broken = self.broken_at(unit);
+        self.record(broken);
+    }
+
+    /// Record that `unit` holds a block its rule refuses, which a repair
+    /// of the text leaves.
+    // sokf-implements: TLMD_109
+    pub fn broke_beyond_text(&mut self, unit: &Unit) {
+        let broken = match self.broken_at(unit) {
+            Broken::Text(lines) => Broken::Beyond(lines),
+            other => other,
+        };
+        self.record(broken);
+    }
+
+    /// The record of `unit`, by where it holds its anchors.
+    fn broken_at(&self, unit: &Unit) -> Broken {
+        // As `spot` in `blocks` places the anchor of a key the unit captures:
+        // before the block where the text maps to no lines, as a code block
+        // does, but on the line of an item whose text is empty.
+        match self.lines_block {
+            Some(line) => Broken::Before(line),
+            None if unit.pieces.is_empty() && !unit.text.is_empty() => Broken::Before(unit.line),
+            None => Broken::Text(unit.line..=unit.end_line.max(unit.line)),
+        }
+    }
+
+    /// Keep `broken`, once for the lines of one fence.
+    fn record(&mut self, broken: Broken) {
+        if self.broken.last() != Some(&broken) {
+            self.broken.push(broken);
+        }
+    }
+
+    /// Record that each unit of `block` breaks its rule, and each unit of
+    /// the blocks they hold: the check reported that no position takes
+    /// the block, and checks none of them.
+    pub fn broke_block(&mut self, block: &Block) {
+        for unit in &block.units {
+            self.broke(unit);
+            for inner in &unit.nested {
+                self.broke_block(inner);
+            }
+        }
     }
 
     /// A heading rewritten whole. It replaces a repair of the same heading
@@ -292,11 +395,12 @@ pub fn check_against(
     locator: Locator,
 ) -> CheckOutput {
     // sokf:end check-against
+    let possible = possible(states, &schema.core.lifecycle);
     // sokf-implements: MD-4_AC-12
     let sections: Vec<&Section> = schema
         .sections
         .iter()
-        .filter(|s| s.common.only.admits(states))
+        .filter(|s| s.common.only.admits(&possible))
         .collect();
     let parent_of = parents(&sections);
     let mut c = Checker {
@@ -305,6 +409,7 @@ pub fn check_against(
         sections,
         parent_of,
         states,
+        possible,
         host,
         options,
         locator,
@@ -317,6 +422,14 @@ pub fn check_against(
         reserve: 0,
         lines_block: None,
         records_accepted: host.records_accepted(),
+        broken: Vec::new(),
+        labels: label::words_of(schema, host),
+        links: doc
+            .body
+            .ref_defs
+            .iter()
+            .map(|(label, _, _)| squash(label).to_lowercase())
+            .collect(),
     };
     // sokf-implements: MD-4_AC-1
     frontmatter::check(&mut c);
@@ -336,6 +449,25 @@ pub fn check_against(
     c.host
         .check(&c.doc, c.states, c.options, &c.locator, &mut c.out);
     c.out
+}
+
+/// The states that a document in `states` could be in: its own, with every
+/// state of each dimension for which it holds none that `lifecycle`
+/// declares, so that a fault in the state is reported once, on the
+/// frontmatter.
+// sokf-implements: TLMD_230
+fn possible(states: &States, lifecycle: &[LifecycleDimension]) -> States {
+    let mut possible = states.clone();
+    for dim in lifecycle {
+        let known = states
+            .0
+            .get(&dim.key)
+            .is_some_and(|have| have.iter().any(|s| dim.states.contains(s)));
+        if !known {
+            possible.0.insert(dim.key.clone(), dim.states.clone());
+        }
+    }
+    possible
 }
 
 /// Each section's `parent`, by its index among `sections`.

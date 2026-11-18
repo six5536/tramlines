@@ -57,21 +57,23 @@ pub(super) fn check_lines(
         .into_iter()
         .map(|(line, text)| Unit::leaf(text.to_string(), line, line))
         .collect();
-    // A key a line carries has its anchor before the block (TLMD_106).
+    // A key a line carries has its anchor before the block (TLMD_106), and
+    // so does a line that breaks its rule.
     let held = c.lines_block.replace(block.line);
     let taken = apply_rules(c, &units, rules, rule, section, block.line, "lines");
-    c.lines_block = held;
     if !unit_rule.lines_open {
         untaken(
             c,
             &units,
             &taken,
             rules,
+            rule,
             &unit_rule.common,
             ("the fence", "line"),
             "lines-open",
         );
     }
+    c.lines_block = held;
 }
 
 /// A rule list over units, which is the grammar of the block (TLMD_52 to
@@ -102,14 +104,33 @@ fn apply_rules(
         .map(|u| {
             rules
                 .iter()
-                .position(|r| r.is_production() && satisfies_shape(c, u, r))
+                .position(|r| r.is_production() && satisfies_shape(c, u, r, rule))
+        })
+        .collect();
+    // The rule that judges each unit's label: its production, else the
+    // first rule that selects it and checks it, else the first rule that
+    // takes every unit.
+    let judge: Vec<Option<usize>> = units
+        .iter()
+        .zip(&production)
+        .map(|(u, p)| {
+            p.or_else(|| {
+                rules.iter().position(|r| {
+                    !r.is_counter()
+                        && match &r.select {
+                            Some(s) => s.is_match(&c.read(u, rule, Some(r)).squashed.text),
+                            None => !r.has_shape(),
+                        }
+                })
+            })
         })
         .collect();
     let mut taken = vec![false; units.len()];
     for (ri, guarded) in rules.iter().enumerate() {
         let selected: Vec<usize> = (0..units.len())
             .filter(|&i| match &guarded.select {
-                Some(s) => s.is_match(&squash(&units[i].text)),
+                // A guard reads the unit without its label (TLMD_248).
+                Some(s) => s.is_match(&c.read(&units[i], rule, Some(guarded)).squashed.text),
                 None if guarded.has_shape() => production[i] == Some(ri),
                 None => true,
             })
@@ -141,7 +162,9 @@ fn apply_rules(
                 ),
             );
         }
-        if let Some(max) = guarded.max
+        // A soft limit is never checked.
+        if let Some(limit) = &guarded.max
+            && let Some(max) = limit.hard()
             && n > max
         {
             // The first one over the limit is the one to look at, so a
@@ -152,10 +175,13 @@ fn apply_rules(
                 &guarded.common,
                 Some(line),
                 "TLMD_159",
-                format!(
-                    "{what}: at most {max} {} allowed; there {} {n}",
-                    text::is_are(max),
-                    text::is_are(n)
+                text::at_limit(
+                    format!(
+                        "{what}: at most {max} {} allowed; there {} {n}",
+                        text::is_are(max),
+                        text::is_are(n)
+                    ),
+                    &limit.when_at_limit,
                 ),
             );
         }
@@ -166,20 +192,22 @@ fn apply_rules(
         }
         for i in selected {
             taken[i] = true;
-            // `check_unit` files a capture under the line rule's `rule-id`,
+            // `check_unit` files a capture under the line rule's `key-of`,
             // else the block's, so a key from a line is reachable by
             // `for-each-key-of`.
             // sokf-implements: TLMD_88
             // sokf-implements: TLMD_89
-            check_unit(c, &units[i], guarded, rule, section);
+            check_unit(c, &units[i], guarded, rule, section, judge[i] == Some(ri));
         }
     }
     taken
 }
 
-/// Whether `unit` has `rule`'s shape, its own or its format's, silently.
-fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule) -> bool {
-    rule.fits(&c.schema.core.formats, &squash(&unit.text), |k| {
+/// Whether `unit` of `block` has `rule`'s shape, its own or its format's,
+/// silently, read without its label.
+fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule, block: &Rule) -> bool {
+    let read = c.read(unit, block, Some(rule));
+    rule.fits(&c.schema.core.formats, &read.squashed.text, |k| {
         c.front_value(k)
     })
 }
@@ -188,11 +216,13 @@ fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule) -> bool {
 /// furthest, with where it fails and that rule's example, or as matching
 /// no rule where the block has no production.
 // sokf-implements: TLMD_57
+#[allow(clippy::too_many_arguments)]
 fn untaken(
     c: &mut Checker<'_>,
     units: &[Unit],
     taken: &[bool],
     rules: &[UnitRule],
+    block: &Rule,
     common: &RuleCommon,
     (whose, unit_is): (&str, &str),
     open: &str,
@@ -203,22 +233,27 @@ fn untaken(
         }
         let text = squash(&unit.text);
         // The first of the productions the text follows furthest, where it
-        // follows one at all; a text that follows none matches no rule.
+        // follows one at all; a text that follows none matches no rule. Each
+        // production reads the text without the label that it finds.
         let best = rules
             .iter()
             .filter(|r| r.is_production())
-            .fold(None::<(&UnitRule, usize)>, |best, r| {
-                let n = reach(c, r, &text);
+            .map(|r| (r, c.read(unit, block, Some(r)).squashed.text))
+            .fold(None::<(&UnitRule, String, usize)>, |best, (r, read)| {
+                let n = reach(c, r, &read);
                 match best {
-                    Some((_, m)) if m >= n => best,
-                    _ => Some((r, n)),
+                    Some((_, _, m)) if m >= n => best,
+                    _ => Some((r, read, n)),
                 }
             })
-            .filter(|(_, n)| *n > 0)
-            .map(|(r, _)| r);
+            .filter(|(_, _, n)| *n > 0)
+            .map(|(r, read, _)| (r, read));
         match best {
-            Some(r) => {
-                let reason = shape_failure(c, r, &text, unit_is);
+            Some((r, read)) => {
+                // The column of the failure counts in the text without the
+                // label, which the finding quotes.
+                let text = read.clone();
+                let reason = shape_failure(c, r, &read, unit_is);
                 c.emit(
                     &r.common,
                     Some(unit.line),
@@ -243,6 +278,7 @@ fn untaken(
                 ),
             ),
         }
+        c.broke(unit);
     }
 }
 
@@ -285,12 +321,21 @@ pub(super) fn check_rules(
         block.line,
         noun(rule.kind),
     );
-    if !rule.units_open {
+    // A unit that no rule takes in an open block carries the block's label.
+    if rule.units_open {
+        for (unit, _) in block.units.iter().zip(&taken).filter(|(_, t)| !**t) {
+            let read = c.read(unit, rule, None);
+            if c.check_label(unit, rule, None, &read, true) {
+                c.broke(unit);
+            }
+        }
+    } else {
         untaken(
             c,
             &block.units,
             &taken,
             rules,
+            rule,
             &rule.common,
             ("the block", unit_noun(c, rule.kind)),
             "units-open",

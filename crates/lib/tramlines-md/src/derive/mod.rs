@@ -16,10 +16,16 @@ mod blocks;
 mod body;
 mod deriver;
 mod frontmatter;
+mod guide;
+mod labels;
 mod scaffold;
 mod text;
 mod units;
 
 use deriver::Deriver;
 
+pub use guide::{
+    BlockGuide, Guide, KeyGuide, LabelGuide, PreambleGuide, RuleLabel, RuleLimit, SectionGuide,
+    guide,
+};
 pub use scaffold::{Derived, Refusal, derive, derive_one, derived_title, no_template};

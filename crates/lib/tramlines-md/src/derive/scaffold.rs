@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use super::{Deriver, deriver::push_unique};
 use crate::{
     RepoPath,
-    check::Host,
+    check::{self, Host},
     grammar::{Only, Scaffold, Schema, States},
     markdown::Dialect,
 };
@@ -127,11 +127,21 @@ fn one(
         kinds: Vec::new(),
         values: BTreeMap::new(),
         section_rule: None,
+        group_rule: None,
         refusals: Vec::new(),
         omitted: Vec::new(),
         in_optional: false,
         scope: None,
+        labels: check::words_of(schema, host),
+        named_label: None,
     };
+    // sokf-implements: TLMD_256
+    // sokf-implements: MD-5_AC-22
+    if !d.labels.is_empty() {
+        d.named_label = host
+            .scaffold_label(&schema.labels)
+            .filter(|k| d.labels.has_key(k));
+    }
     let mut lines = d.frontmatter();
     if !lines.is_empty() {
         lines.push(String::new());

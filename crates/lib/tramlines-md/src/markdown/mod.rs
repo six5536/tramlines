@@ -3,6 +3,7 @@
 
 mod anchor;
 mod body;
+mod code;
 mod dialect;
 mod link;
 mod parse;
@@ -10,10 +11,15 @@ mod segments;
 mod slug;
 mod split;
 
+pub(crate) use anchor::gap;
 pub use anchor::{Anchor, render as render_anchor};
-pub use body::{Block, BlockDetail, BlockKind, Body, Heading, Link, LinkTarget, Piece, Unit};
+pub(crate) use body::mask_code;
+pub use body::{
+    Block, BlockDetail, BlockKind, Body, CodeBlock, Heading, Link, LinkTarget, Piece, Unit,
+};
 pub use dialect::{Dialect, Marker};
 pub use link::host_ref;
+pub(crate) use parse::code_spans_in;
 pub use parse::parse;
 pub use segments::{DefinitionBlock, Region, Segments, ref_def, segments};
 pub use slug::slug;

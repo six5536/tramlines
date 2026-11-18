@@ -35,12 +35,27 @@ struct Pairer<'a> {
     rule_id: Option<&'a str>,
     /// Its rule, whose `severity` a finding takes.
     common: &'a RuleCommon,
+    /// Whether it demands a pair for each key: not where the part that
+    /// holds it is declared only by a state that the document could be in
+    /// (TLMD_230), though a pair that it holds is still checked.
+    demands: bool,
 }
 
 /// Every unit rule under `blocks` that pairs, with what its unit is called.
-fn unit_pairers<'a>(blocks: Option<&'a [Block]>, section: usize, out: &mut Vec<Pairer<'a>>) {
-    for b in blocks.unwrap_or(&[]) {
-        unit_pairers(b.blocks.as_deref(), section, out);
+fn unit_pairers<'a>(
+    blocks: Option<&'a [Block]>,
+    section: usize,
+    demands: bool,
+    c: &Checker<'_>,
+    out: &mut Vec<Pairer<'a>>,
+) {
+    for b in blocks
+        .unwrap_or(&[])
+        .iter()
+        .filter(|b| b.common.only.admits(&c.possible))
+    {
+        let demands = demands && b.common.only.admits(c.states);
+        unit_pairers(b.blocks.as_deref(), section, demands, c, out);
         for u in b.units() {
             let lines = u.lines.iter().flatten().map(|l| (l, "line"));
             for (rule, noun) in std::iter::once((u, unit_of(b.kind))).chain(lines) {
@@ -52,10 +67,11 @@ fn unit_pairers<'a>(blocks: Option<&'a [Block]>, section: usize, out: &mut Vec<P
                         noun,
                         rule_id: rule.rule_id.as_deref(),
                         common: &rule.common,
+                        demands,
                     });
                 }
             }
-            unit_pairers(u.blocks.as_deref(), section, out);
+            unit_pairers(u.blocks.as_deref(), section, demands, c, out);
         }
     }
 }
@@ -229,6 +245,7 @@ fn pairings(c: &mut Checker<'_>, captures: &[Capture]) {
     let declared = c.sections.clone();
     let mut pairers = Vec::new();
     for (j, section) in declared.iter().enumerate() {
+        let demands = section.common.only.admits(c.states);
         // sokf-implements: TLMD_103
         if let Some(with) = &section.for_each_key_of {
             pairers.push(Pairer {
@@ -238,9 +255,10 @@ fn pairings(c: &mut Checker<'_>, captures: &[Capture]) {
                 noun: "section",
                 rule_id: section.rule_id.as_deref(),
                 common: &section.common,
+                demands,
             });
         }
-        unit_pairers(section.blocks.as_deref(), j, &mut pairers);
+        unit_pairers(section.blocks.as_deref(), j, demands, c, &mut pairers);
     }
     for p in &pairers {
         let section = declared[p.section];
@@ -260,13 +278,22 @@ fn pairing(c: &mut Checker<'_>, captures: &[Capture], p: &Pairer<'_>, section: &
             .as_ref()
             .map_or_else(String::new, |(_, h)| format!(" under `{h}`"));
         // A key captured twice is wanted once; TLMD_148 reports the
-        // second capture.
+        // second capture. A capture that pairs with a name of this pairing,
+        // its own among them, refers to a key of the set and defines none,
+        // though it can be filed in the set, as under the `rule-id` of its
+        // block or its section.
         let mut named = HashSet::new();
         // sokf-implements: TLMD_197
+        // sokf-implements: TLMD_238
         let wanted: Vec<(&str, usize)> = captures
             .iter()
             .filter(|cap| {
-                cap.rule_id.as_ref().is_some_and(|r| p.with.contains(r)) && span.contains(&cap.line)
+                cap.rule_id.as_ref().is_some_and(|r| p.with.contains(r))
+                    && cap
+                        .pairs
+                        .as_ref()
+                        .is_none_or(|q| !q.with.iter().any(|w| p.with.contains(w)))
+                    && span.contains(&cap.line)
             })
             .map(|cap| (cap.key.as_str(), cap.line))
             .filter(|(key, _)| named.insert(*key))
@@ -282,7 +309,7 @@ fn pairing(c: &mut Checker<'_>, captures: &[Capture], p: &Pairer<'_>, section: &
             .map(|cap| (cap.key.as_str(), cap.line))
             .collect();
         // A key with no pair is reported where it is captured.
-        for (key, at) in &wanted {
+        for (key, at) in wanted.iter().filter(|_| p.demands) {
             if !have.iter().any(|(k, _)| k == key) {
                 let message = if p.heading {
                     format!("no `{}` section for key `{key}`{under}", section.label())
@@ -370,12 +397,19 @@ fn derivations(c: &mut Checker<'_>, captures: &[Capture]) {
 }
 
 /// The prefixes a derivation allows: the keys its rule captured, or the
-/// value of its frontmatter key.
+/// value of its frontmatter key. A key that derives from the same name is
+/// no prefix, though it can be filed under the name (TLMD_238).
 fn prefixes(c: &Checker<'_>, captures: &[Capture], derivation: &KeyDerivation) -> Vec<String> {
     match &derivation.source {
         DerivationSource::Rule(r) => captures
             .iter()
-            .filter(|cap| cap.rule_id.as_deref() == Some(r.as_str()))
+            .filter(|cap| {
+                cap.rule_id.as_deref() == Some(r.as_str())
+                    && cap
+                        .derives
+                        .as_ref()
+                        .is_none_or(|d| d.source != derivation.source)
+            })
             .map(|cap| cap.key.clone())
             .collect(),
         DerivationSource::From(k) => c.front_value(k).into_iter().collect(),

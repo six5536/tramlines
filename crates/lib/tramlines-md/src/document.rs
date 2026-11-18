@@ -35,13 +35,19 @@ pub struct Document {
 
 impl Document {
     /// Parse `text`, the document at `path`, its markers as `dialect`
-    /// spells them. A CRLF text is read as LF.
+    /// spells them. A CRLF text, and a carriage return alone, are read as
+    /// LF.
     // sokf:begin document
     pub fn parse(path: RepoPath, text: &str, dialect: &Dialect) -> Self {
         // sokf:end document
         // sokf-implements: MD-3_AC-1
         // sokf-implements: CLI-8_AC-1
-        let text = text.replace("\r\n", "\n");
+        let mut text = text.replace("\r\n", "\n");
+        // A carriage return alone is the same line ending in an older form,
+        // and a line feed in its place moves no byte after it.
+        if text.contains('\r') {
+            text = text.replace('\r', "\n");
+        }
         let split = split_frontmatter(&text);
         let (frontmatter, problem) = match split.frontmatter {
             // sokf-implements: MD-3_AC-4
@@ -116,7 +122,13 @@ impl Document {
             text: &self.text,
             renames: &[],
         };
-        let edits = edit::line_edits(&self.text, &self.segments, &out.repairs, Some(&anchors));
+        let edits = edit::line_edits(
+            &self.text,
+            &self.segments,
+            &out.repairs,
+            &out.label_repairs,
+            Some(&anchors),
+        );
         if edits.is_empty() {
             return Ok(None);
         }

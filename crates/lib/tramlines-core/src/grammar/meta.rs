@@ -30,6 +30,11 @@ pub enum TypeName {
     Text,
     /// A `text`, or one instance of the rule map `of`.
     TextOrRule,
+    /// A map of lifecycle dimensions to a state or a list of states, or a
+    /// list of such maps.
+    Condition,
+    /// `true`, `false`, or a `condition`.
+    BooleanOrCondition,
 }
 
 impl TypeName {
@@ -46,6 +51,8 @@ impl TypeName {
             "string-or-map" => TypeName::StringOrMap,
             "text" => TypeName::Text,
             "text-or-rule" => TypeName::TextOrRule,
+            "condition" => TypeName::Condition,
+            "boolean-or-condition" => TypeName::BooleanOrCondition,
             _ => return None,
         })
     }
@@ -63,8 +70,8 @@ pub struct KeyDef {
     pub required: bool,
     /// The values the key admits, as text.
     pub enum_: Vec<String>,
-    /// A scalar format or a reference: `regex`, `slug`, `rule-id`,
-    /// `format-name`.
+    /// A scalar format or a reference: `regex`, `slug`, `language-tag`,
+    /// `rule-id`, `format-name`.
     pub format: Option<String>,
     /// Keys that must be present beside this one.
     pub requires_keys: Vec<String>,
