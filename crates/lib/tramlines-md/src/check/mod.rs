@@ -9,6 +9,7 @@ mod checker;
 mod claim;
 mod divide;
 pub mod example;
+mod free;
 mod frontmatter;
 mod group;
 mod host;

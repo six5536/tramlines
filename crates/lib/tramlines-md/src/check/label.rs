@@ -1,4 +1,4 @@
-//! The label of a unit in a check (TLMD_248 to TLMD_254): the rule reads
+//! The label of a unit in a check (`TLMD_248` to `TLMD_254`): the rule reads
 //! the unit's text without it, and the check holds it to what the rule
 //! declares and to the words that the host gives.
 
@@ -56,7 +56,7 @@ impl Checker<'_> {
     }
 
     /// The squashed text of `unit` as `rule`, a unit rule of `block`, reads
-    /// it: without the label that it holds (TLMD_248). `rule` is `None` for
+    /// it: without the label that it holds (`TLMD_248`). `rule` is `None` for
     /// a unit of a block with no unit rule. A line of a fence holds no
     /// label.
     // sokf-implements: TLMD_248

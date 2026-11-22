@@ -1,4 +1,4 @@
-//! Hole types of line templates (TL_27 to TL_29, TL_109): a named regex or a list of
+//! Hole types of line templates (`TL_27` to `TL_29`, `TL_109`): a named regex or a list of
 //! literal choices, in layers as formats are, the built-ins reserved.
 
 use std::collections::BTreeMap;
@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::FormatSource;
 use crate::{Problem, Spanned, text};
 
-/// A slug (TLMD_101): lowercase words of letters and digits, joined by
+/// A slug (`TLMD_101`): lowercase words of letters and digits, joined by
 /// single hyphens.
 pub const SLUG: &str = "[a-z0-9]+(?:-[a-z0-9]+)*";
 
@@ -104,6 +104,7 @@ impl TypeRegistry {
     /// This registry with the types of `over` on top: the nearest layer
     /// wins by name, and a built-in stays as it is.
     // sokf-implements: TL_27
+    #[must_use]
     pub fn layered(&self, over: &TypeRegistry) -> TypeRegistry {
         let mut entries = self.entries.clone();
         for (name, entry) in &over.entries {
@@ -171,7 +172,7 @@ impl TypeRegistry {
             } else if let Some(items) = value.as_seq() {
                 let choices: Vec<String> = items
                     .iter()
-                    .filter_map(|i| i.scalar_text())
+                    .filter_map(Spanned::scalar_text)
                     .filter(|s| !s.is_empty())
                     .collect();
                 if choices.len() != items.len() || choices.is_empty() {

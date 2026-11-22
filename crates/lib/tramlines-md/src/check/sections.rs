@@ -261,6 +261,51 @@ fn missing_inside(c: &mut Checker<'_>, section: &Section, j: usize, pj: usize) {
     }
 }
 
+/// Record that `h` breaks its rule where the match of the heading, from
+/// the finding `reported` on, reports a finding on its line other than
+/// those at the indices `corrected`, which the repair that rewrites the
+/// heading corrects. A finding of the match on another line, such as on a
+/// parent's heading, is not about `h`'s text, and a heading that captures
+/// its key holds that key's anchor, so it holds no other. Whether it
+/// recorded the heading.
+// sokf-implements: TLMD_109
+fn broke_heading(c: &mut Checker<'_>, h: &Heading, reported: usize, corrected: &[usize]) -> bool {
+    let captures = c
+        .out
+        .captures
+        .iter()
+        .any(|cap| cap.line == h.line && cap.heading_slug.is_some());
+    let on_heading = c.out.findings[reported..]
+        .iter()
+        .enumerate()
+        .any(|(i, f)| f.line == Some(h.line) && !corrected.contains(&(reported + i)));
+    let broke = on_heading && !captures;
+    if broke {
+        c.broke_heading(h);
+    }
+    broke
+}
+
+/// Report that `h` is to be rewritten to `text`, the text of its section,
+/// under `criterion`, and record the repair that writes it so at the
+/// section's level. The findings that the repair corrects, by their
+/// indices: its own, and `level`, the finding of the heading's level,
+/// where there is one, because the repair writes the section's level too.
+// sokf-implements: TLMD_137
+fn rewrite_heading(
+    c: &mut Checker<'_>,
+    section: &Section,
+    h: &Heading,
+    level: Option<usize>,
+    (criterion, message): (&str, String),
+    text: String,
+) -> Vec<usize> {
+    let own = c.out.findings.len();
+    c.emit(&section.common, Some(h.line), criterion, message);
+    c.repair_heading(Repair::heading(h.line, h.end_line, section.level, text));
+    std::iter::once(own).chain(level).collect()
+}
+
 /// Match every heading and check every section body.
 // sokf-implements: TLMD_18
 // sokf-implements: TLMD_151
@@ -268,6 +313,10 @@ fn missing_inside(c: &mut Checker<'_>, section: &Section, j: usize, pj: usize) {
 // sokf-implements: TLMD_26
 // sokf-implements: TLMD_37
 // sokf-implements: TLMD_38
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass of the check, a split of which is a refactor of its own"
+)]
 pub(super) fn check(c: &mut Checker<'_>) {
     let headings = &c.doc.body.headings;
     for h in headings {
@@ -291,10 +340,13 @@ pub(super) fn check(c: &mut Checker<'_>) {
     let mut seen = vec![0usize; declared.len()];
     let mut pos = 0usize;
     let mut region: Option<(u8, bool)> = None;
-    let mut out_of_place = false;
+    // The section of the last heading that a declared section took.
+    let mut last: Option<usize> = None;
 
     for (hi, h) in headings.iter().enumerate() {
-        let next_line = headings.get(hi + 1).map(|n| n.line).unwrap_or(usize::MAX);
+        let next_line = headings.get(hi + 1).map_or(usize::MAX, |n| n.line);
+        // The findings of the match of the heading start here.
+        let reported = c.out.findings.len();
         let found = find_match(h, &declared, &seen, pos, ordered, c);
         // A heading at another level than its section declares is that
         // fault (TLMD_144), whatever level it skips to, and a subsection
@@ -350,6 +402,13 @@ pub(super) fn check(c: &mut Checker<'_>) {
                     format!("heading `{}` is not declared", label(h.level, &h.text)),
                 );
             }
+            // The units of the body break their rules too while the
+            // heading does, because the check judges none of them.
+            if broke_heading(c, h, reported, &[]) {
+                for block in c.doc.body.blocks_between(h.line, next_line) {
+                    c.broke_block(block);
+                }
+            }
             continue;
         };
         let section = declared[j];
@@ -372,6 +431,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
         let returns =
             section.repeat && j < pos && (j + 1..passed).all(|k| inside(&parent_of, k, j));
         seen[j] += 1;
+        let previous = last.replace(j);
         let repeated = if section.parent.is_some() {
             placed(c, &declared, &parent_of, &headings[..hi], j, h)
         } else {
@@ -389,17 +449,22 @@ pub(super) fn check(c: &mut Checker<'_>) {
             );
         }
         // A heading that occurs again stands after the sections that follow
-        // its first occurrence, which TLMD_151 has reported.
+        // its first occurrence, which TLMD_151 has reported. A heading is
+        // out of place against the heading before it, so the subsections of
+        // a parent out of place, which follow the parent in order, are not,
+        // and neither is a repeating section met again after its own.
         // sokf-implements: TLMD_22
-        if ordered && j < pos && !returns && !repeated && !out_of_place {
-            out_of_place = true;
+        let back = section.repeat
+            && previous.is_some_and(|l| (j + 1..=l).all(|k| inside(&parent_of, k, j)));
+        if ordered && previous.is_some_and(|l| j < l) && !back && !repeated {
             c.error(
                 Some(h.line),
                 "TLMD_22",
                 format!("heading `{}` is out of place; the sections are in the order the schema lists them", label(h.level, &h.text)),
             );
         }
-        if h.level != section.level {
+        let level = (h.level != section.level).then_some(c.out.findings.len());
+        if level.is_some() {
             // sokf-implements: TLMD_144
             c.emit(
                 &section.common,
@@ -416,33 +481,27 @@ pub(super) fn check(c: &mut Checker<'_>) {
             let next = if section.repeat { j } else { j + 1 };
             pos = if returns { next } else { pos.max(next) };
         }
+        // The findings that the repair of the heading corrects: it rewrites
+        // a renamed heading, or one bound to the frontmatter, to the text
+        // of its section, at the section's level.
+        let mut corrected = Vec::new();
         match kind {
             Kind::Exact => {}
             Kind::Renamed(current) => {
-                c.emit(
-                    &section.common,
-                    Some(h.line),
-                    "TLMD_137",
-                    format!("heading `{}` was renamed; it is now `{}`", h.text, current),
-                );
-                c.repair_heading(Repair::heading(h.line, h.end_line, section.level, current));
+                let message = format!("heading `{}` was renamed; it is now `{}`", h.text, current);
+                corrected = rewrite_heading(c, section, h, level, ("TLMD_137", message), current);
             }
             Kind::From(expected) => {
                 let key = match &section.heading.shape {
                     Shape::Text(Text::From(k)) => k.clone(),
                     _ => String::new(),
                 };
-                // sokf-implements: TLMD_165
-                c.emit(
-                    &section.common,
-                    Some(h.line),
-                    "TLMD_165",
-                    format!(
-                        "heading `{}` must equal the frontmatter `{key}`: `{expected}`",
-                        h.text
-                    ),
+                let message = format!(
+                    "heading `{}` must equal the frontmatter `{key}`: `{expected}`",
+                    h.text
                 );
-                c.repair_heading(Repair::heading(h.line, h.end_line, section.level, expected));
+                // sokf-implements: TLMD_165
+                corrected = rewrite_heading(c, section, h, level, ("TLMD_165", message), expected);
             }
             Kind::Unbound(key) => {
                 if c.unbound_is_own_fault(&key) {
@@ -488,6 +547,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 derives: section.heading.key_derives_from.clone(),
             });
         }
+        broke_heading(c, h, reported, &corrected);
         let occurrence = Occurrence {
             section: j,
             line: h.line,
@@ -521,10 +581,10 @@ pub(super) fn check(c: &mut Checker<'_>) {
     for cap in &mut c.out.captures {
         if let Some(j) = cap.section {
             if cap.rule_id.is_none() {
-                cap.rule_id = declared[j].rule_id.clone();
+                cap.rule_id.clone_from(&declared[j].rule_id);
             }
             if cap.rule_name.is_none() {
-                cap.rule_name = declared[j].rule_id.clone();
+                cap.rule_name.clone_from(&declared[j].rule_id);
             }
         }
     }
@@ -555,7 +615,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
     }
 
     // The preamble: everything before the first heading.
-    let first = headings.first().map(|h| h.line).unwrap_or(usize::MAX);
+    let first = headings.first().map_or(usize::MAX, |h| h.line);
     let pre: Vec<&Block> = c
         .doc
         .body

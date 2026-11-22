@@ -41,7 +41,9 @@ pub(super) fn check(c: &mut Checker<'_>) {
         line: schema.core.key_lines.get(key).copied(),
         ..At::default()
     };
-    if schema.core.line_limit > 0 && lines as i64 > schema.core.line_limit {
+    if schema.core.line_limit > 0
+        && i64::try_from(lines).unwrap_or(i64::MAX) > schema.core.line_limit
+    {
         c.located(key_line("line-limit"), |c| {
             c.error(
                 None,

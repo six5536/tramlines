@@ -2,12 +2,13 @@
 type: Schema
 id: schema-contract
 title: Contract schema
-description: The interface and the behaviour that a building block promises to its users, for any kind of interface.
+description: "A contract states what one building block promises its users, for any kind of interface, such as a command line or a file format: the interface, the acceptance criteria that it meets, its qualities and properties, and how it can change."
 ---
 
 <!-- prettier-ignore -->
 ````yaml
 line-limit: 0
+labels: [human, agent]
 root: /knowledge/contracts
 # A `Planned:` paragraph promises work that an open issue owns, so it links no
 # closed issue.
@@ -19,7 +20,8 @@ guidance: >
   block's developers read it to learn what the code does and what the tests check. A
   contract covers any kind of interface, such as a library, a network protocol, a command
   line, a file format, or a user interface. The stories say why users need the interface,
-  and the design says how the block is built.
+  and the design says how the block is built. Each criterion and property carries a label,
+  after its key, that says whether the developer stated it or an agent proposed it.
 
 lifecycle:
   - key: scope
@@ -43,7 +45,6 @@ frontmatter:
       uses the code.
     example: PLUMB
   description:
-    guidance: The description says what the interface lets its users do.
     example: 'The plumbing files let programs send messages to one another, read the messages sent to them, and change the rules that route the messages.'
 
 # A story cites every public contract.
@@ -53,9 +54,11 @@ cited-by:
     severity: warn
   # Code implements each criterion of a part, and a test checks each quality criterion
   # and each property. The issue that builds a part holds the part's criteria until the
-  # code exists.
+  # code exists. A data file can't carry a marker, so its message names where a
+  # declaration in a data file belongs.
   - from-marker: implements
     keys: criteria
+    message: A criterion states only behaviour that code implements, and a declaration in a data file belongs in the part's Inputs as an include.
   - from-marker: tests
     keys: quality-criteria
   - from-marker: tests
@@ -80,21 +83,19 @@ sections:
   - heading: { from: title }
     level: 1
     guidance: >
-      The opening says what the interface does and who uses it, with the interface as the
+      This section says what the interface does and who uses it, with the interface as the
       subject of its first sentence. The interface's name links to the contract's node in
-      the architecture. That node shows the block that provides the contract. A last
-      sentence says that the contract defines the interface's elements, qualities, and
-      properties for the developers and testers who rely on the interface. In a public
-      contract, the sentence also names the interface's evolution.
+      the architecture. That node shows the block that provides the contract. The sections
+      that follow give the detail.
     blocks:
       - kind: prose
-        max: 1
         each:
-          pattern: '^[A-Z].*\[[^\]]+\]\[sokf:([a-z0-9-]+:)?architecture#[a-z0-9_-]+\].*\. This contract defines .*\.$'
-          example: 'The [plumbing files][sokf:architecture#plumbing] in `/mnt/plumb` carry messages between interactive programs, such as the editor `acme` and the image viewer `page`. A program writes a message to `/mnt/plumb/send`, and each program that has opened the destination port reads one copy of it. This contract defines the elements, qualities, properties, and evolution of the plumbing files, for the developers and testers who rely on them.'
+          pattern: '^[A-Z].*\[[^\]]+\]\[sokf:([a-z0-9-]+:)?architecture#[a-z0-9_-]+\].*\.$'
+          example: 'The [plumbing files][sokf:architecture#plumbing] in `/mnt/plumb` carry messages between interactive programs, such as the editor `acme` and the image viewer `page`. A program writes a message to `/mnt/plumb/send`, and each program that has opened the destination port reads one copy of it.'
       - kind: bullet-list
+        only: { scope: [public] }
         guidance: >
-          A contents list follows the opening, with one item for each section of the
+          The contents list has one item for each section of the
           contract, in order. Each item links to the section's heading, so that a reader sees
           every section of the contract before reading any of them.
         each:
@@ -104,6 +105,18 @@ sections:
             - '[Qualities](#qualities)'
             - '[Properties](#properties)'
             - '[Evolution](#evolution)'
+      - kind: bullet-list
+        only: { scope: [internal] }
+        guidance: >
+          The contents list has one item for each section of the
+          contract, in order. Each item links to the section's heading, so that a reader sees
+          every section of the contract before reading any of them.
+        each:
+          template: '[${}](#${:slug})'
+          example:
+            - '[Interface](#interface)'
+            - '[Qualities](#qualities)'
+            - '[Properties](#properties)'
 
   - heading: Interface
     level: 2
@@ -115,7 +128,7 @@ sections:
       on, so that each key identifies one element or one quality.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Describe each element of the interface in a subsection of its own." }
         each:
           text: 'This section fully defines the [interface][sokf:#interface] and its functional behaviour with [acceptance criteria][sokf:#acceptance-criterion]. Where a code file defines the interface, a sokf [include][sokf:#include] copies the code verbatim.'
 
@@ -133,6 +146,8 @@ sections:
       Each subsection describes one element of the interface. Its heading names the element
       as users see it. A name that is code is in backticks, such as `/mnt/plumb/send` or
       `plumb -j`, and any other name is a noun phrase, such as the title of a screen. A
+      name can join code and words, such as `plumb` and `plumb -j` for the two forms of
+      one command, because each piece of code in it reads as the text that a user types. A
       sentence on what the element does comes first, and Inputs, Outputs, and Criteria
       follow it, in that order.
     examples:
@@ -152,8 +167,8 @@ sections:
 
         #### Criteria
 
-        - PLUMB-2_AC-1 [event]: WHEN the plumber delivers a message to a port, the plumber SHALL give one copy of the message to each program that has the port open.
-        - PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives.
+        - PLUMB-2_AC-1 [agent] [event]: WHEN the plumber delivers a message to a port, the plumber SHALL give one copy of the message to each program that has the port open.
+        - PLUMB-2_AC-2 [agent] [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives.
       - |
         ### PLUMB-3 `/mnt/plumb/rules`
 
@@ -170,16 +185,14 @@ sections:
 
         #### Criteria
 
-        - PLUMB-3_AC-1 [event]: WHEN a program opens `/mnt/plumb/rules` with truncation, the plumber SHALL clear the rules in use.
-        - PLUMB-3_AC-2 [unwanted]: IF the written text has a syntax error, THEN the plumber SHALL fail the write with the error `malformed rule`.
-        - PLUMB-3_AC-3 [event]: WHEN a program closes `/mnt/plumb/rules`, the plumber SHALL create each port that a rule set names.
+        - PLUMB-3_AC-1 [agent] [event]: WHEN a program opens `/mnt/plumb/rules` with truncation, the plumber SHALL clear the rules in use.
+        - PLUMB-3_AC-2 [agent] [unwanted]: IF the written text has a syntax error, THEN the plumber SHALL fail the write with the error `malformed rule`.
+        - PLUMB-3_AC-3 [agent] [event]: WHEN a program closes `/mnt/plumb/rules`, the plumber SHALL create each port that a rule set names.
     blocks:
       - kind: prose
-        max: 1
         guidance: >
-          One sentence, whose subject is the element, says what the element does. The
-          sentence names the element in backticks, or describes it in a phrase that begins
-          with _The_. The criteria describe the element's behaviour in detail.
+          A sentence says what the element does, and the element's Inputs, Outputs, and
+          Criteria give the detail.
         each:
           format: requirement-summary
           example: '`/mnt/plumb/send` accepts a message from any program and passes it to the port that the first matching rule set names.'
@@ -228,11 +241,11 @@ sections:
         repeat: true
         guidance: >
           A `Planned:` paragraph says what a channel adds before the channel is built. The
-          paragraph links the open issue that owns the change. A sketch after it shows only that addition.
-          When the code exists, an include of the code replaces the paragraph and the sketch.
+          paragraph links the open issue that owns the change, and the issue holds the detail
+          of the change. A sketch after it shows only that addition. When the code exists, an
+          include of the code replaces the paragraph and the sketch.
         blocks:
           - kind: prose
-            max: 1
             each:
               pattern: '^Planned: .*\[[^\]]+\]\[sokf:(?:[a-z0-9/-]+:)?issue-[a-z0-9-]+\].*\.$'
               example: 'Planned: A message can have the attribute `explain=yes`, which asks the plumber to report which pattern failed, as [the issue on failed patterns][sokf:issue-001-feature-report-failed-pattern] describes.'
@@ -284,11 +297,11 @@ sections:
         repeat: true
         guidance: >
           A `Planned:` paragraph says what an output adds before the output is built. The
-          paragraph links the open issue that owns the change. A sketch after it shows only that addition.
-          When the code exists, an include of the code replaces the paragraph and the sketch.
+          paragraph links the open issue that owns the change, and the issue holds the detail
+          of the change. A sketch after it shows only that addition. When the code exists, an
+          include of the code replaces the paragraph and the sketch.
         blocks:
           - kind: prose
-            max: 1
             each:
               pattern: '^Planned: .*\[[^\]]+\]\[sokf:(?:[a-z0-9/-]+:)?issue-[a-z0-9-]+\].*\.$'
               example: 'Planned: With the attribute `explain=yes`, the error also names the failed pattern of the last rule set, as [the issue on failed patterns][sokf:issue-001-feature-report-failed-pattern] describes.'
@@ -308,17 +321,24 @@ sections:
   - heading: Criteria
     level: 4
     parent: parts
+    optional: true
     rule-id: part-criteria
     guidance: >
       This subsection says what the element does on success, on each error, and at each
       limit. Each criterion describes code that exists, because a `sokf-implements:` marker
-      in that code cites the criterion's key. Until the code exists, the issue that plans
-      the element contains the element's criteria. Each criterion has one trigger and one
+      in that code cites the criterion's key. A criterion whose code doesn't exist yet is in
+      Planned criteria, and moves here, with its key, in the commit that adds its markers. Each
+      test is written from a criterion, not from the code, and cites it with a `sokf-tests:`
+      marker. Each criterion has one trigger and one
       response, so "prints X and exits 0" is two criteria. Every criterion uses the same
       name for the system and says what the system does rather than how. A criterion uses
       _it_ only where the word has one possible referent. A criterion's tag matches the
       meaning of its condition, not its keyword: "WHEN the file is absent" is a state, and
-      "WHEN the file does not parse" is an error.
+      "WHEN the file does not parse" is an error. A declaration in a data file, such as a
+      rule set in the default rules file `/sys/lib/plumb/basic`, is part of the interface:
+      the element includes the file in its Inputs with `sokf:include`, and its criteria
+      state only behaviour that code implements. A criterion needs code that a marker can
+      cite, and the include already shows the reader what the file declares.
     blocks:
       - kind: bullet-list
         guidance: >
@@ -330,16 +350,44 @@ sections:
           where a feature is present (WHERE ... SHALL). [complex] marks a response that
           combines WHILE with WHEN or IF. [ubiquitous] marks a response that always holds and
           needs none of these keywords.
+        label: required
         each:
           format: requirement-ears
           unique: repository
           rule-id: criteria
+          key-of: criteria
           key-derives-from: { rule: parts, separator: '_' }
           example:
-            - 'PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names.'
-            - 'PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`.'
-            - 'PLUMB-1_AC-3 [state]: WHILE no program has the destination port open, the plumber SHALL start the program that the matching rule set''s `plumb start` or `plumb client` action names.'
-            - 'PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set''s patterns match around the click position.'
+            - 'PLUMB-1_AC-1 [agent] [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names.'
+            - 'PLUMB-1_AC-2 [agent] [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`.'
+            - 'PLUMB-1_AC-3 [agent] [state]: WHILE no program has the destination port open, the plumber SHALL start the program that the matching rule set''s `plumb start` or `plumb client` action names.'
+            - 'PLUMB-1_AC-4 [agent] [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set''s patterns match around the click position.'
+
+  - heading: Planned criteria
+    level: 4
+    parent: parts
+    optional: true
+    rule-id: part-planned-criteria
+    guidance: >
+      This subsection lists the criteria of the element whose code doesn't exist yet. A
+      `Planned:` paragraph links the open issue that owns them, and the issue holds the
+      detail of the change. Each criterion moves to Criteria, with its key, in the commit
+      that adds the markers that cite it.
+    blocks:
+      - kind: prose
+        each:
+          pattern: '^Planned: .*\[[^\]]+\]\[sokf:(?:[a-z0-9/-]+:)?issue-[a-z0-9-]+\].*\.$'
+          example: 'Planned: The plumber names the failed pattern, as [the issue on the failed pattern][sokf:issue-001-feature-report-failed-pattern] describes.'
+      - kind: bullet-list
+        label: required
+        each:
+          format: requirement-ears
+          unique: repository
+          rule-id: planned-criteria
+          key-of: planned-criteria
+          key-derives-from: { rule: parts, separator: '_' }
+          example:
+            - 'PLUMB-1_AC-5 [agent] [optional]: WHERE the message has the attribute `explain=yes` and no rule set matches, the plumber SHALL name the failed pattern of the last rule set in the error of the write.'
 
   - heading: Qualities
     level: 2
@@ -352,7 +400,7 @@ sections:
       such as a time, a size, or an error.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Put each quality in the subsection for its kind." }
         each:
           text: 'This section fully defines the non-functional behaviour of this contract. Each [quality][sokf:#quality] is an acceptance criterion about how well the interface works: its speed, limits, security, availability, or compatibility.'
 
@@ -377,39 +425,71 @@ sections:
       - |
         ### PLUMB-5 Reliability
 
-        - PLUMB-5_AC-1 [unwanted]: IF a program exits with messages in its queue for a port, THEN the plumber SHALL discard those messages.
+        - PLUMB-5_AC-1 [agent] [unwanted]: IF a program exits with messages in its queue for a port, THEN the plumber SHALL discard those messages.
       - |
         ### PLUMB-6 Compatibility
 
-        - PLUMB-6_AC-1 [ubiquitous]: the plumber SHALL serve its files over 9P, the Plan 9 file protocol.
+        - PLUMB-6_AC-1 [agent] [ubiquitous]: the plumber SHALL serve its files over 9P, the Plan 9 file protocol.
       - |
         ### PLUMB-7 Usability
 
-        - PLUMB-7_AC-1 [unwanted]: IF the rules file that the plumber reads at startup has a syntax error, THEN the plumber SHALL exit with the error `parse error`.
+        - PLUMB-7_AC-1 [agent] [unwanted]: IF the rules file that the plumber reads at startup has a syntax error, THEN the plumber SHALL exit with the error `parse error`.
     blocks:
       - kind: bullet-list
+        optional: true
         guidance: >
           A criterion states a number and a unit where the quality has one, such as 50 ms or
           8192 bytes.
+        label: required
         each:
           format: requirement-ears
           unique: repository
           rule-id: quality-criteria
+          key-of: quality-criteria
           key-derives-from: { rule: quality-kinds, separator: '_' }
-          example: 'PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL return from a write to `/mnt/plumb/send` without waiting for a program to read the message.'
+          example: 'PLUMB-4_AC-1 [agent] [ubiquitous]: the plumber SHALL return from a write to `/mnt/plumb/send` without waiting for a program to read the message.'
+      - kind: prose
+        optional: true
+        guidance: >
+          A `Planned:` paragraph links the open issue that owns the quality's criteria whose
+          tests don't exist yet, and the list after it holds them. The issue holds the detail
+          of the change. Each criterion moves to the preceding list, with its key, in the commit
+          that adds the tests that cite it.
+        each:
+          pattern: '^Planned: .*\[[^\]]+\]\[sokf:(?:[a-z0-9/-]+:)?issue-[a-z0-9-]+\].*\.$'
+          example: 'Planned: The plumber names the failed pattern within its usual time, as [the issue on the failed pattern][sokf:issue-001-feature-report-failed-pattern] describes.'
+      - kind: bullet-list
+        optional: true
+        label: required
+        each:
+          format: requirement-ears
+          unique: repository
+          rule-id: planned-quality-criteria
+          key-of: planned-quality-criteria
+          key-derives-from: { rule: quality-kinds, separator: '_' }
+          example: 'PLUMB-4_AC-2 [agent] [ubiquitous]: the plumber SHALL name the failed pattern in the error of a write to `/mnt/plumb/send` within 1 ms of the write.'
 
   - heading: Properties
     level: 2
+    rule-id: property-section
     guidance: >
-      This section states the properties that hold for every valid input. The words after
-      FOR ANY name the inputs exactly, because the property-based test generates those
-      inputs. The properties have the keys PLUMB_P-1, PLUMB_P-2, and so on.
+      This section states the properties that hold for every valid input. A property holds
+      for every input of a kind, so it can't restate a criterion, which describes the
+      response to one trigger, and a check on fixed inputs is a criterion's test, not a
+      property's. A property is usually found in one of these families: determinism,
+      idempotence, a round trip, an invariant, and monotonicity or independence of order.
+      Every contract has at least one property,
+      because a block with no property is probably too small for a contract of its own, and
+      its criteria then belong in the contract of a larger block. The words after FOR ANY
+      name the inputs exactly, because the property-based test generates those inputs. The
+      properties have the keys PLUMB_P-1, PLUMB_P-2, and so on.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "State each property in the list that follows." }
         each:
           text: 'This section fully defines the [properties][sokf:#property] of this contract. A property is an acceptance criterion that holds for all valid inputs. A property-based test checks it.'
       - kind: bullet-list
+        optional: true
         guidance: >
           Each property has one of six tags for its kind. [round-trip] marks an operation
           that, followed by its inverse, returns the input. [invariant] marks something that stays
@@ -418,14 +498,41 @@ sections:
           result in any order. [equivalent] marks two methods that give the same result, and
           one of them is often a simple model. [metamorphic] marks a known change to the
           input that gives a known change to the output.
+        label: required
         each:
           format: requirement-property
           unique: repository
           rule-id: properties
+          key-of: properties
           key-derives-from: { from: code, separator: '_' }
           example:
-            - 'PLUMB_P-1 [invariant]: FOR ANY message and any set of programs that have its destination port open, the plumber SHALL give each of those programs exactly one copy of the message.'
-            - 'PLUMB_P-2 [idempotent]: FOR ANY valid rules text, the plumber SHALL have the same rule sets in use after two writes of the text to `/mnt/plumb/rules` as after one.'
+            - 'PLUMB_P-1 [agent] [invariant]: FOR ANY message and any set of programs that have its destination port open, the plumber SHALL give each of those programs exactly one copy of the message.'
+            - 'PLUMB_P-2 [agent] [idempotent]: FOR ANY valid rules text, the plumber SHALL have the same rule sets in use after two writes of the text to `/mnt/plumb/rules` as after one.'
+
+  - heading: Planned properties
+    level: 3
+    parent: property-section
+    optional: true
+    rule-id: planned-property-section
+    guidance: >
+      This subsection lists the properties whose tests don't exist yet. A `Planned:`
+      paragraph links the open issue that owns them, and the issue holds the detail of the
+      change. Each property moves to the list of Properties, with its key, in the commit
+      that adds the tests that cite it.
+    blocks:
+      - kind: prose
+        each:
+          pattern: '^Planned: .*\[[^\]]+\]\[sokf:(?:[a-z0-9/-]+:)?issue-[a-z0-9-]+\].*\.$'
+          example: 'Planned: The error of a message that matches no rule set names one failed pattern, as [the issue on the failed pattern][sokf:issue-001-feature-report-failed-pattern] describes.'
+      - kind: bullet-list
+        label: required
+        each:
+          format: requirement-property
+          unique: repository
+          rule-id: planned-properties
+          key-of: planned-properties
+          key-derives-from: { from: code, separator: '_' }
+          example: 'PLUMB_P-3 [agent] [invariant]: FOR ANY message that matches no rule set, the plumber SHALL name at most one failed pattern in the error of the write.'
 
   - heading: Evolution
     level: 2
@@ -437,7 +544,7 @@ sections:
       because it is a rule for changing the contract, not a promise that code keeps.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "State each rule for a change in the list that follows." }
         each:
           text: 'This section fully defines how this contract can change. A change that these rules do not allow is a breaking change.'
       - kind: bullet-list

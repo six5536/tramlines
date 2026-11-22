@@ -110,7 +110,7 @@ pub fn lower_common(
     // sokf:end lowering
     let regexes = RegexCache::new();
     let mut l = Lowerer::new(&regexes, path, TypeRegistry::default());
-    l.lifecycle = schema.lifecycle.clone();
+    l.lifecycle.clone_from(&schema.lifecycle);
     let common = l.common(node);
     (common, l.findings)
 }
@@ -153,20 +153,20 @@ pub fn derivation(node: &Spanned) -> KeyDerivation {
 
 /// The boolean at `key` of `node`; absent means false.
 pub fn bool_of(node: &Spanned, key: &str) -> bool {
-    node.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+    node.get(key).and_then(Spanned::as_bool).unwrap_or(false)
 }
 
 /// The count at `key` of `node`; a negative count reads as zero.
 pub fn usize_of(node: &Spanned, key: &str) -> Option<usize> {
     node.get(key)
-        .and_then(|v| v.as_int())
+        .and_then(Spanned::as_int)
         .map(|i| usize::try_from(i).unwrap_or(0))
 }
 
 /// The string or the list of strings at `key` of `node`.
 pub fn list_of(node: &Spanned, key: &str) -> Vec<String> {
     node.get(key)
-        .and_then(|v| v.as_str_or_list())
+        .and_then(Spanned::as_str_or_list)
         .unwrap_or_default()
 }
 
@@ -439,7 +439,10 @@ impl<'a> Lowerer<'a> {
             })
             .unwrap_or_default();
         CoreSchema {
-            line_limit: yaml.get("line-limit").and_then(|l| l.as_int()).unwrap_or(0),
+            line_limit: yaml
+                .get("line-limit")
+                .and_then(Spanned::as_int)
+                .unwrap_or(0),
             lifecycle: self.lifecycle.clone(),
             frontmatter,
             frontmatter_open: bool_of(yaml, "frontmatter-open"),

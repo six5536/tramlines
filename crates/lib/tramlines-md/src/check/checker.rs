@@ -16,7 +16,7 @@ use crate::{
         Block as Rule, LifecycleDimension, RuleCommon, Schema, Section, States, Text,
         Unit as UnitRule, Words, squash,
     },
-    markdown::{Block, BlockKind, Unit},
+    markdown::{Block, Heading, Unit},
 };
 
 // sokf:begin check-against
@@ -42,7 +42,9 @@ pub(crate) struct Occurrence {
     pub text: String,
 }
 
-/// A unit that breaks its rule (TLMD_109), by where it holds its anchors.
+/// A unit that breaks its rule (`TLMD_109`), by where it holds its anchors.
+/// A unit in the body of a heading that no declared section takes, while the
+/// heading breaks its rule, has the record of its kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Broken {
     /// On the lines of its text: a paragraph, an item, or a row.
@@ -54,6 +56,11 @@ pub(crate) enum Broken {
     /// On the line of anchors before the code or HTML block that starts on
     /// this line, of which the unit is a line.
     Before(usize),
+    /// On the lines of a heading that captures no key and on which the
+    /// match of the headings reports a finding that no repair of the
+    /// heading corrects. That finding outlasts every repair of the heading,
+    /// so no repair sets the record aside.
+    Heading(RangeInclusive<usize>),
 }
 
 /// Where in a schema the rule being checked sits. The reader a finding
@@ -115,7 +122,7 @@ impl At {
         }
         let mut parts: Vec<String> = self.region.clone().into_iter().collect();
         if !self.blocks.is_empty() {
-            let at: Vec<String> = self.blocks.iter().map(|b| b.to_string()).collect();
+            let at: Vec<String> = self.blocks.iter().map(ToString::to_string).collect();
             parts.push(format!("block {}", at.join(".")));
         }
         (!parts.is_empty()).then(|| parts.join(" "))
@@ -149,14 +156,16 @@ pub(crate) struct Checker<'a> {
     /// Every heading matched to a declared section, in document order.
     pub occurrences: Vec<Occurrence>,
     /// The lines of each body whose heading repeats where its section does
-    /// not (TLMD_151), after the lines of the body that it repeats.
+    /// not (`TLMD_151`), after the lines of the body that it repeats.
     pub repeats: Vec<(Range<usize>, Range<usize>)>,
-    /// The kinds of block the positions after the one being claimed can
-    /// open, so a group knows which blocks it leaves to them.
-    pub later: Vec<BlockKind>,
     /// The units at the end of the run being claimed that a later group's
-    /// opening position needs, which the position leaves to it (TLMD_193).
+    /// opening position needs, which the position leaves to it (`TLMD_193`).
     pub reserve: usize,
+    /// Whether a group is trying the positions after it on a block, in a
+    /// trial that it rolls back: a group inside the trial keeps a needed
+    /// repetition without a trial of its own, so the trials stay as many
+    /// as the positions (`TLMD_71`).
+    pub trying: bool,
     /// The first line of the code or HTML block whose lines are being
     /// checked: a key captured there has its anchor before the block.
     pub lines_block: Option<usize>,
@@ -168,7 +177,7 @@ pub(crate) struct Checker<'a> {
     /// The labels of the schema, in the words that the host gives.
     pub labels: Words,
     /// The label of each link reference definition of the document, in
-    /// lower case, which no label's words can be (TLMD_243).
+    /// lower case, which no label's words can be (`TLMD_243`).
     pub links: HashSet<String>,
 }
 
@@ -197,7 +206,7 @@ impl Checker<'_> {
         self.doc
             .frontmatter
             .and_then(|f| f.get(key))
-            .and_then(|v| v.scalar_text())
+            .and_then(tramlines_core::Spanned::scalar_text)
     }
 
     /// The text a `text` rule demands: its literal, or the value of the
@@ -255,7 +264,7 @@ impl Checker<'_> {
     /// Whether a part bound to the frontmatter `key`, which holds no text
     /// for it, is a finding of its own: only where the document does not
     /// set the key, so not where the frontmatter does not read, not where
-    /// the value is no scalar (TL_57), and not where TL_54 reports the key
+    /// the value is no scalar (`TL_57`), and not where `TL_54` reports the key
     /// missing.
     // sokf-implements: TLMD_168
     pub fn unbound_is_own_fault(&self, key: &str) -> bool {
@@ -349,9 +358,17 @@ impl Checker<'_> {
         }
     }
 
+    /// Record that `heading` breaks its rule: the match of the heading
+    /// reported a finding on it that no repair of the heading corrects.
+    // sokf-implements: TLMD_109
+    pub fn broke_heading(&mut self, heading: &Heading) {
+        self.record(Broken::Heading(heading.line..=heading.end_line));
+    }
+
     /// Record that each unit of `block` breaks its rule, and each unit of
     /// the blocks they hold: the check reported that no position takes
-    /// the block, and checks none of them.
+    /// the block, or that no declared section takes the heading above it,
+    /// and checks none of them.
     pub fn broke_block(&mut self, block: &Block) {
         for unit in &block.units {
             self.broke(unit);
@@ -418,8 +435,8 @@ pub fn check_against(
         at: At::default(),
         occurrences: Vec::new(),
         repeats: Vec::new(),
-        later: Vec::new(),
         reserve: 0,
+        trying: false,
         lines_block: None,
         records_accepted: host.records_accepted(),
         broken: Vec::new(),

@@ -2,9 +2,8 @@
 //! group walks its inner rules over the blocks once for each repetition.
 
 use super::{
-    Checker,
-    blocks::{check_count, check_plain},
-    claim::{Docs, Dropped, admitted, is_text_error, joins, match_sequence, matches_rule},
+    Checker, blocks,
+    claim::{self, Around, Docs, Outside, is_text_error},
 };
 use crate::{grammar::Block as Rule, markdown::BlockKind};
 
@@ -12,75 +11,90 @@ use crate::{grammar::Block as Rule, markdown::BlockKind};
 pub(super) struct Checked {
     /// The blocks that the check consumed.
     pub(super) taken: usize,
-    /// The blocks that a refusal of the check covers: those consumed, else
-    /// those of the repetition that an absent group gave back, and at least
-    /// one.
+    /// The blocks that a refusal of the check covers: those of the
+    /// repetition that an absent group gave back, else one, because a
+    /// group that took blocks owns them and is never refused.
     pub(super) covers: usize,
+    /// The repetitions that a group took, past those it held before.
+    pub(super) repetitions: usize,
 }
 
 /// Check one block against its rule. A group walks its inner rules over
-/// the blocks from `di`.
+/// the blocks from `di`, past the repetitions that it holds already.
 pub(super) fn check_block(
     c: &mut Checker<'_>,
     docs: &mut Docs<'_>,
     di: usize,
     rule: &Rule,
     section: Option<usize>,
+    around: Around<'_>,
 ) -> Checked {
     if rule.kind != BlockKind::Group {
-        check_plain(c, &docs[di], rule, section);
+        blocks::check_plain(c, &docs[di], rule, section);
         return Checked {
             taken: 1,
             covers: 1,
+            repetitions: 0,
         };
     }
     let line = docs[di].line;
     c.gate(&rule.common, line);
-    let inner: Vec<&Rule> = admitted(rule, c).collect();
+    let inner: Vec<&Rule> = c.admitted(rule).collect();
     // The group's `rule-id` names what its inner blocks capture.
     let outer = c.group_rule.take();
     c.group_rule = rule.rule_id.clone().or(outer.clone());
-    // What the positions after the group take, read before the inner walk
-    // sets its own.
-    let later = std::mem::take(&mut c.later);
     let optional = c.block_optional(rule);
-    let mut reps = 0;
-    let mut released = None;
-    let mut span = 1;
+    // The next repetition divides the run whatever the group's `max`,
+    // because no count divides a run, and so does a position after the
+    // group where the walk around it fixes the order (TLMD_78). A walk in
+    // any order gives the inner walk none, because no order says that a
+    // block of another position stands after the group.
+    let later: &[&Rule] = if around.ordered { around.later } else { &[] };
+    let outside = Outside {
+        wraps: (inner.first().map(|r| r.kind) == inner.last().map(|r| r.kind))
+            .then(|| inner.first().map(|r| r.kind))
+            .flatten(),
+        later,
+        after: claim::opened(later, c),
+    };
+    let mut reps = around.held;
+    let mut absent = None;
     let mut pos = di;
     while pos < docs.len() {
-        let opening = matches_rule(&docs[pos], rule, c);
-        let claimed = later.contains(&docs[pos].kind);
-        if !opening && (claimed || !joins(&docs[pos], rule, c)) {
+        let opening = c.matches_rule(&docs[pos], rule);
+        let claimed = around.kinds.contains(&docs[pos].kind);
+        if !opening && (claimed || !c.joins(&docs[pos], rule)) {
             break;
         }
         let at = c.save();
         let blocks = docs.clone();
         let start = docs[pos].line;
-        let first = start..=docs[pos].end_line;
-        // The next repetition divides the run whatever the group's `max`,
-        // because no count divides a run.
-        let wraps = (inner.first().map(|r| r.kind) == inner.last().map(|r| r.kind))
-            .then(|| inner.first().map(|r| r.kind))
-            .flatten();
-        let n = match_sequence(c, &inner, docs, pos, section, start, wraps);
+        let n = c.match_sequence(&inner, docs, pos, section, start, &outside);
         if n > 0 && !c.failed_by_text(&at) {
             pos += n;
             reps += 1;
             continue;
         }
-        // A repetition the group needs to reach its `min`, one whose blocks
-        // no position after it takes, and one whose opening block the group
-        // accepted, are kept with the reason they failed: the opening says
-        // whose they are. An optional group can be absent, so its `min`
-        // keeps no first repetition.
+        // A repetition whose blocks no position after it takes, one whose
+        // opening units the group accepted, and one the group needs to
+        // reach its `min` where no position after it takes its opening
+        // block cleanly, are kept with the reason they failed: the opening
+        // says whose they are. The opening units are those that the
+        // opening position took, the start of a run that it divided. An
+        // optional group can be absent, so its `min` keeps no first
+        // repetition.
         // sokf-implements: TLMD_71
+        let first = docs[pos].line..=docs[pos].end_line;
         let owned = opening
             && !c.out.findings[at.findings..]
                 .iter()
                 .any(|f| is_text_error(f) && f.line.is_some_and(|l| first.contains(&l)));
         let needed = reps < rule.min && (reps > 0 || !optional);
-        if n > 0 && (needed || !claimed || owned) {
+        if n > 0
+            && (!claimed
+                || owned
+                || (needed && (c.trying || !later_takes(c, &blocks, pos, around, section))))
+        {
             pos += n;
             reps += 1;
             continue;
@@ -90,44 +104,96 @@ pub(super) fn check_block(
         // repetition after it would otherwise read the pieces.
         // sokf-implements: TLMD_61
         let end = (n > 0).then(|| docs[pos + n - 1].end_line);
-        released = Some(c.rollback(&at));
         *docs = blocks;
-        // The blocks that the repetition took whole, as they stand put back
-        // together, its opening at least: a run that it took only the start
-        // of stays for the rules after it.
-        span = end.map_or(1, |end| {
-            docs[pos..]
-                .iter()
-                .take_while(|b| b.end_line <= end)
-                .count()
-                .max(1)
-        });
+        // An optional group that needs a repetition and gives back its first
+        // is absent, so it refuses the block with the reason that the
+        // repetition failed, not with a count of none: it keeps the
+        // findings of the repetition and drops the rest of what it wrote.
+        // The refusal covers the blocks that the repetition took whole, as
+        // they stand put back together, its opening at least: a run that it
+        // took only the start of stays for the rules after it.
+        // sokf-implements: TLMD_61
+        if reps == 0 && optional && rule.min > 0 && c.failed_by_text(&at) {
+            c.discard(&at);
+            absent = Some(end.map_or(1, |end| {
+                docs[pos..]
+                    .iter()
+                    .take_while(|b| b.end_line <= end)
+                    .count()
+                    .max(1)
+            }));
+        } else {
+            c.rollback(&at);
+        }
         break;
     }
-    c.later = later;
     c.group_rule = outer;
-    // An optional group that needs a repetition and released its first is
-    // absent, so it refuses the block with the reason that repetition
-    // failed, not with a count of none, and the refusal covers the blocks
-    // of the repetition. A group whose `min` is 0 takes no block.
-    // sokf-implements: TLMD_61
-    let absent =
-        |d: &Dropped| reps == 0 && optional && rule.min > 0 && d.findings.iter().any(is_text_error);
+    // A group whose `min` is 0 takes no block.
     let taken = pos - di;
-    match released.filter(absent) {
-        Some(dropped) => {
-            c.keep(dropped);
-            Checked {
-                taken,
-                covers: span,
-            }
+    // A walk in any order counts a group's repetitions once, over all its
+    // claims.
+    if absent.is_none() && around.ordered {
+        blocks::check_count(c, rule, reps, line);
+    }
+    Checked {
+        taken,
+        covers: absent.unwrap_or(1),
+        repetitions: reps - around.held,
+    }
+}
+
+/// Whether the position after the group that the walk would give
+/// `docs[pos]`, the opening block of a failed repetition, takes it with no
+/// error. The later positions that open with its kind are tried in the
+/// walk's order, each in a trial that is rolled back, dividing a run as the
+/// walk would: the first that claims the block whatever it reports, a
+/// required position or a group that takes it, decides, and one that
+/// refuses it passes it on. A group inside the trial tries nothing itself,
+/// so the trials stay as many as the positions.
+// sokf-implements: TLMD_71
+fn later_takes(
+    c: &mut Checker<'_>,
+    docs: &Docs<'_>,
+    pos: usize,
+    around: Around<'_>,
+    section: Option<usize>,
+) -> bool {
+    for (k, rule) in around.later.iter().enumerate() {
+        if !c.matches_rule(&docs[pos], rule) {
+            continue;
         }
-        None => {
-            check_count(c, rule, reps, line);
-            Checked {
-                taken,
-                covers: taken.max(1),
-            }
+        // The positions after this one, as the walk passes them: those after
+        // it in order, or every other free rule in any order.
+        let rest: Vec<&Rule> = if around.ordered {
+            around.later[k + 1..].to_vec()
+        } else {
+            (0..around.later.len())
+                .filter(|&j| j != k)
+                .map(|j| around.later[j])
+                .collect()
+        };
+        let kinds = claim::opened(&rest, c);
+        let after = Around {
+            later: &rest,
+            kinds: &kinds,
+            held: 0,
+            ordered: around.ordered,
+            dividing: around.dividing,
+        };
+        let divides = around.ordered && around.dividing.contains(&rule.kind);
+        // A walk in any order claims nothing whatever it reports.
+        let firm = around.ordered && claim::firm(rule, c);
+        let mut probe = docs.clone();
+        let at = c.save();
+        let trying = std::mem::replace(&mut c.trying, true);
+        let taken = claim::claim(c, &mut probe, pos, rule, section, firm, divides, after);
+        c.trying = trying;
+        let clean = !c.failed_by_text(&at);
+        c.rollback(&at);
+        match taken {
+            Ok(t) if t.blocks > 0 => return clean,
+            _ => {}
         }
     }
+    false
 }

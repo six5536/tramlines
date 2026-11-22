@@ -97,8 +97,10 @@ fn arg_header(arg: &clap::Arg) -> String {
 fn value_name(arg: &clap::Arg) -> String {
     arg.get_value_names()
         .and_then(|names| names.first())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| arg.get_id().to_string().to_uppercase())
+        .map_or_else(
+            || arg.get_id().to_string().to_uppercase(),
+            ToString::to_string,
+        )
 }
 
 /// A roff text line: backslashes escaped, a leading control character

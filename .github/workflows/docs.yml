@@ -2,7 +2,9 @@ name: Docs
 
 # Publishes the documentation site to GitHub Pages, built from one tag: the
 # release calls it with the tag it published, and it can be run by hand to
-# publish a past tag again, such as after a fix to its docs is tagged.
+# publish a past tag again, such as after a fix to its docs is tagged. A tag
+# from before v0.5.0 has neither the action setup-tools nor the task
+# release:check:docs, so its site stays as it was published.
 on:
   workflow_call:
     inputs:
@@ -33,19 +35,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
 
-      - uses: jdx/mise-action@v5
+      # Only the tools of the site: node runs its build script, and mdBook and
+      # lychee build it and check its links.
+      - uses: ./.github/actions/setup-tools
         with:
-          install_args: rust@1.96 cargo-binstall cargo:mdbook cargo:lychee
+          tools: node rust cargo-binstall cargo:mdbook cargo:lychee
 
-      - name: Build the site
+      # Builds the site and checks the links between its pages, with the tools
+      # above alone.
+      - run: mise run release:check:docs
         env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
           # Links to the knowledge store go to GitHub at the same tag.
           DOCS_REF: ${{ inputs.ref }}
-        run: npm run docs:build
-
-      - name: Check its links
-        run: npm run docs:check
 
       - uses: actions/upload-pages-artifact@v4
         with:

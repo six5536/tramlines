@@ -29,3 +29,6 @@ serde_json.workspace = true
 assert_cmd = { workspace = true }
 boon.workspace = true
 insta.workspace = true
+
+[lints]
+workspace = true

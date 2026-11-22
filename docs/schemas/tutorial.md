@@ -38,7 +38,7 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 2
+        max: { soft: 2, when-at-limit: "Name each thing that the reader needs first in the section Before you begin." }
         guidance: The opening says what the reader builds, and what they can do at the end.
         example: In this tutorial you write a schema for a shopping list and check a list against it. At the end you can write a schema for a document of your own.
   - heading: Before you begin

@@ -192,6 +192,10 @@ pub struct RuleLimit {
 // sokf:end guide
 
 // sokf-implements: MD-13_AC-3
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `serialize_with` fixes the signature `fn(&T, S)`"
+)]
 fn kind_name<S: Serializer>(kind: &BlockKind, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(kind.name())
 }
@@ -512,14 +516,14 @@ fn limit_texts(
 /// writes it, whatever its words, for a section, a preamble, or a
 /// lifecycle dimension.
 fn own_line(guidance: &str) -> String {
-    squash(guidance).to_string()
+    squash(guidance).clone()
 }
 
 /// The texts joined by one space, each run of whitespace read as one
 /// space, as a guidance line holds them, or `None` where there are none.
 fn joined(texts: impl Iterator<Item = String>) -> Option<String> {
     let texts: Vec<String> = texts
-        .map(|t| squash(&t).to_string())
+        .map(|t| squash(&t).clone())
         .filter(|t| !t.is_empty())
         .collect();
     (!texts.is_empty()).then(|| texts.join(" "))

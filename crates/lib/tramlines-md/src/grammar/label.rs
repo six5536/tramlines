@@ -1,4 +1,4 @@
-//! How a label is read off the text of a unit (TLMD_243 to TLMD_247): its
+//! How a label is read off the text of a unit (`TLMD_243` to `TLMD_247`): its
 //! words in square brackets followed by one space, straight after the key
 //! of a unit that begins with the key that its rule captures, and
 //! otherwise first, after the box of a task item. The check, the check of
@@ -13,7 +13,7 @@ use crate::{markdown::BlockKind, text};
 
 /// The labels of a schema, each key with the words that a document
 /// writes for it: the words that the host gives in the language of the
-/// schema, or the key where the host gives none (TLMD_253).
+/// schema, or the key where the host gives none (`TLMD_253`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Words {
     labels: Vec<(String, String)>,
@@ -87,7 +87,7 @@ impl Words {
 }
 
 /// Grammar `label` of a block or a unit rule: whether each unit carries
-/// one of the labels that the schema declares (TLMD_240).
+/// one of the labels that the schema declares (`TLMD_240`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Label {
@@ -100,7 +100,7 @@ pub enum Label {
 impl Block {
     /// Whether a unit of the block that `rule` governs carries a label: the
     /// `label` of the rule, else, for a position of a `sequence`, the
-    /// `label` of the block's `each`, else the block's (TLMD_242). `rule` is
+    /// `label` of the block's `each`, else the block's (`TLMD_242`). `rule` is
     /// `None` for a unit of a block that declares no unit rule.
     // sokf-implements: TLMD_242
     pub fn label_of(&self, rule: Option<&Unit>) -> Option<Label> {
@@ -118,13 +118,13 @@ impl Block {
 
 /// Whether `words`, squashed, can stand between a label's brackets: not
 /// empty, with no square bracket, and not opening with `^`, which marks a
-/// footnote reference (TLMD_243).
+/// footnote reference (`TLMD_243`).
 pub(crate) fn is_words(words: &str) -> bool {
     !words.is_empty() && !words.contains(['[', ']']) && !words.starts_with('^')
 }
 
 /// Whether the units of a block of `kind` can carry a label: paragraphs,
-/// items, and rows (TLMD_240).
+/// items, and rows (`TLMD_240`).
 pub(crate) fn carries_labels(kind: BlockKind) -> bool {
     matches!(
         kind,
@@ -146,7 +146,7 @@ pub(crate) struct Found {
 }
 
 /// The words of the label that `text` opens with, and the length of the
-/// label with the space after it, where `text` opens with one (TLMD_243).
+/// label with the space after it, where `text` opens with one (`TLMD_243`).
 fn label_at(text: &str) -> Option<(&str, usize)> {
     let inner = text.strip_prefix('[')?;
     let end = inner.find([']', '['])?;
@@ -156,7 +156,7 @@ fn label_at(text: &str) -> Option<(&str, usize)> {
 }
 
 /// How long the box of a task item is that opens `text`, with the space
-/// after it, or 0 where it opens with none (TLMD_246).
+/// after it, or 0 where it opens with none (`TLMD_246`).
 pub(crate) fn task_box(text: &str) -> usize {
     ["[ ] ", "[x] ", "[X] "]
         .iter()

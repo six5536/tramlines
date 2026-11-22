@@ -111,12 +111,12 @@ impl Lowerer<'_> {
         }
         FrontmatterConstraint {
             common: self.common(node),
-            const_: node.get("const").and_then(|c| c.scalar_text()),
+            const_: node.get("const").and_then(Spanned::scalar_text),
             shape,
             enum_: node
                 .get("enum")
                 .and_then(|e| e.as_seq())
-                .map(|items| items.iter().filter_map(|i| i.scalar_text()).collect()),
+                .map(|items| items.iter().filter_map(Spanned::scalar_text).collect()),
             // A format the core does not know is the host's: the merged
             // grammar admitted it.
             format: str_of(node, "format").map(|f| match f.as_str() {

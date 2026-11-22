@@ -98,7 +98,7 @@ pub fn check_schema(schema: &Schema, host: &dyn Host, path: &RepoPath, id: &str)
             // The finding sits on the rule that the scaffold fails, and
             // quotes the scaffold's line, which the reader cannot see.
             let at = line_of(f)
-                .map(|l| l.trim())
+                .map(str::trim)
                 .filter(|l| !l.is_empty())
                 .map(|l| format!(" at `{}`", short(l)))
                 .unwrap_or_default();
@@ -150,12 +150,6 @@ fn inner(f: &Finding) -> String {
 
 /// The line of each `only` that one rule of the schema alone carries.
 fn gated_rules(schema: &Schema) -> Vec<(Condition, usize)> {
-    let mut lines: Vec<(Condition, usize)> = Vec::new();
-    let mut add = |c: &RuleCommon| {
-        if c.only.is_gated() {
-            lines.push((c.only.clone(), c.line));
-        }
-    };
     fn blocks(rules: Option<&[Block]>, add: &mut impl FnMut(&RuleCommon)) {
         for b in rules.unwrap_or(&[]) {
             add(&b.common);
@@ -169,6 +163,12 @@ fn gated_rules(schema: &Schema) -> Vec<(Condition, usize)> {
             }
         }
     }
+    let mut lines: Vec<(Condition, usize)> = Vec::new();
+    let mut add = |c: &RuleCommon| {
+        if c.only.is_gated() {
+            lines.push((c.only.clone(), c.line));
+        }
+    };
     for (_, c) in &schema.core.frontmatter {
         add(&c.common);
     }

@@ -1,18 +1,12 @@
 [workspace]
-resolver = "2"
-members = [
-  "crates/app/*",
-  "crates/lib/*",
-]
-# Without this a bare `cargo build` fails with "the workspace has no members".
-default-members = [
-  "crates/app/tramlines",
-  "crates/lib/tramlines-core",
-  "crates/lib/tramlines-md",
-]
+resolver = "3"
+members = ["crates/*/*"]
+# Without default members, a bare `cargo build` fails with "the workspace has no
+# members".
+default-members = ["crates/app/tramlines", "crates/lib/tramlines-core", "crates/lib/tramlines-md"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
 edition = "2024"
 rust-version = "1.96.0"
@@ -28,7 +22,7 @@ categories = ["command-line-utilities", "text-processing"]
 clap = { version = "4.6", features = ["derive"] }
 clap_complete = "4.6"
 clap_mangen = "0.3"
-comrak = { version = "0.55", default-features = false }
+comrak = { version = "1.1", default-features = false }
 globset = "0.4"
 ignore = "0.4"
 jmespath = "0.5"
@@ -50,24 +44,44 @@ boon = "0.6"
 proptest = "1.11"
 
 # Internal crates
-tramlines-core = { path = "crates/lib/tramlines-core", version = "0.4.0" }
-tramlines-md = { path = "crates/lib/tramlines-md", version = "0.4.0" }
+tramlines-core = { path = "crates/lib/tramlines-core", version = "0.5.0" }
+tramlines-md = { path = "crates/lib/tramlines-md", version = "0.5.0" }
 
-# Optimize release builds for size
+[workspace.lints.rust]
+unsafe_code = "deny"
+# cargo-llvm-cov sets the `coverage_nightly` cfg in the task coverage:report:rust,
+# which runs on nightly. Declare it as expected, so that no toolchain warns that
+# it is unknown.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+struct_excessive_bools = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+
+# Optimise release builds for size
 [profile.release]
-opt-level = "z"  # optimize aggressively for size
-strip = true  # strip debug info and symbols
-lto = true  # full link-time optimization across all crates
-panic = "abort"  # no unwinding overhead
-codegen-units = 1  # single codegen unit → better optimization
+opt-level = "z" # optimise for size rather than speed
+strip = true # strip the debug information and symbols
+lto = true # optimise at link time across all the crates
+panic = "abort" # abort on a panic, without the cost of unwinding
+codegen-units = 1 # build one code generation unit, so the compiler can optimise across the whole crate
 
 [profile.test]
 opt-level = 0
 debug = 0
-split-debuginfo = "unpacked"  # For macOS
+split-debuginfo = "unpacked" # on macOS, the linker skips dsymutil, which makes linking faster
 
-# Optimize the dependencies of tests, not the workspace crates: the parsers
-# and regexes run fast under the tests and proptests, built once, while a
-# change to a workspace crate still rebuilds fast.
+# Optimise the dependencies of the tests, but not the workspace crates.
+# The tests and property tests call the dependencies, such as the parsers and
+# the regular expression engine, hundreds of times, so the dependencies build at
+# opt-level 2 instead of 0. Cargo builds them only once, and after a change to a
+# workspace crate it rebuilds only that crate, which stays quick because it is
+# not optimised.
 [profile.test.package."*"]
 opt-level = 2

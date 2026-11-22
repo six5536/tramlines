@@ -1,6 +1,8 @@
 //! `tramlines new`: the scaffold of a schema at the states that the
 //! command line names, with its id and title filled.
 
+use std::fmt::Write as _;
+
 use serde_json::json;
 use tramlines_md::{
     Locator, RepoPath, Severity, Yaml,
@@ -34,7 +36,7 @@ pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     let scaffold = derive_one(&schema, &states, &host).map_err(|refusals| {
         let mut why = format!("{shown}: the schema derives no scaffold:");
         for r in refusals {
-            why.push_str(&format!("\n  {shown}:{}: {}", r.line, r.what));
+            let _ = write!(why, "\n  {shown}:{}: {}", r.line, r.what);
         }
         Stop::plain(why)
     })?;
@@ -202,24 +204,21 @@ fn fill(document: &str, key: &str, value: &str) -> String {
         .flatten();
     let written = format!("{key}: {}", scalar(value));
     let mut out: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
-    match close {
-        Some(close) => {
-            let prefix = format!("{key}:");
-            match (1..close).find(|&i| {
-                lines[i]
-                    .strip_prefix(&prefix)
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
-            }) {
-                Some(i) => out[i] = written,
-                None => out.insert(close, written),
-            }
+    if let Some(close) = close {
+        let prefix = format!("{key}:");
+        match (1..close).find(|&i| {
+            lines[i]
+                .strip_prefix(&prefix)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+        }) {
+            Some(i) => out[i] = written,
+            None => out.insert(close, written),
         }
-        None => {
-            out.insert(0, "---".to_string());
-            out.insert(1, written);
-            out.insert(2, "---".to_string());
-            out.insert(3, String::new());
-        }
+    } else {
+        out.insert(0, "---".to_string());
+        out.insert(1, written);
+        out.insert(2, "---".to_string());
+        out.insert(3, String::new());
     }
     let mut text = out.join("\n");
     text.push('\n');
@@ -245,7 +244,10 @@ fn scalar(value: &str) -> String {
 /// The value of the frontmatter key `key` in `document`.
 fn value_of(document: &str, key: &str) -> Option<String> {
     let parsed = Document::parse(RepoPath::root(), document, &Dialect::default());
-    parsed.frontmatter?.get(key).and_then(|v| v.scalar_text())
+    parsed
+        .frontmatter?
+        .get(key)
+        .and_then(tramlines_md::Spanned::scalar_text)
 }
 
 /// The filled scaffold with the headings and units that its frontmatter

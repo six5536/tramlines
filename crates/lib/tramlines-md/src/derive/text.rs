@@ -155,10 +155,10 @@ impl Deriver<'_> {
     /// key of the rule's example, that starts the key followed by the
     /// separator. A key that starts with no example of its parent is left
     /// as written, because a guess at its prefix would hide the fault that
-    /// TL_127 reports. Where the schema states no value of the parent, as
+    /// `TL_127` reports. Where the schema states no value of the parent, as
     /// for a value that only the host seeds, no example check applies, and
     /// the prefix is the text before the key's last separator, as the
-    /// finding of TL_33 reads it.
+    /// finding of `TL_33` reads it.
     // sokf-implements: MD-7_AC-12
     // sokf-implements: TLMD_205
     pub(super) fn derive_with(
@@ -204,21 +204,20 @@ impl Deriver<'_> {
             return text;
         };
         let want = format!("{parent}{sep}{tail}");
-        match respell(reader, &text, &want) {
-            Some(spliced) => spliced,
+        if let Some(spliced) = respell(reader, &text, &want) {
+            spliced
+        } else {
             // sokf-implements: TLMD_154
-            None => {
-                self.refuse_on(
-                    line,
-                    "TLMD_154",
-                    format!(
-                        "a key deriving from {} cannot be written: `{key}` does not read as `{want}` where `{}` takes it",
-                        kd.source_label(),
-                        reader.name
-                    ),
-                );
-                text
-            }
+            self.refuse_on(
+                line,
+                "TLMD_154",
+                format!(
+                    "a key deriving from {} cannot be written: `{key}` does not read as `{want}` where `{}` takes it",
+                    kd.source_label(),
+                    reader.name
+                ),
+            );
+            text
         }
     }
 
@@ -238,7 +237,7 @@ impl Deriver<'_> {
 
     /// The keys a pairing reads: those that its rules captured inside the
     /// occurrence of the parent being written, or every key outside one,
-    /// each distinct key once, rule by rule (TLMD_197).
+    /// each distinct key once, rule by rule (`TLMD_197`).
     pub(super) fn keys_in_scope(&self, rule_ids: &[String]) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for rule_id in rule_ids {
@@ -291,7 +290,7 @@ impl Deriver<'_> {
 }
 
 /// What `reader` captures from `text`. A line of a fence is read without
-/// its indent (TLMD_6); no other unit's text starts with one.
+/// its indent (`TLMD_6`); no other unit's text starts with one.
 pub(super) fn capture_of(reader: &KeyReader, text: &str) -> Option<String> {
     reader
         .regex

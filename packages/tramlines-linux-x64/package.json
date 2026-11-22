@@ -1,25 +1,24 @@
 {
   "name": "@six5536/tramlines-linux-x64",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Prebuilt tramlines binary for linux-x64.",
+  "keywords": [
+    "cli",
+    "command-line"
+  ],
   "homepage": "https://github.com/six5536/tramlines#readme",
+  "bugs": {
+    "url": "https://github.com/six5536/tramlines/issues"
+  },
+  "license": "Elastic-2.0",
+  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/six5536/tramlines.git",
     "directory": "packages/tramlines-linux-x64"
   },
-  "bugs": {
-    "url": "https://github.com/six5536/tramlines/issues"
-  },
-  "author": "six5536 <10079653+six5536@users.noreply.github.com>",
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public",
-    "provenance": true
-  },
-  "keywords": [
-    "cli",
-    "command-line"
+  "files": [
+    "bin/"
   ],
   "os": [
     "linux"
@@ -27,8 +26,9 @@
   "cpu": [
     "x64"
   ],
-  "files": [
-    "bin/"
-  ],
-  "license": "Elastic-2.0"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org"
+  }
 }

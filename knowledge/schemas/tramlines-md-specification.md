@@ -8,6 +8,7 @@ description: The one document that specifies the markdown format of tramlines, w
 <!-- prettier-ignore -->
 ````yaml
 line-limit: 0
+labels: [human, agent]
 
 guidance: >
   This schema governs the specification of the markdown format of tramlines, the one
@@ -97,7 +98,8 @@ sections:
       - kind: prose
         rules:
           - text: "This specification defines tramlines-md: the markdown format of tramlines, what a schema specifies about the body of a markdown document, and how the engine checks it."
-            max: 1
+            rule-id: opening-sentence
+            max: { hard: 1, when-at-limit: "Give each further sentence of the opening as a paragraph of its own after this one." }
           - pattern: '.'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -107,7 +109,7 @@ sections:
     guidance: This section says how to read the specification. Its text is fixed.
     blocks:
       - kind: prose
-        max: 1
+        max: { hard: 1, when-at-limit: "Explain any further point of reading in the section Terminology." }
         each:
           text: "Each normative rule of this specification is an EARS criterion, keyed `TLMD_n`."
   - heading: "1. Terminology"
@@ -146,9 +148,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_20 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_20 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -182,9 +185,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_30 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_30 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -218,9 +222,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_40 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_40 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -254,9 +259,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_50 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_50 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -290,9 +296,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_60 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_60 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -326,9 +333,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_70 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_70 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -362,9 +370,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_80 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_80 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -398,9 +407,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_90 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_90 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -434,9 +444,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_100 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_100 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]
@@ -470,9 +481,10 @@ sections:
           a paragraph or an example separates them.
         rules:
           - format: tlmd-criterion
+            label: required
             unique: repository
             min: 0
-            example: 'TLMD_110 [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
+            example: 'TLMD_110 [human] [ubiquitous]: the engine SHALL read a schema before any document that it governs.'
           - template: '`${}` - ${}'
             min: 0
             prohibited-patterns: [{pattern: '\b(SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED|OPTIONAL|[Ss]hall|[Mm]ust|[Ss]hould|[Mm]ay)\b', message: 'The prose of a specification uses no requirement keyword, such as SHALL or must, because only a criterion states a requirement.'}]

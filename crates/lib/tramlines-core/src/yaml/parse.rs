@@ -1,5 +1,5 @@
 //! Builds a positioned value tree from saphyr's events, in the dialect of
-//! TL_13 and TL_14: YAML 1.2 core schema, no anchor, alias or tag.
+//! `TL_13` and `TL_14`: YAML 1.2 core schema, no anchor, alias or tag.
 
 use saphyr::Scalar;
 use saphyr_parser::{Event, Parser, ScalarStyle, Span};
@@ -100,9 +100,8 @@ fn attach(stack: &mut [Frame], root: &mut Option<Spanned>, node: Spanned) -> Res
         }
         Some(Frame::Map(entries, pending, _)) => match pending.take() {
             None => {
-                let key = match node.value {
-                    Yaml::Str(s) => s,
-                    _ => return Err(YamlError::NonStringKey { line: node.line }),
+                let Yaml::Str(key) = node.value else {
+                    return Err(YamlError::NonStringKey { line: node.line });
                 };
                 if entries.iter().any(|(k, _)| k.value == key) {
                     return Err(YamlError::Syntax {
@@ -137,17 +136,18 @@ fn plain(anchor: usize, tagged: bool, line: usize) -> Result<(), YamlError> {
 /// null, boolean, integer, float, else string.
 fn scalar(value: std::borrow::Cow<'_, str>, style: ScalarStyle) -> Yaml {
     match Scalar::parse_from_cow_and_metadata(value, style, None) {
-        Some(Scalar::Null) => Yaml::Null,
+        Some(Scalar::Null) | None => Yaml::Null,
         Some(Scalar::Boolean(b)) => Yaml::Bool(b),
         Some(Scalar::Integer(i)) => Yaml::Int(i),
         Some(Scalar::FloatingPoint(f)) => Yaml::Float(f.into_inner()),
         Some(Scalar::String(s)) => Yaml::Str(s.into_owned()),
-        None => Yaml::Null,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -248,7 +248,10 @@ mod tests {
             before in 0usize..4,
             name in "[a-z][a-z0-9]{0,5}",
         ) {
-            let pad: String = (0..before).map(|i| format!("k{i}: v\n")).collect();
+            let pad: String = (0..before).fold(String::new(), |mut out, i| {
+                let _ = writeln!(out, "k{i}: v");
+                out
+            });
             let line = before + 1;
             prop_assert_eq!(
                 parse(&format!("{pad}a: &{name} 1\n"), 1).unwrap_err(),

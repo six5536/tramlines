@@ -213,7 +213,7 @@ mod tests {
         Only(
             pairs
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
+                .map(|(k, v)| (k.to_string(), v.iter().map(ToString::to_string).collect()))
                 .collect(),
         )
     }

@@ -1,6 +1,8 @@
 //! The report of `validate`: the files that `--fix` rewrote and the
 //! findings, as text, as one JSON object, or as GitHub workflow commands.
 
+use std::fmt::Write as _;
+
 use serde_json::{Value, json};
 use tramlines_md::{Finding, Severity};
 
@@ -83,17 +85,18 @@ impl Report {
     pub fn text(&self, warnings: bool) -> String {
         let mut out = String::new();
         for path in &self.fixes {
-            out.push_str(&format!("rewrote {path}\n"));
+            let _ = writeln!(out, "rewrote {path}");
         }
         for (path, f) in self.listed(warnings) {
             // sokf-implements: CLI-4_AC-3
             let severity = f.severity.as_str();
             // sokf-implements: CLI-4_AC-4
             let at = f.line.map_or_else(String::new, |l| format!(":{l}"));
-            out.push_str(&format!(
-                "{path}{at}: {severity}[{}]: {}\n",
+            let _ = writeln!(
+                out,
+                "{path}{at}: {severity}[{}]: {}",
                 f.criterion, f.message
-            ));
+            );
         }
         out.push_str(&self.counts());
         out
@@ -137,17 +140,18 @@ impl Report {
         for (path, f) in self.listed(warnings) {
             let mut props = format!("file={}", property(path));
             if let Some(line) = f.line {
-                props.push_str(&format!(",line={line}"));
+                let _ = write!(props, ",line={line}");
             }
-            props.push_str(&format!(",title={}", property(&f.criterion)));
-            out.push_str(&format!(
-                "::{} {props}::{}\n",
+            let _ = write!(props, ",title={}", property(&f.criterion));
+            let _ = writeln!(
+                out,
+                "::{} {props}::{}",
                 f.severity.as_str(),
                 data(&f.message)
-            ));
+            );
         }
         for path in &self.fixes {
-            out.push_str(&format!("rewrote {path}\n"));
+            let _ = writeln!(out, "rewrote {path}");
         }
         out.push_str(&self.counts());
         out
@@ -188,8 +192,9 @@ pub fn query(expr: &jmespath::Expression<'_>, value: &Value) -> Result<String, S
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tramlines_md::RepoPath;
+
+    use super::*;
 
     fn finding(line: Option<usize>, severity: Severity, message: &str) -> Finding {
         Finding {

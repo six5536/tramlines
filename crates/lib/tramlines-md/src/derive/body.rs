@@ -208,7 +208,7 @@ impl Deriver<'_> {
             Some(blocks) => self.blocks(Some(blocks), out),
         }
         self.section_rule = held;
-        self.children(section, span, out);
+        self.children(section, &span, out);
     }
 
     /// The sections that lie inside this occurrence of `section`, each
@@ -221,7 +221,7 @@ impl Deriver<'_> {
     fn children(
         &mut self,
         section: &Section,
-        span: BTreeMap<String, usize>,
+        span: &BTreeMap<String, usize>,
         out: &mut Vec<String>,
     ) {
         let Some(id) = &section.rule_id else {
@@ -291,9 +291,10 @@ impl Deriver<'_> {
                 );
                 None
             }),
-            shape => match &section.heading.example {
-                Some(e) => Some(e.clone()),
-                None => {
+            shape => {
+                if let Some(e) = &section.heading.example {
+                    Some(e.clone())
+                } else {
                     self.refuse(
                         section.common.line,
                         format!(
@@ -303,7 +304,7 @@ impl Deriver<'_> {
                     );
                     None
                 }
-            },
+            }
         }
     }
 
@@ -314,21 +315,19 @@ impl Deriver<'_> {
         let Some(reader) = heading_reader(section) else {
             return Some(example);
         };
-        match text::respell(&reader, &example, key) {
-            Some(spliced) => Some(spliced),
-            // sokf-implements: TLMD_154
-            None => {
-                self.refuse_on(
-                    section.common.line,
-                    "TLMD_154",
-                    format!(
-                        "a section demands one heading per key of {}, and its example `{example}` does not carry `{key}` where `{}` reads it",
-                        check::rules_named(section.for_each_key_of.as_deref().unwrap_or_default()),
-                        reader.name
-                    ),
-                );
-                None
-            }
+        let spliced = text::respell(&reader, &example, key);
+        // sokf-implements: TLMD_154
+        if spliced.is_none() {
+            self.refuse_on(
+                section.common.line,
+                "TLMD_154",
+                format!(
+                    "a section demands one heading per key of {}, and its example `{example}` does not carry `{key}` where `{}` reads it",
+                    check::rules_named(section.for_each_key_of.as_deref().unwrap_or_default()),
+                    reader.name
+                ),
+            );
         }
+        spliced
     }
 }

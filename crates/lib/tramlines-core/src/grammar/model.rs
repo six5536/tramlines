@@ -247,7 +247,7 @@ pub enum DerivationSource {
 }
 
 impl KeyDerivation {
-    /// The source as a finding names it: `rule \`x\`` or `the frontmatter \`x\``.
+    /// The source as a finding names it: ``rule `x` `` or ``the frontmatter `x` ``.
     pub fn source_label(&self) -> String {
         match &self.source {
             DerivationSource::Rule(r) => format!("rule `{r}`"),
@@ -479,7 +479,7 @@ impl CoreSchema {
         for dim in &self.lifecycle {
             if let Some(value) = frontmatter
                 .and_then(|f| f.get(&dim.key))
-                .and_then(|v| v.scalar_text())
+                .and_then(Spanned::scalar_text)
             {
                 states.0.insert(dim.key.clone(), vec![value]);
             }

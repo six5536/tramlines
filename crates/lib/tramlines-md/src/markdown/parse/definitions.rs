@@ -1,9 +1,10 @@
 //! The link reference definitions that open a paragraph or a setext
-//! heading. Comrak consumes them, as CommonMark does, but it keeps the
-//! block's start on their first line. It counts the lines of the block's
-//! inline nodes from that start, and their columns from where the text
-//! starts on the line that it counted, so the parser moves each position
-//! past the definitions.
+//! heading. Comrak consumes them, as CommonMark does. Where it keeps the
+//! block's start on their first line, as comrak 0.55 did, it counts the
+//! lines of the block's inline nodes from that start, and their columns
+//! from where the text starts on the line that it counted, so the parser
+//! moves each position past the definitions. comrak 1.1 starts the block
+//! past them, so the parser finds no definitions to move past.
 
 use std::collections::HashMap;
 
@@ -49,15 +50,14 @@ const REACH: usize = 4;
 /// How many lines of link reference definitions that comrak consumed open
 /// `block`, a node of the parse of `lines`: the longest run of its first
 /// lines that comrak, reading them alone as written, reads as definitions
-/// and nothing else. Comrak's positions of the inline nodes can't give the
-/// count, because comrak gives a link whose destination or title wraps an
-/// end line too early. 0 for a block of another kind, for a paragraph that
+/// and nothing else, read from the lines rather than from comrak's
+/// positions of the inline nodes. 0 for a block of another kind, for a paragraph that
 /// comrak takes off a table, which keeps its definitions as text, and for
 /// a block whose first line opens no definition.
 fn count<'b>(block: &'b AstNode<'b>, lines: &[&str]) -> usize {
     let ast = block.data();
     let sp = ast.sourcepos;
-    let last = match ast.value {
+    let last = match &ast.value {
         NodeValue::Paragraph if !super::precedes_table(block) => sp.end.line,
         // The underline ends a setext heading.
         NodeValue::Heading(h) if h.setext => sp.end.line.saturating_sub(1),

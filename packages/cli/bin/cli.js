@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 "use strict";
 
-// Thin launcher: resolve the prebuilt binary for this platform and run it,
-// forwarding arguments, stdio, and the exit code.
+// Finds the prebuilt binary for this platform and runs it, with the launcher's
+// arguments and standard streams. The launcher exits with the binary's code.
 
 const { spawnSync } = require("node:child_process");
-const { resolveBinary, exitCode } = require("../lib/binary");
+const { resolveBinary, exitCode, commandName } = require("../lib/binary");
 
 let binary;
 try {
@@ -18,7 +18,7 @@ try {
 const result = spawnSync(binary, process.argv.slice(2), { stdio: "inherit" });
 
 if (result.error) {
-  process.stderr.write(`failed to run tramlines: ${result.error.message}\n`);
+  process.stderr.write(`failed to run ${commandName()}: ${result.error.message}\n`);
   process.exit(1);
 }
 

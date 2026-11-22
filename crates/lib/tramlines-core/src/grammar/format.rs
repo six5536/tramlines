@@ -1,5 +1,5 @@
 //! One line format: its shapes, its bans, and how a line matches it
-//! (TL_42, TL_74 to TL_81).
+//! (`TL_42`, `TL_74` to `TL_81`).
 
 use regex::Regex;
 
@@ -124,7 +124,7 @@ impl Format {
             .flat_map(|t| t.segments.iter())
             .filter_map(|s| match s {
                 Segment::Hole { ty, .. } => Some(ty.as_str()),
-                _ => None,
+                Segment::Literal(_) => None,
             })
     }
 
@@ -195,7 +195,7 @@ impl Format {
 
     /// The shape `text` has and its example, or why it has none. A variant
     /// format tries its variants in order; where none matches, the one the
-    /// line follows furthest is the one it meant (TL_42).
+    /// line follows furthest is the one it meant (`TL_42`).
     // sokf-implements: TL_42
     pub fn matching(&self, text: &str) -> std::result::Result<(&Shape, &str), String> {
         self.matching_as(text, "line")

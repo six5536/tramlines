@@ -1,4 +1,4 @@
-//! Templates (TL_24 to TL_26): the shape of one unit written as the unit itself,
+//! Templates (`TL_24` to `TL_26`): the shape of one unit written as the unit itself,
 //! with typed holes, `${name:type}`, where it varies. A template compiles
 //! once to an anchored regex with one named group per named hole, and a
 //! failure names the column where the text stops matching.
@@ -389,6 +389,8 @@ pub(super) fn common_prefix(a: &str, b: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -402,7 +404,7 @@ mod tests {
         .unwrap();
         let (own, problems) =
             TypeRegistry::from_yaml(&node, &FormatSource::Repo, &TypeRegistry::default());
-        assert!(problems.is_empty());
+        assert!(problems.is_empty(), "{problems:?}");
         TypeRegistry::built_ins().layered(&own)
     }
 
@@ -540,24 +542,21 @@ mod tests {
             let (mut src, mut line, mut values) = (String::new(), String::new(), Vec::new());
             let mut last_hole = false;
             for (i, (ty, v)) in parts.into_iter().enumerate() {
-                match ty {
-                    Some(ty) => {
-                        // Two holes side by side split their text anyhow; a
-                        // literal between keeps each value its own.
-                        if last_hole {
-                            src.push('|');
-                            line.push('|');
-                        }
-                        src.push_str(&format!("${{h{i}:{ty}}}"));
-                        line.push_str(&v);
-                        values.push((format!("h{i}"), v));
-                        last_hole = true;
+                if let Some(ty) = ty {
+                    // Two holes side by side split their text anyhow; a
+                    // literal between keeps each value its own.
+                    if last_hole {
+                        src.push('|');
+                        line.push('|');
                     }
-                    None => {
-                        src.push_str(&v);
-                        line.push_str(&v);
-                        last_hole = false;
-                    }
+                    let _ = write!(src, "${{h{i}:{ty}}}");
+                    line.push_str(&v);
+                    values.push((format!("h{i}"), v));
+                    last_hole = true;
+                } else {
+                    src.push_str(&v);
+                    line.push_str(&v);
+                    last_hole = false;
                 }
             }
             (src, line, values)

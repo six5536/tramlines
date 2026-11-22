@@ -2,12 +2,13 @@
 type: Schema
 id: schema-design
 title: Design schema
-description: "How one building block is built, for a developer who changes its code: the ideas it rests on, its modules, how they work together, the interfaces between them, its data, the rules across its modules, its limits, the rules that a change keeps, and the decisions behind it."
+description: "A design explains how one building block is built, for the developer or agent who changes its code: its approach, its modules and how they work together, its interfaces and data, its limits, and the decisions behind it."
 ---
 
 <!-- prettier-ignore -->
 ````yaml
 line-limit: 2000
+labels: [human, agent]
 root: /knowledge/designs
 # A `Planned:` paragraph promises work that an open issue owns, so it links no
 # closed issue.
@@ -45,7 +46,6 @@ frontmatter:
       an open issue's Files section links counts before the file exists.
     example: '/sys/src/cmd/plumb'
   description:
-    guidance: The description says how the block does its work, in one phrase that begins with _How_.
     example: 'How the plumber matches each message against the rules and delivers it to a port.'
 
 # The architecture overview lists every design in its Designs section.
@@ -72,27 +72,30 @@ formats:
 
 prohibited-patterns:
   - pattern: '\*\*[^*]+\*\*([^:]|$)'
-    message: 'The body uses bold only for a label that a colon ends.'
+    message: 'The body uses bold only for a topic that a colon ends.'
 
 sections:
   - heading: { from: title }
     level: 1
     guidance: >
-      The opening says what the design helps its reader do and what it contains. It then says
+      This section says what the design describes, because a design describes how one block
+      is built, and its reader studies that structure. It then says
       what the block does, who uses it, and what its contract promises. Last, it says what the
-      block doesn't do and which block does that instead.
+      block doesn't do and which block does that instead. The Structure section says what
+      each module does, and the Limits section what the block does badly.
     blocks:
       - kind: prose
         sequence:
           - pattern: '^[A-Z].*\.$'
-            example: 'This design helps a developer change the plumber without breaking it. It describes the ideas that the plumber rests on, its modules, how they handle a message, their interfaces, its data, its limits, and the decisions behind it.'
+            example: 'This design describes how the plumber is built.'
           - pattern: '^[A-Z].*\[[^\]]+\]\[sokf:([a-z0-9-]+:)?architecture#[a-z0-9_-]+\].*\.$'
             example: 'The [plumber][sokf:architecture#plumber] passes messages between interactive programs. A program writes a message to `/mnt/plumb/send`, and the plumber delivers it to the port that the first matching rule set names, such as `edit` for the text editor. The plumber implements the [Plumbing][sokf:contract-plumbing] contract. The contract promises each program that has opened a port one copy of each message sent to that port. It also promises that a write to `send` fails when no rule set matches and the message names no port.'
           - pattern: '^[A-Z`].*\.$'
+            repeat: true
             example: 'The plumber doesn''t interpret the data that it passes, beyond what the rules say, and it doesn''t confirm that a message was read. Each program decides what to do with a message that it reads. The sender of a message fills in the message''s working directory.'
       - kind: bullet-list
         guidance: >
-          A contents list follows the opening, with one item for each section of the design,
+          The contents list has one item for each section of the design,
           in order. Each item links to the section's heading.
         each:
           template: '[${}](#${:slug})'
@@ -110,19 +113,17 @@ sections:
   - heading: Approach
     level: 2
     guidance: >
-      This section states the two or three ideas that the block rests on, in one short
-      paragraph, or in a sentence and a list. The Decisions section gives the advantages of
-      each idea and the reasons for it.
+      This section states the main ideas that the block rests on, in a paragraph, or in a
+      sentence and a list. The Decisions section gives each idea's advantages and reasons,
+      and holds the lesser ideas.
     blocks:
       - kind: prose
-        max: 1
         each:
           pattern: '^[A-Z`].*[.:]$'
-          example: 'The plumber rests on three ideas:'
+          example: 'The plumber rests on these ideas:'
       - kind: bullet-list
         optional: true
-        max: 3
-        guidance: Each item states one idea in one sentence.
+        guidance: Each item states one idea, usually in one sentence, and a longer idea becomes two items.
         each:
           pattern: '^[A-Z`].*\.$'
           example:
@@ -141,18 +142,18 @@ sections:
         guidance: >
           The first paragraph says where the block's code is and which type or function other
           blocks call. Each module then has one paragraph, which begins with the module's name
-          in bold as its label. A descriptive name is plain bold, and a name that is an
-          identifier in the code is in code font as well. The sentence after the label has
+          in bold. A descriptive name is plain bold, and a name that is an
+          identifier in the code is in code font as well. The sentence after the name has
           the module as its subject. The paragraph says what the module is responsible for and
           what only that module does. Where it matters, the paragraph also says how the module
           behaves under load or failure. The paragraph ends with a link to the module's code,
           which can be a file that an open issue's Files section plans.
         rules:
           - pattern: '^[A-Z].*\.$'
+            rule-id: opening-paragraph
             min: 1
-            max: 1
             prohibited-patterns: [{pattern: '^`', message: 'The opening paragraph begins with a word, not with code.'}, {pattern: ' Code: \[', message: 'The opening paragraph links no module''s code, because each module''s paragraph links its own.'}]
-            example: 'The plumber has four modules, in [`/sys/src/cmd/plumb`](/sys/src/cmd/plumb). Programs reach the plumber only through the files that the file server serves in `/mnt/plumb`, never by calling its functions.'
+            example: 'The modules of the plumber are in [`/sys/src/cmd/plumb`](/sys/src/cmd/plumb). Programs reach the plumber only through the files that the file server serves in `/mnt/plumb`, never by calling its functions.'
           - template: '**${name:module-name}**: ${:labelled-text} Code: [${}](/${}).'
             key: name
             min: 1
@@ -165,8 +166,8 @@ sections:
         optional: true
         guidance: >
           A diagram of the modules comes last. The design leaves it out when the architecture
-          already has a diagram of them. The diagram has at most nine nodes, because a larger
-          one shows too much for one level.
+          already has a diagram of them. The diagram stays small, because a larger one shows
+          too much for one level.
         lang: mermaid
         each:
           example: |
@@ -199,61 +200,54 @@ sections:
           lines:
             - format: theme
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Give a node its colours through its class." }
             - format: acc-title
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Describe the diagram in the `accDescr` line." }
             - format: acc-descr
               min: 0
-              max: 1
+              max: { hard: 1, when-at-limit: "Put the rest in the text before the diagram." }
             - format: flowchart-type
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Draw a task in the Runtime behaviour section, and the data in the Data section." }
             - format: node
               min: 2
-              max: 9
+              max: { hard: 9, when-at-limit: "Draw only the modules of this level, and give a larger module a design of its own. Never fold several stores into one node to stay within the count." }
               prohibited-patterns:
                 - pattern: ':::(user|neighbour|external|contract|group)$'
                   message: A node of the parts diagram is a block or a store of this design, so it takes neither the user, neighbour, external, contract, nor group class, although the diagram declares each class.
             - format: arrow
               min: 1
-              max: 9
+              max: { hard: 9, when-at-limit: "Join the exchanges between two nodes into one arrow, such as `Sends and reads`. Never join the exchanges with different modules into one arrow to stay within the count." }
             - format: class-style
               min: 7
-              max: 7
+              max: { hard: 7, when-at-limit: "Say in a node's label what sets it apart from the others of its class." }
             - select-pattern: '^classDef user '
               min: 1
-              max: 1
             - select-pattern: '^classDef block '
               min: 1
-              max: 1
             - select-pattern: '^classDef neighbour '
               min: 1
-              max: 1
             - select-pattern: '^classDef external '
               min: 1
-              max: 1
             - select-pattern: '^classDef store '
               min: 1
-              max: 1
             - select-pattern: '^classDef contract '
               min: 1
-              max: 1
             - select-pattern: '^classDef group '
               min: 1
-              max: 1
             - format: canvas
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Show the hosts that the block runs on in the architecture's Deployment section." }
             - format: boundary
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Show the blocks that this block connects to in the architecture." }
             - format: boundary-style
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Draw the modules of another block in that block's design." }
             - format: ground-end
               min: 2
-              max: 2
+              max: { hard: 2, when-at-limit: "Draw a set of modules that belong together as one module." }
 
   - heading: Runtime behaviour
     level: 2
@@ -278,11 +272,13 @@ sections:
 
         A user changes the rules by writing to `/mnt/plumb/rules`, for example with `cp /usr/$user/lib/plumbing /mnt/plumb/rules`, and the plumber matches the next message against the new rules.
 
-        A write to the rules file passes through the plumber in three steps:
+        A write to the rules file passes through the plumber in these steps:
 
         1. The file server clears the rules in use when a program opens the rules file with truncation.
-        2. The file server passes the text of each write to the rules reader, which parses every complete rule set in the text written so far. The rules reader returns a syntax error, such as `malformed rule`, as the error of the write.
-        3. The rules reader parses the last rule set when the program closes the file, and the file server creates each port that a rule set names.
+        2. The file server passes the text of each write to the rules reader.
+        3. The rules reader parses every complete rule set in the text written so far. It returns a syntax error, such as `malformed rule`, as the error of the write.
+        4. The rules reader parses the last rule set when the program closes the file.
+        5. The file server creates each port that a rule set names.
     blocks:
       - kind: prose
         guidance: >
@@ -294,13 +290,14 @@ sections:
             example:
               - 'A program such as the editor or the `plumb` command writes a message to `/mnt/plumb/send`, and the write returns when the plumber has queued the message or rejected it.'
           - pattern: '^[A-Z`].*:$'
+            rule-id: steps-intro-paragraph
             min: 0
-            max: 1
+            max: { soft: 1, when-at-limit: "End every other paragraph with a full stop." }
             example:
               - 'A message follows one path through the plumber:'
       - kind: numbered-list
         optional: true
-        guidance: Each step says which module acts and what the module does. Where the reason for a step isn't obvious, the step gives it.
+        guidance: Each step says which module acts and what the module does, and what another module then does is a step of its own. Where the reason for a step isn't obvious, the step gives it, and each further reason is a sentence of its own.
         each:
           pattern: '^[A-Z`].*\.$'
           example:
@@ -313,7 +310,8 @@ sections:
         optional: true
         guidance: >
           A sequence diagram or an activity flowchart can follow the steps, and the
-          task's name is the diagram's `accTitle`.
+          task's name is the diagram's `accTitle`. Each message or node holds one step of
+          one module, as each numbered step does.
         lang: mermaid
         each:
           example: |
@@ -338,25 +336,27 @@ sections:
           lines:
             - format: theme
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Draw the block's own modules inside a `box`." }
             - format: acc-title
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Describe the task in the `accDescr` line." }
             - format: acc-descr
               min: 0
-              max: 1
+              max: { hard: 1, when-at-limit: "Put the rest in the text before the diagram." }
             - select-pattern: '^(sequenceDiagram|flowchart TD)$'
+              rule-id: runtime-diagram-type
               min: 1
-              max: 1
+              max: { hard: 1, when-at-limit: "Draw how the modules connect in the Structure section, and the states of the data in the Data section." }
             - format: participant
               min: 0
-              max: 9
+              max: { hard: 9, when-at-limit: "Draw only the modules that the task passes through, and describe the rest of the task in the steps. Never fold several modules into one participant to stay within the count." }
             - format: sequence-message
               min: 0
-              max: 15
+              max: { hard: 15, when-at-limit: "Split a longer task into two, each with a subsection of its own." }
             - select-pattern: '.'
+              rule-id: runtime-diagram-line
               min: 3
-              max: 30
+              max: { hard: 30, when-at-limit: "Draw the usual path, and describe the other paths in the numbered steps." }
 
   - heading: Interfaces
     level: 2
@@ -381,7 +381,9 @@ sections:
     rule-id: interface-parts
     guidance: >
       Each subsection describes one interface. Its heading is the interface's name in the
-      code, in backticks, or a noun phrase that describes the interface.
+      code, in backticks, or a noun phrase that describes the interface. A name can join
+      code and words, such as `Ruleset` and `Rule` for two types that one module hands
+      another, because each piece of code in it reads as the name in the code.
     examples:
       - |
         ### PLMB-2 `readrules`
@@ -392,10 +394,20 @@ sections:
         <!-- /sokf:include -->
 
         - PLMB-2_AC-1 [unwanted]: IF the text has a syntax error, THEN the rules reader SHALL return the error, such as `malformed rule`, as the error of the write.
+      - |
+        ### PLMB-3 `Ruleset` and `Rule`
+
+        `Ruleset` and `Rule` carry the rules from the rules reader to the matcher, as one `Ruleset` for each rule set and one `Rule` for each pattern and each action.
+
+        <!-- sokf:include /sys/src/cmd/plumb/plumber.h#ruleset -->
+        <!-- /sokf:include -->
+
+        - PLMB-3_AC-1 [ubiquitous]: the rules reader SHALL keep the rule sets in the order in which the text gives them.
     blocks:
       - kind: prose
-        max: 1
-        guidance: One sentence, with the interface as its subject, says what the interface does.
+        guidance: >
+          A sentence with the interface as its subject says what the interface does, and
+          the criteria that follow give the detail.
         each:
           format: requirement-summary
           example: '`matchruleset` matches a message against one rule set, and returns an `Exec` with the matched text and the changes to the message, or nil when a pattern fails.'
@@ -415,12 +427,11 @@ sections:
         repeat: true
         guidance: >
           A `Planned:` paragraph describes a change to the interface that isn't built yet.
-          The paragraph links the open issue that owns the change. A sketch after it shows
-          only that addition. When the code exists, the include shows it, and the paragraph
-          and the sketch are removed.
+          The paragraph links the open issue that owns the change, and the issue holds the
+          detail of the change. A sketch after it shows only that addition. When the code
+          exists, the include shows it, and the paragraph and the sketch are removed.
         blocks:
           - kind: prose
-            max: 1
             each:
               format: planned
               example: 'Planned: `matchruleset` takes a new argument, through which it returns the number of the failed pattern, as [the issue on the failed pattern][sokf:issue-001-feature-report-failed-pattern] describes.'
@@ -470,8 +481,9 @@ sections:
             prohibited-patterns: [{pattern: '^Planned: ', message: 'A caption describes code that exists, not a planned change.'}]
             example: 'A `Ruleset` keeps its patterns and its actions in two lists. It keeps the port that its `plumb to` action names in a field of its own, so the plumber creates every port before any message arrives.'
           - pattern: '^[A-Z`].*:$'
+            rule-id: definitions-intro-paragraph
             min: 1
-            max: 1
+            max: { soft: 1, when-at-limit: "End every other paragraph with a full stop." }
             example:
               - 'The matcher reads two structures and builds a third:'
       - kind: include
@@ -485,17 +497,16 @@ sections:
         optional: true
         repeat: true
         guidance: >
-          A one-sentence caption comes before a class, entity-relationship, or state diagram.
-          In a class diagram, each box contains only the class's name, because the include
-          shows the class's fields and methods. The diagram has at most 24 lines, because a
-          larger one shows too much for one diagram.
+          A caption comes before a class, entity-relationship, or state diagram. Each
+          relationship that it describes has a sentence of its own, and the caption takes as
+          many paragraphs as its relationships need. The paragraphs before the definitions
+          say more about the data.
         blocks:
           - kind: prose
-            max: 1
             each:
               format: caption
               prohibited-patterns: [{pattern: '^Planned: ', message: 'A caption describes code that exists, not a planned change.'}]
-              example: 'A `Ruleset` contains one `Rule` for each pattern and each action, and `matchruleset` builds one `Exec` for each `Plumbmsg` that it matches.'
+              example: 'A `Ruleset` contains one `Rule` for each pattern and each action. `matchruleset` builds one `Exec` for each `Plumbmsg` that it matches.'
           - kind: code
             lang: mermaid
             each:
@@ -519,21 +530,23 @@ sections:
               lines:
                 - format: theme
                   min: 1
-                  max: 1
+                  max: { hard: 1, when-at-limit: "Give a class its colours in its `style` line." }
                 - format: acc-title
                   min: 1
-                  max: 1
+                  max: { hard: 1, when-at-limit: "Describe the diagram in the `accDescr` line." }
                 - format: acc-descr
                   min: 0
-                  max: 1
+                  max: { hard: 1, when-at-limit: "Put the rest in the caption." }
                 - select-pattern: '^(classDiagram|erDiagram|stateDiagram-v2)$'
+                  rule-id: data-diagram-type
                   min: 1
-                  max: 1
+                  max: { hard: 1, when-at-limit: "Show each further view of the data in a diagram of its own." }
                 - format: class-namespace
                   min: 0
-                  max: 1
+                  max: { hard: 1, when-at-limit: "Draw the classes of another block in that block's design." }
                 - format: class-declare
                   rule-id: data-classes
+                  key-of: data-classes
                   min: 0
                   key: name
                 - format: class-box-style
@@ -541,25 +554,27 @@ sections:
                   key: name
                   for-each-key-of: data-classes
                 - select-pattern: '^class \w+ *\{'
+                  rule-id: class-body
                   min: 0
-                  max: 0
+                  max: { hard: 0, when-at-limit: "Show the class's fields and methods with an include of its definition." }
                 - select-pattern: '^\w+ : '
+                  rule-id: class-member
                   min: 0
-                  max: 0
+                  max: { hard: 0, when-at-limit: "Explain a member that matters in the paragraphs before the definitions." }
                 - select-pattern: '.'
+                  rule-id: data-diagram-line
                   min: 3
-                  max: 24
+                  max: { hard: 24, when-at-limit: "Split the diagram into two, each with its own caption." }
       - kind: group
         optional: true
         repeat: true
         guidance: >
           A `Planned:` paragraph describes a change to the data that isn't built yet. The
-          paragraph links the open issue that owns the change. A sketch after it shows only
-          that addition. When the code exists, the include shows it, and the paragraph and the
-          sketch are removed.
+          paragraph links the open issue that owns the change, and the issue holds the detail
+          of the change. A sketch after it shows only that addition. When the code exists, the
+          include shows it, and the paragraph and the sketch are removed.
         blocks:
           - kind: prose
-            max: 1
             each:
               format: planned
               example: 'Planned: A message can carry the attribute `explain=yes`, which asks the plumber to name the failed pattern in its error, as [the issue on the failed pattern][sokf:issue-001-feature-report-failed-pattern] describes.'
@@ -588,7 +603,7 @@ sections:
       - |
         ### Order of the rule sets
 
-        The order of the rule sets in the rules file decides where a message goes. The first set whose patterns all succeed decides the destination, so a rule set takes a message from every set after it. Two modules keep the rule sets in that order:
+        The order of the rule sets in the rules file decides where a message goes. The first set whose patterns all succeed decides the destination, so a rule set takes a message from every set after it. The modules that handle the rule sets keep them in that order:
 
         - The rules reader keeps the rule sets in the order of the rules file.
         - The file server passes the rule sets to the matcher in the same order.
@@ -619,11 +634,11 @@ sections:
         repeat: true
         guidance: >
           A worked example shows what prose can't, such as the output of a command on a test
-          fixture. One sentence before the example says what runs, and ends with a colon. A
+          fixture. A sentence before the example says what runs, and ends with a colon. A
           test can read the example from the design and compare it with the real output.
         blocks:
           - kind: prose
-            max: 1
+            max: { soft: 1, when-at-limit: "Say more about the example in the subsection's paragraphs." }
             each:
               pattern: '^[A-Z`].*:$'
               example: 'The test `nomatch.rc` sends a message that matches no rule set, and checks that the write fails with this error:'
@@ -638,7 +653,7 @@ sections:
     guidance: >
       This section states plainly what the block doesn't do well, how large the effect is,
       and what bounds the effect, so that a developer doesn't mistake a known limit for a
-      bug.
+      bug. Each limit has a paragraph of its own.
     blocks:
       - kind: prose
         each:
@@ -654,10 +669,11 @@ sections:
     optional: true
     guidance: >
       This section lists the rules that a change to the block has to keep. Neither the
-      compiler nor the tests enforce them. Each item states its rule and the reason for it.
+      compiler nor the tests enforce them. Each item states its rule and the reason for it,
+      and each further reason is a sentence of its own.
     blocks:
       - kind: prose
-        max: 1
+        max: { soft: 1, when-at-limit: "Put each rule in an item of its own." }
         each:
           pattern: '^[A-Z`].*:$'
           example: 'A change that breaks one of these rules causes no compiler error and no failing test:'
@@ -680,19 +696,30 @@ sections:
     blocks:
       - kind: bullet-list
         guidance: >
-          Each item begins with its topic in bold as its label, then states the decision, and
-          gives the reason after `Why:`. When a real alternative was rejected, the item ends
-          with `Rejected:` and that alternative, then `Why not:` and the reason. An item states
-          the decision without citing the plan that proposed it, and changes when the decision
-          changes. `sokf validate` warns when a design has more than 15 decisions, because one
-          of the modules of such a block belongs in a design of its own.
+          Each item begins with its label, then its topic in bold and a colon, then states one decision, and
+          gives the reasons after `Why:`. A second choice is an item of its own. When a real
+          alternative was rejected, the item ends with `Rejected:` and that alternative, then
+          `Why not:` and the reasons. Each reason is one sentence, and an item can give
+          several. An item states the decision without citing the plan that proposed it, and
+          changes when the decision changes. The label says whether the developer took the
+          decision or an agent proposed it. The decision's consequences are a list nested
+          under its item.
+        label: required
         rules:
           - format: decision
             min: 1
-            max: 50
-            severity: warn
+            blocks:
+              - kind: bullet-list
+                optional: true
+                guidance: >
+                  The decision's consequences: each item states one effect of the choice, good
+                  or bad, in a sentence of its own.
+                label: required
+                example:
+                  - '[agent] A shell script sends a message by writing to `/mnt/plumb/send`, with no library of its own.'
+                  - '[agent] A message carries only text, because a file holds no types, so each program parses the header lines itself.'
             example:
-              - '**File server**: The plumber is a file server, and programs send and receive messages by writing and reading its files. Why: a program needs no new mechanism to use the plumber.'
-              - '**Rules in one file**: Rules kept in one file decide where every message goes, and the plumber serves that file as `/mnt/plumb/rules`. Why: a user changes the rules while the plumber runs, and the next message follows the new rules.'
-              - '**Writes never wait**: A write to `send` returns without waiting for the message to be read. Why: in a user interface, a write that never waits matters more than certain delivery. Rejected: a write that returns only after a program reads the message. Why not: the sender would wait as long as its slowest reader.'
+              - '[agent] **File server**: The plumber is a file server, and programs send and receive messages by writing and reading its files. Why: a program needs no new mechanism to use the plumber.'
+              - '[agent] **Rules in one file**: Rules kept in one file decide where every message goes, and the plumber serves that file as `/mnt/plumb/rules`. Why: a user changes the rules while the plumber runs, and the next message follows the new rules.'
+              - '[agent] **Writes never wait**: A write to `send` returns without waiting for the message to be read. Why: in a user interface, a write that never waits matters more than certain delivery. Rejected: a write that returns only after a program reads the message. Why not: the sender would wait as long as its slowest reader.'
 ````

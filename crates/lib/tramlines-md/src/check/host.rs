@@ -197,7 +197,7 @@ pub enum LimitSubject<'a> {
         /// The format that the rule binds, or else its `rule-id`, or
         /// `None` where it has neither. Only a `Schema` that a host builds
         /// or changes itself holds such a rule, because `compile` refuses
-        /// a rule with a `max` and no name (TLMD_235).
+        /// a rule with a `max` and no name (`TLMD_235`).
         name: Option<RuleName<'a>>,
     },
     /// A frontmatter key's limit, on the elements of the list of this key.

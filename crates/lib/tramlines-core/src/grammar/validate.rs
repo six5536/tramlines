@@ -73,6 +73,10 @@ impl Validator<'_> {
         ));
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass of the validation of a map, a split of which is a refactor of its own"
+    )]
     fn map(&mut self, yaml: &Spanned, rule: &str, kind: Option<&str>) {
         // The grammar refuses an `of` that names no rule map when it is
         // built, so only a caller that names one wrongly reaches this.
@@ -488,7 +492,8 @@ mod tests {
     // sokf-tests: TL_103
     #[test]
     fn the_core_keys_are_checked_against_the_core_grammar() {
-        assert!(check("line-limit: 0\nfrontmatter:\n  title:\n    example: A\n").is_empty());
+        let found = check("line-limit: 0\nfrontmatter:\n  title:\n    example: A\n");
+        assert!(found.is_empty(), "{found:?}");
         let out = check(
             "frontmatter:\n  title:\n    format: nope\n    list: 1\nlifecycle:\n  - key: Not Slug\n    states: [a]\nsections: []\n",
         );

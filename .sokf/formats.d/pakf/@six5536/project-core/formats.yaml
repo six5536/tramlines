@@ -1,0 +1,274 @@
+# This file defines the formats and the types that the schemas of the pack
+# project-core share. Most of the formats give the form of a line in a diagram,
+# in the architecture overview or in a design. Two give the form of a line in a
+# design: the `Planned:` line and the decision line. One gives the form of a
+# part's name in a contract or a design. The rest give the form of a user story
+# and of a line in a contract or a design: a criterion, a property, a summary,
+# a channel, and a rule of evolution. A schema uses a format by naming it.
+types:
+  phrase: '[A-Z][^"<]*'
+  capitalised: "[A-Z].*"
+  label: '[^"<]+'
+  boundary-kind: "[A-Z][a-z]+(?: [a-z]+)?"
+  flow: '-\.?->'
+  verb-line: '(?:[A-Z][^"<]*<br/>)?'
+  class: [user, block, neighbour, external, store, contract, group]
+  hex: "[0-9a-f]{6}"
+  identifier: "[a-z][a-z0-9_]*"
+  message-arrow: "--?>>"
+  class-relation: ["<|--", "*--", "o--", "-->", "--", "..>", "..|>", ".."]
+  scope: [public, internal]
+  part-name: '(?:`[^`]+`|[A-Z][a-z]\S*)(?: .*)?'
+  topic: "[A-Z][^:]*"
+  requirement-code: "[A-Z]{1,10}"
+  requirement-id: '[A-Z]{1,10}-\d+(?:\.\d+)?'
+  criterion-id: '[A-Z]{1,10}-\d+_AC-\d+'
+  property-id: '[A-Z]{1,10}_P-\d+'
+  indefinite-article: [A, AN]
+  property-shape: [round-trip, invariant, idempotent, order-independent, equivalent, metamorphic]
+  evolution-kind: [Versioning, Backwards compatibility, Deprecation]
+  sentence: '[A-Z].*\.'
+  channel-name: "[^:]+"
+
+registry:
+  theme:
+    text: '%%{init: {"theme": "neutral", "themeVariables": {"darkMode": false, "background": "#f6f8fa", "clusterBkg": "#f6f8fa", "clusterBorder": "#d0d0d0", "edgeLabelBackground": "#f6f8fa", "lineColor": "#555555", "textColor": "#1a1a1a", "primaryTextColor": "#1a1a1a", "actorBkg": "#ffffff", "actorBorder": "#6c8ebf", "actorLineColor": "#767676", "actorTextColor": "#1a1a1a", "signalColor": "#555555", "signalTextColor": "#1a1a1a", "labelBoxBkgColor": "#f5f5f5", "labelBoxBorderColor": "#6c8ebf", "labelTextColor": "#1a1a1a", "classText": "#1a1a1a"}}}%%'
+    example: '%%{init: {"theme": "neutral", "themeVariables": {"darkMode": false, "background": "#f6f8fa", "clusterBkg": "#f6f8fa", "clusterBorder": "#d0d0d0", "edgeLabelBackground": "#f6f8fa", "lineColor": "#555555", "textColor": "#1a1a1a", "primaryTextColor": "#1a1a1a", "actorBkg": "#ffffff", "actorBorder": "#6c8ebf", "actorLineColor": "#767676", "actorTextColor": "#1a1a1a", "signalColor": "#555555", "signalTextColor": "#1a1a1a", "labelBoxBkgColor": "#f5f5f5", "labelBoxBorderColor": "#6c8ebf", "labelTextColor": "#1a1a1a", "classText": "#1a1a1a"}}}%%'
+  caption:
+    template: "${:capitalised}."
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: A caption contains no quotation mark and no angle bracket.
+      - pattern: '^Planned: '
+        message: A caption describes what exists, not a planned change.
+    example: "The file server passes each message that a program writes to the matcher."
+  acc-title:
+    template: "accTitle: ${:capitalised}"
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: The title of a diagram contains no quotation mark and no angle bracket, because Mermaid reads them as markup.
+    example: "accTitle: The subsystems of the plumbing system"
+  acc-descr:
+    template: "accDescr: ${:capitalised}"
+    prohibited-patterns:
+      - pattern: '["<]'
+        message: The description of a diagram contains no quotation mark and no angle bracket, because Mermaid reads them as markup.
+    example: "accDescr: The plumber passes messages between the window system, the editor, and the image viewer."
+  canvas:
+    text: 'subgraph canvas[" "]'
+    example: '  subgraph canvas[" "]'
+  boundary:
+    template: 'subgraph ${id:word}["${:phrase}<br/><i>[${:boundary-kind}]</i>"]'
+    example: '    subgraph plumbing["Plumbing system<br/><i>[System]</i>"]'
+  boundary-style:
+    template: "style ${:word} fill:#f6f8fa,stroke:#999999,stroke-dasharray: 5 5"
+    example: "  style plumbing fill:#f6f8fa,stroke:#999999,stroke-dasharray: 5 5"
+  box:
+    text: "box rgb(246, 248, 250)"
+    example: "  box rgb(246, 248, 250)"
+  participant:
+    template: "participant ${:word} as ${:label}"
+    example: "  participant fsys as File server"
+  ground-end:
+    text: end
+    example: "  end"
+  flowchart-type:
+    text: flowchart LR
+    example: flowchart LR
+  class-type:
+    text: classDiagram
+    example: classDiagram
+  sequence-type:
+    text: sequenceDiagram
+    example: sequenceDiagram
+  node:
+    prohibited-patterns:
+      - pattern: "[A-Z]{2,} +[A-Z]{2,}"
+        message: "A node's label has no two words in capitals in a row."
+      - pattern: '^(graph|subgraph|end|class|classDef|style|linkStyle|click|call|href|default|direction)[\[({]'
+        message: "A node's id is no Mermaid keyword."
+      - pattern: '<i>[^<]*(,[^<]*(,|\band\b)|\band\b[^<]*,)[^<]*</i>'
+        message: "A node's label names at most two things: draw each further one as a node of its own."
+    variants:
+      user:
+        template: '${id:word}(["${name:label}<br/><i>${what:label}</i>"]):::user'
+        example: '    user(["User<br/><i>a person</i>"]):::user'
+      block:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::block'
+        example: '    plumber["Plumber<br/><i>C</i>"]:::block'
+      neighbour:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::neighbour'
+        example: '    reader["Rules reader<br/><i>C</i>"]:::neighbour'
+      external:
+        template: '${id:word}["${name:label}<br/><i>${what:label}</i>"]:::external'
+        example: '    editor["Editor<br/><i>acme</i>"]:::external'
+      store:
+        template: '${id:word}[("${name:label}<br/><i>${what:label}</i>")]:::store'
+        example: '    rules[("Rule sets<br/><i>in memory</i>")]:::store'
+      contract:
+        template: '${id:word}{{"${name:label}<br/><i>${what:scope}</i>"}}:::contract'
+        example: '    plumbing{{"Plumbing<br/><i>public</i>"}}:::contract'
+      group:
+        template: '${id:word}[["${name:label}<br/><i>${what:label}</i>"]]:::group'
+        example: '    fsys[["File server<br/><i>C</i>"]]:::group'
+  arrow:
+    template: '${from:word} ${:flow}|"${:verb-line}<i>${what:label}</i>"| ${to:word}'
+    prohibited-patterns:
+      - pattern: '\|"[^"<]*(, and |\b(is|are) [a-z]+ by\b)'
+        message: "An arrow's label says what the node at its tail does: draw what the node at its head does as an arrow of its own."
+    example: '    matcher -->|"Reads<br/><i>rule sets</i>"| rules'
+  class-style:
+    template: "classDef ${:class} fill:#${:hex},stroke:#${:hex},color:#${:hex}"
+    example: "  classDef block fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a"
+  class-namespace:
+    template: "namespace ${:identifier} {"
+    example: "  namespace plumber {"
+  class-open:
+    template: "class ${name:word} {"
+    example: "    class Ruleset {"
+  class-declare:
+    template: "class ${name:word}"
+    example: "    class Ruleset"
+  class-close:
+    text: "}"
+    example: "  }"
+  class-relation:
+    template: "${:word} ${:class-relation} ${:word}"
+    example: "  Exec ..> Plumbmsg"
+  class-box-style:
+    template: "style ${name:word} fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a"
+    example: "  style Ruleset fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a"
+  sequence-message:
+    template: "${:word}${:message-arrow}${:word}: ${}"
+    example: "  fsys->>matcher: matchruleset(message, rule set)"
+  er-type:
+    text: erDiagram
+    example: erDiagram
+  state-type:
+    text: stateDiagram-v2
+    example: stateDiagram-v2
+  activity-type:
+    text: flowchart TD
+    example: flowchart TD
+  planned:
+    template: "Planned: ${:sentence}"
+    example: "Planned: The matcher reports which pattern failed, so that the `plumb` command can say why a message matched no rule set."
+  decision:
+    template: "`${:topic}` - ${}. Why: ${}."
+    example: "`File server` - Programs send and receive messages by writing and reading files. Why: a program needs no new mechanism to use the plumber."
+  user-story:
+    key: id
+    template: "${id:requirement-id}: AS ${:indefinite-article} ${}, I WANT ${}, SO THAT ${}."
+    prohibited-patterns:
+      [
+        {
+          pattern: '\b(SHALL|SHOULD|MUST)\b',
+          message: "A user story states a need, so it holds no SHALL, SHOULD, or MUST.",
+        },
+      ]
+    example: "ST-1: AS A user, I WANT a click on a file name to open the file in the editor, SO THAT I go from a compiler error to the code in one click."
+  requirement-ears:
+    key: id
+    variants:
+      ubiquitous:
+        template: "${id:criterion-id} [ubiquitous]: the ${} SHALL ${}."
+        example: "PLUMB-4_AC-1 [ubiquitous]: the plumber SHALL queue a message on an open port within 1 ms of the write to `send`."
+      event:
+        template: "${id:criterion-id} [event]: WHEN ${}, the ${} SHALL ${}."
+        example: "PLUMB-1_AC-1 [event]: WHEN a program writes a message to `/mnt/plumb/send`, the plumber SHALL deliver the message to the port that the first matching rule set names."
+      state:
+        template: "${id:criterion-id} [state]: WHILE ${}, the ${} SHALL ${}."
+        example: "PLUMB-2_AC-2 [state]: WHILE a program's queue for the port is empty, the plumber SHALL delay its reply to the program's read until a message arrives."
+      unwanted:
+        template: "${id:criterion-id} [unwanted]: IF ${}, THEN the ${} SHALL ${}."
+        example: "PLUMB-1_AC-2 [unwanted]: IF no rule set matches and the message names no port, THEN the plumber SHALL fail the write with the error `no matching plumb rule`."
+      optional:
+        template: "${id:criterion-id} [optional]: WHERE ${}, the ${} SHALL ${}."
+        example: "PLUMB-1_AC-4 [optional]: WHERE the message has a `click` attribute, the plumber SHALL replace the data with the text that the matching rule set's patterns match around the click position."
+      complex-event:
+        template: "${id:criterion-id} [complex]: WHILE ${}, WHEN ${}, the ${} SHALL ${}."
+        example: "PLUMB-1_AC-3 [complex]: WHILE no program has the destination port open, WHEN a message for that port arrives, the plumber SHALL start the program that the rule set's `plumb client` action names."
+      complex-unwanted:
+        template: "${id:criterion-id} [complex]: WHILE ${}, IF ${}, THEN the ${} SHALL ${}."
+        example: "PLUMB-3_AC-4 [complex]: WHILE a program has `/mnt/plumb/rules` open for writing, IF a second program opens it for writing, THEN the plumber SHALL fail the open with the error `file already open`."
+    prohibited-patterns:
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: "The line uses no weak modal verb, such as should, must, will, may, might, or can."
+      - pattern: '\bSHALL\b.*\bSHALL\b'
+        message: "The line holds one SHALL."
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: "The line uses no vague word, such as fast, easy, appropriate, or as needed."
+      - pattern: '\betc\.'
+        message: "The line ends no list with etc."
+      - pattern: "and/or"
+        message: "The line uses no and/or."
+      - pattern: '\bSHALL (NOT )?be (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: "A criterion states its response in the active voice."
+  requirement-property:
+    key: id
+    template: "${id:property-id} [${:property-shape}]: FOR ANY ${}, the ${} SHALL ${}."
+    example: "PLUMB_P-2 [idempotent]: FOR ANY rules text, the plumber SHALL have the same rule sets after a program writes the text twice as after it writes the text once."
+    prohibited-patterns:
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: "The line uses no weak modal verb, such as should, must, will, may, might, or can."
+      - pattern: '\bSHALL\b.*\bSHALL\b'
+        message: "The line holds one SHALL."
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: "The line uses no vague word, such as fast, easy, appropriate, or as needed."
+      - pattern: '\betc\.'
+        message: "The line ends no list with etc."
+      - pattern: "and/or"
+        message: "The line uses no and/or."
+      - pattern: '\bSHALL (NOT )?be (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: "A criterion states its response in the active voice."
+  requirement-evolution:
+    template: "${:evolution-kind}: ${:sentence}"
+    example: "Versioning: The contract has a version number of its own, and the changelog records what each version changes."
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: "The line describes the part, so it holds no SHALL."
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: "The line uses no weak modal verb, such as should, must, will, may, might, or can."
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed|[Ee]ventually)\b'
+        message: "The line uses no vague word, such as fast, easy, appropriate, or eventually."
+      - pattern: '\betc\.'
+        message: "The line ends no list with etc."
+      - pattern: "and/or"
+        message: "The line uses no and/or."
+      - pattern: '\b(is|are|was|were|be|been) (\w+ed|\w+[^p\W]en|\w+wn|sent|kept|built|left|lost|made|read|set|put|held|told|found|sold|run|done|shut|meant|spent|paid|laid|said|brought|bought|caught|taught|thought)\b'
+        message: "An entry states its change in the active voice."
+  requirement-summary:
+    pattern: '^[A-Za-z`].*\.$'
+    example: "A write to `/mnt/plumb/send` delivers the message to the port that the first matching rule set names."
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: "The line describes the part, so it holds no SHALL."
+      - pattern: '\. '
+        message: "A summary is one sentence."
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: "The line uses no weak modal verb, such as should, must, will, may, might, or can."
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: "The line uses no vague word, such as fast, easy, appropriate, or as needed."
+      - pattern: '\betc\.'
+        message: "The line ends no list with etc."
+      - pattern: "and/or"
+        message: "The line uses no and/or."
+  requirement-channel:
+    variants:
+      none:
+        text: None.
+        example: None.
+      channel:
+        template: "${:channel-name}: ${}."
+        example: "stdout: the rules in use, as text."
+    prohibited-patterns:
+      - pattern: '\bSHALL\b'
+        message: "The line describes the part, so it holds no SHALL."
+      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: "The line uses no weak modal verb, such as should, must, will, may, might, or can."
+      - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'
+        message: "The line uses no vague word, such as fast, easy, appropriate, or as needed."
+      - pattern: '\betc\.'
+        message: "The line ends no list with etc."
+      - pattern: "and/or"
+        message: "The line uses no and/or."

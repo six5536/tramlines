@@ -274,7 +274,7 @@ impl MdLowerer<'_> {
         let blocks = self.inside(&common, |l| l.blocks(node));
         let level = node
             .get("level")
-            .and_then(|l| l.as_int())
+            .and_then(Spanned::as_int)
             .and_then(|l| u8::try_from(l).ok())
             .unwrap_or(1);
         let examples = self.occurrences(node, usize::from(level));
@@ -388,7 +388,7 @@ impl MdLowerer<'_> {
             .unwrap_or(BlockKind::Prose);
         let lang = node
             .get("lang")
-            .and_then(|l| l.as_str_or_list())
+            .and_then(Spanned::as_str_or_list)
             .map(|tags| {
                 if tags.len() == 1 && tags[0] == "any" {
                     Lang::Any
@@ -421,9 +421,11 @@ impl MdLowerer<'_> {
             units_open: bool_of(node, "units-open"),
             lang,
             fence: usize_of(node, "fence").unwrap_or(3),
-            columns: node.get("columns").and_then(|c| c.as_str_or_list()),
+            columns: node.get("columns").and_then(Spanned::as_str_or_list),
             columns_open: bool_of(node, "columns-open"),
-            example_columns: node.get("example-columns").and_then(|c| c.as_str_or_list()),
+            example_columns: node
+                .get("example-columns")
+                .and_then(Spanned::as_str_or_list),
             source_pattern: self.regex(node, "source-pattern"),
             inline_html: bool_of(node, "inline-html"),
             label: label(node),
@@ -437,6 +439,10 @@ impl MdLowerer<'_> {
     }
 
     /// One unit rule, at the position that decides which keys it may carry.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass of the lowering of a unit rule, a split of which is a refactor of its own"
+    )]
     fn unit(&mut self, node: &Spanned, pos: UnitPos) -> Unit {
         // sokf-implements: MD-2_AC-10
         let index = self.units;
@@ -621,7 +627,7 @@ fn label(node: &Spanned) -> Option<Label> {
 /// Whether a `*-ordered` key of `node` holds its parts in order, which it
 /// does unless it says otherwise.
 fn ordered(node: &Spanned, key: &str) -> bool {
-    node.get(key).and_then(|b| b.as_bool()).unwrap_or(true)
+    node.get(key).and_then(Spanned::as_bool).unwrap_or(true)
 }
 
 /// The items of the sequence `key` of `node`, where it holds one.

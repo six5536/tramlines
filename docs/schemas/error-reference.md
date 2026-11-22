@@ -43,7 +43,7 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 2
+        max: { soft: 2, when-at-limit: "Give each further detail in the entry of the error that it concerns." }
         guidance: The opening says which errors the page lists, and which section of the specification defines them.
         example: These errors come from the frontmatter of a document, which section 6 of the core specification defines.
   - heading:
@@ -55,7 +55,7 @@ sections:
     rule-id: entry
     blocks:
       - kind: prose
-        max: 1
+        max: { soft: 1, when-at-limit: "Give the further detail in the section Cause." }
         guidance: The entry opens with what the error means, in one sentence, with a link to its criterion.
         example: A key that the schema requires is missing from the frontmatter ([TL_54][sokf:tramlines:tramlines-spec#tl_54]).
   - heading: Message

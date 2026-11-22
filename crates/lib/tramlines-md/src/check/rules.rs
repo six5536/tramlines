@@ -1,4 +1,4 @@
-//! The grammar of a block's units and of a fence's lines (TLMD_52 to TLMD_57):
+//! The grammar of a block's units and of a fence's lines (`TLMD_52` to `TLMD_57`):
 //! productions take what their shape matches, a guard selects, a counter
 //! counts and takes nothing, and a unit no rule takes is reported against
 //! the production it follows furthest.
@@ -6,6 +6,7 @@
 use super::{
     Checker,
     blocks::{check_unit, noun, reads, unit_noun},
+    claim::at_unit,
     short,
 };
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
 
 /// The content lines of a code block, each with the file line it sits on,
 /// without its indent: the indent of a line is layout, as an item's marker
-/// is (TLMD_6). A blank line is layout too, and no line at all. A
+/// is (`TLMD_6`). A blank line is layout too, and no line at all. A
 /// fenced block opens with a marker line; an indented one does not.
 // sokf-implements: TLMD_82
 fn content_lines(block: &Block) -> Vec<(usize, &str)> {
@@ -76,8 +77,8 @@ pub(super) fn check_lines(
     c.lines_block = held;
 }
 
-/// A rule list over units, which is the grammar of the block (TLMD_52 to
-/// TLMD_57). A production, a rule with a shape and no guard, takes the units
+/// A rule list over units, which is the grammar of the block (`TLMD_52` to
+/// `TLMD_57`). A production, a rule with a shape and no guard, takes the units
 /// its shape matches, each unit the first such rule; a rule with a guard
 /// takes what its guard selects and checks it, unless it only counts; a
 /// rule with neither takes every unit. `min` and `max` bound what each rule
@@ -135,7 +136,6 @@ fn apply_rules(
                 None => true,
             })
             .collect();
-        let n = selected.len();
         let what = match (&guarded.select, &guarded.shape, &guarded.format) {
             (Some(s), _, _) | (None, Some(Shape::Pattern(s)), _) => {
                 format!("the {noun} matching `{}`", s.as_str())
@@ -149,42 +149,11 @@ fn apply_rules(
             (None, None, Some(name)) => format!("the {noun} of the format `{name}`"),
             (None, None, None) => format!("the block's {noun}"),
         };
-        if n < guarded.min {
-            c.emit(
-                &guarded.common,
-                Some(at),
-                "TLMD_93",
-                format!(
-                    "{what}: at least {} {} needed; there {} {n}",
-                    guarded.min,
-                    text::is_are(guarded.min),
-                    text::is_are(n)
-                ),
-            );
-        }
-        // A soft limit is never checked.
-        if let Some(limit) = &guarded.max
-            && let Some(max) = limit.hard()
-            && n > max
-        {
-            // The first one over the limit is the one to look at, so a
-            // `max` of zero names the unit it bans.
-            let line = selected.get(max).map_or(at, |&i| units[i].line);
-            // sokf-implements: TLMD_159
-            c.emit(
-                &guarded.common,
-                Some(line),
-                "TLMD_159",
-                text::at_limit(
-                    format!(
-                        "{what}: at most {max} {} allowed; there {} {n}",
-                        text::is_are(max),
-                        text::is_are(n)
-                    ),
-                    &limit.when_at_limit,
-                ),
-            );
-        }
+        // The count is the rule's own finding, so it names the rule.
+        // sokf-implements: TL_73
+        c.located(at_unit(&c.at, guarded), |c| {
+            count(c, guarded, &selected, units, at, &what);
+        });
         // A counter counts and takes nothing, so it never hides a unit the
         // productions would report.
         if guarded.is_counter() {
@@ -203,6 +172,56 @@ fn apply_rules(
     taken
 }
 
+/// The findings of the count of `guarded`, which `selected` holds of `units`:
+/// below its `min` (`TLMD_93`), or above a hard `max` (`TLMD_159`). `at` is the
+/// line of the block, and `what` names the units that the rule counts.
+fn count(
+    c: &mut Checker<'_>,
+    guarded: &UnitRule,
+    selected: &[usize],
+    units: &[Unit],
+    at: usize,
+    what: &str,
+) {
+    let n = selected.len();
+    if n < guarded.min {
+        c.emit(
+            &guarded.common,
+            Some(at),
+            "TLMD_93",
+            format!(
+                "{what}: at least {} {} needed; there {} {n}",
+                guarded.min,
+                text::is_are(guarded.min),
+                text::is_are(n)
+            ),
+        );
+    }
+    // A soft limit is never checked.
+    if let Some(limit) = &guarded.max
+        && let Some(max) = limit.hard()
+        && n > max
+    {
+        // The first one over the limit is the one to look at, so a
+        // `max` of zero names the unit it bans.
+        let line = selected.get(max).map_or(at, |&i| units[i].line);
+        // sokf-implements: TLMD_159
+        c.emit(
+            &guarded.common,
+            Some(line),
+            "TLMD_159",
+            text::at_limit(
+                format!(
+                    "{what}: at most {max} {} allowed; there {} {n}",
+                    text::is_are(max),
+                    text::is_are(n)
+                ),
+                &limit.when_at_limit,
+            ),
+        );
+    }
+}
+
 /// Whether `unit` of `block` has `rule`'s shape, its own or its format's,
 /// silently, read without its label.
 fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule, block: &Rule) -> bool {
@@ -216,7 +235,10 @@ fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule, block: &Rule) 
 /// furthest, with where it fails and that rule's example, or as matching
 /// no rule where the block has no production.
 // sokf-implements: TLMD_57
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each is a part of the report of a unit that no rule takes"
+)]
 fn untaken(
     c: &mut Checker<'_>,
     units: &[Unit],

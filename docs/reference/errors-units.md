@@ -628,7 +628,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:4: error[TLMD_159]: the items matching `^TODO`: at most 0 are allowed; there is 1. When at the limit: Put each TODO in a list of open work. (schema note, section "Steps" block 1)
+note.md:4: error[TLMD_159]: the items matching `^TODO`: at most 0 are allowed; there is 1. When at the limit: Put each TODO in a list of open work. (schema note, rule `todo`)
 1 error, 0 warnings
 [exit 1]
 ```

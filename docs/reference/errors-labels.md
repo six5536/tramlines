@@ -88,7 +88,7 @@ A unit whose rule declares `label: required` carries no label ([TLMD_249][sokf:t
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_249]: `<text>` carries no label; its rule requires one: `[<words>]` or `[<words>]`
+<file>:<line>: error[TLMD_249]: `<text>` carries no label; its rule requires one: `[<words>]` or `[<words>]` (schema <id>, <place of the rule>)
 ```
 
 ### Cause

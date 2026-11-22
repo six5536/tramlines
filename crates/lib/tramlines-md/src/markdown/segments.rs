@@ -2,7 +2,7 @@
 //! blocks that comrak reads, before block grouping, so generated content
 //! never reaches block matching.
 
-use std::ops::Range;
+use std::{fmt::Write as _, ops::Range};
 
 use serde::{Deserialize, Serialize};
 
@@ -102,13 +102,15 @@ pub fn segments(body: &str, first_line: usize, dialect: &Dialect) -> Segments {
             Some(Marker::Open(target)) if open.is_none() => {
                 open = Some((target, file_line, i));
             }
-            Some(Marker::Open(_)) => {}
             Some(Marker::Close) => match open.take() {
                 Some((target, open_line, open_index)) => {
-                    let content: String = lines[open_index + 1..i]
-                        .iter()
-                        .map(|l| format!("{l}\n"))
-                        .collect();
+                    let content: String =
+                        lines[open_index + 1..i]
+                            .iter()
+                            .fold(String::new(), |mut out, l| {
+                                let _ = writeln!(out, "{l}");
+                                out
+                            });
                     out.regions.push(Region {
                         target,
                         open_line,
@@ -120,16 +122,16 @@ pub fn segments(body: &str, first_line: usize, dialect: &Dialect) -> Segments {
             },
             Some(Marker::Trailer) if open.is_none() => {
                 out.definition = Some(definition(&lines[i..], file_line));
-                return finish(out, open);
+                return finish(out, open.as_ref());
             }
-            Some(Marker::Trailer) | None => {}
+            Some(Marker::Open(_) | Marker::Trailer) | None => {}
         }
     }
-    finish(out, open)
+    finish(out, open.as_ref())
 }
 
-fn finish(mut out: Segments, open: Option<(String, usize, usize)>) -> Segments {
-    if let Some((_, line, _)) = open {
+fn finish(mut out: Segments, open: Option<&(String, usize, usize)>) -> Segments {
+    if let Some(&(_, line, _)) = open {
         out.unclosed = Some(line);
     }
     out
@@ -148,7 +150,10 @@ fn definition(lines: &[&str], line: usize) -> DefinitionBlock {
             None => trailing = true,
         }
     }
-    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    let text: String = lines.iter().fold(String::new(), |mut out, l| {
+        let _ = writeln!(out, "{l}");
+        out
+    });
     DefinitionBlock {
         line,
         entries,
@@ -222,7 +227,7 @@ mod tests {
         );
         assert_eq!(s.stray_closes, vec![1]);
         assert_eq!(s.unclosed, Some(2));
-        assert!(s.regions.is_empty());
+        assert!(s.regions.is_empty(), "{:?}", s.regions);
         assert!(s.in_region(3));
         // A links marker inside an open include is content, not the block.
         let s = segments(
@@ -246,7 +251,7 @@ mod tests {
     fn fences_hide_markers_including_tildes_and_longer_closers() {
         let body = "~~~\n<!-- host:links -->\n~~~\n````md\n```\n<!-- host:include a -->\n````\n- ```\n  <!-- host:include a -->\n  ```\n<!-- host:links -->\n";
         let s = segments(body, 1);
-        assert!(s.regions.is_empty());
+        assert!(s.regions.is_empty(), "{:?}", s.regions);
         assert_eq!(s.definition.unwrap().line, 11);
     }
 
@@ -263,7 +268,8 @@ mod tests {
     #[test]
     fn a_fence_in_a_footnote_hides_a_marker() {
         let body = "Text[^1].\n\n[^1]: Note.\n\n    ```\n    <!-- host:include a -->\n    <!-- /host:include -->\n    ```\n";
-        assert!(targets(body).is_empty());
+        let found = targets(body);
+        assert!(found.is_empty(), "{found:?}");
     }
 
     // sokf-tests: TLMD_16

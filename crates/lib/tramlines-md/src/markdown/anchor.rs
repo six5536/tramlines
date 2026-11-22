@@ -1,4 +1,4 @@
-//! The generated anchors (TLMD_104 to TLMD_109): `<a id="<slug>"></a>` before each key.
+//! The generated anchors (`TLMD_104` to `TLMD_109`): `<a id="<slug>"></a>` before each key.
 //! They are found by form, outside code, and removed from the text before
 //! it is parsed, so no rule ever reads one.
 
@@ -170,6 +170,10 @@ fn item_starts(text: &str, options: &Options) -> HashSet<(usize, usize)> {
 /// form as inline HTML: inside code it is text, and is left.
 // sokf-implements: TLMD_107
 // sokf-implements: MD-3_AC-14
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass of the removal of the anchors, a split of which is a refactor of its own"
+)]
 pub(super) fn strip(text: &str, first_line: usize, options: &Options) -> Stripped {
     if !text.contains("<a id=\"") {
         return Stripped::unchanged(text);
@@ -188,8 +192,8 @@ pub(super) fn strip(text: &str, first_line: usize, options: &Options) -> Strippe
         let Some(id) = open_id(html) else {
             continue;
         };
-        // An anchor in a table cell, or in a paragraph that directly
-        // precedes a table, can follow an escaped pipe.
+        // The position of the anchor as written, past the definitions that
+        // open its paragraph.
         let open = parse::written_pos(node, &lines, &defined);
         let Some(next) = node.next_sibling() else {
             continue;
@@ -446,9 +450,8 @@ mod tests {
         assert_eq!(got, vec![("j", 1, true), ("k", 2, false)]);
     }
 
-    // Comrak drops the backslash of each `\|` in a table cell and in a
-    // paragraph that directly precedes a table, and an anchor there past
-    // such a pipe is still removed whole.
+    // An anchor past an escaped pipe, in a table cell and in a paragraph
+    // that directly precedes a table, is removed whole.
     // sokf-tests: TLMD_107
     #[test]
     fn an_anchor_past_an_escaped_pipe_is_removed_whole() {
@@ -471,9 +474,8 @@ mod tests {
         }
     }
 
-    // Comrak counts the columns of a table's body row from where the
-    // table starts, and an anchor in a row indented apart from that line
-    // is still removed whole.
+    // An anchor in a row indented apart from its table's first line is
+    // removed whole.
     // sokf-tests: TLMD_107
     #[test]
     fn an_anchor_in_an_indented_row_is_removed_whole() {
@@ -490,10 +492,9 @@ mod tests {
         }
     }
 
-    // comrak counts the columns of a table row from the indent of the
-    // table's first line, and leaves out an escaped pipe, so the anchors of
-    // a row indented more or less, or after an escaped pipe, are found
-    // where they are written, and no other text goes.
+    // The anchors of a row indented more or less than its table, or after
+    // an escaped pipe, are found where they are written, and no other text
+    // goes.
     // sokf-tests: TLMD_107
     #[test]
     fn the_anchors_of_a_shifted_row_are_found_where_written() {
@@ -522,7 +523,7 @@ mod tests {
     fn text_without_anchors_is_untouched() {
         let (clean, anchors) = run("Plain <a href=\"x\">link</a>.\n");
         assert_eq!(clean, "Plain <a href=\"x\">link</a>.\n");
-        assert!(anchors.is_empty());
+        assert!(anchors.is_empty(), "{anchors:?}");
         assert!(open_id("<a id=\"x y\">").is_none());
         assert_eq!(open_id("<a id=\"cli-1_ac-2\">"), Some("cli-1_ac-2"));
     }

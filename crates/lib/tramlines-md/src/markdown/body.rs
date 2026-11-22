@@ -1,8 +1,7 @@
 //! The parsed body: blocks with units as grammar `block` and `unit` read
 //! them, plus positioned headings, links, footnotes and definitions.
 
-use std::borrow::Cow;
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 use serde::{Deserialize, Serialize};
 
@@ -183,13 +182,14 @@ pub struct Unit {
     /// What a list item carries beyond its own text.
     pub nested: Vec<Block>,
     /// Where each piece of `text` lies, in order: empty for a unit that is
-    /// not a paragraph, an item or a table row.
+    /// not a paragraph, an item, a table row, or a heading inside an item or
+    /// a quote, whose pieces leave out the hashes that its text starts with.
     #[serde(default)]
     pub pieces: Vec<Piece>,
 }
 
-/// The start of one piece of a unit's text: a line of a paragraph, or a
-/// table cell. The piece runs on unbroken in its line.
+/// The start of one piece of a unit's text: a line of a paragraph or of a
+/// heading, or a table cell. The piece runs on unbroken in its line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Piece {
     /// The byte offset in the unit's text.
@@ -228,7 +228,7 @@ pub struct Heading {
     pub level: u8,
     /// The text as written.
     pub text: String,
-    /// The slug of the heading (TLMD_101).
+    /// The slug of the heading (`TLMD_101`).
     pub slug: String,
     /// The line of the heading, or of a setext heading's first line.
     pub line: usize,
@@ -358,7 +358,7 @@ pub struct Body {
     #[serde(default)]
     pub link_spans: Vec<(usize, usize, usize)>,
     /// The generated anchors, removed from the text before it was parsed
-    /// (TLMD_107).
+    /// (`TLMD_107`).
     #[serde(default)]
     pub anchors: Vec<Anchor>,
     /// The line the body starts on.
@@ -367,8 +367,8 @@ pub struct Body {
 
 impl Body {
     /// Each heading inside a list item or a quote, at any depth, in the
-    /// order of the document, with the slug of TLMD_101. Such a heading is
-    /// part of its block, not a heading of the document (TLMD_173), but a
+    /// order of the document, with the slug of `TLMD_101`. Such a heading is
+    /// part of its block, not a heading of the document (`TLMD_173`), but a
     /// host that resolves a link to it needs it.
     // sokf-implements: MD-3_AC-8
     pub fn nested_headings(&self) -> Vec<Heading> {
@@ -497,7 +497,7 @@ impl Body {
 
 /// `text` with each of `code`, byte ranges of it that lie in a code span,
 /// read as a run of backticks one byte for each byte, which is what every
-/// ban reads (TLMD_111). A backtick is what the text already holds
+/// ban reads (`TLMD_111`). A backtick is what the text already holds
 /// at the edges of a code span, so a ban finds no word of the code and no
 /// gap where it was: a ban on a space before a comma, or on a word that a
 /// space and the code follow, matches only what the text holds.
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn nested_headings_are_the_headings_inside_an_item_or_a_quote() {
-        let text = "# Top\n\n> ## Inner\n>\n> Text.\n\n- ## In item\n";
+        let text = "# Top\n\n> ## Inner\n>\n> Text.\n\n- ## In item\n- Set\n  text\n  ---\n";
         let segments = crate::markdown::segments(text, 1, &Dialect::default());
         let body = crate::markdown::parse(text, 1, &segments, &Dialect::default());
         let nested = body.nested_headings();
@@ -552,7 +552,11 @@ mod tests {
             .collect();
         assert_eq!(
             seen,
-            vec![(3, 2, "Inner", "inner"), (7, 2, "In item", "in-item")]
+            vec![
+                (3, 2, "Inner", "inner"),
+                (7, 2, "In item", "in-item"),
+                (8, 2, "Set text", "set-text")
+            ]
         );
         assert_eq!(body.headings.len(), 1);
     }

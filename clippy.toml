@@ -1,0 +1,2 @@
+# Names of specifications that a doc comment writes as words, beside clippy's own list.
+doc-valid-idents = ["CommonMark", "JMESPath", ".."]

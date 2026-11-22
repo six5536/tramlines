@@ -15,7 +15,7 @@ use super::{
 use crate::{Spanned, markdown::BlockKind};
 
 /// Grammar `heading`: a section's heading as a unit rule, its shape and
-/// the key it captures (TLMD_27).
+/// the key it captures (`TLMD_27`).
 #[derive(Debug, Clone)]
 pub struct Heading {
     /// The shape: exact text, the frontmatter value, a template or a regex.
@@ -204,10 +204,10 @@ pub struct Unit {
     /// `key-derives-from`: the prefix the key takes.
     pub key_derives_from: Option<KeyDerivation>,
     /// `rule-id`: the rule's name, which no reference can use, and under
-    /// which no key is filed (TLMD_236).
+    /// which no key is filed (`TLMD_236`).
     pub rule_id: Option<String>,
     /// `key-of`: the name that the keys this rule captures belong to, in
-    /// place of the id of its block, its group, or its section (TLMD_89).
+    /// place of the id of its block, its group, or its section (`TLMD_89`).
     pub key_of: Option<String>,
     /// `for-each-key-of`: the names whose keys this rule's keys pair with,
     /// one name when the schema gives one.
@@ -338,7 +338,7 @@ impl Unit {
     }
 
     /// Whether the rule only counts what its guard selects: a guard and a
-    /// count, and nothing that would check a unit (TLMD_52 to TLMD_57).
+    /// count, and nothing that would check a unit (`TLMD_52` to `TLMD_57`).
     pub fn is_counter(&self) -> bool {
         self.select.is_some()
             && !self.has_shape()
@@ -350,7 +350,7 @@ impl Unit {
     }
 
     /// Whether the rule is a production: a shape and no guard, taking the
-    /// units its shape matches (TLMD_52 to TLMD_57).
+    /// units its shape matches (`TLMD_52` to `TLMD_57`).
     pub fn is_production(&self) -> bool {
         self.select.is_none() && self.has_shape()
     }
@@ -490,10 +490,10 @@ impl Schema {
     /// the unit rule that captures it, else to the nearest `rule-id`
     /// around the rule: its block's, else the enclosing group's, else its
     /// section's; a section's heading key is the section's. A unit rule's
-    /// own `rule-id` holds no key (TLMD_236). This is the one definition
+    /// own `rule-id` holds no key (`TLMD_236`). This is the one definition
     /// every reference to a set of keys (`for-each-key-of`,
     /// `key-derives-from`, a host's rule) resolves through, and it mirrors
-    /// how the check attributes a capture (TLMD_238).
+    /// how the check attributes a capture (`TLMD_238`).
     // sokf-implements: TLMD_238
     pub fn rule_captures_key(&self, id: &str) -> Result<(), RuleLookup> {
         let mut owners = HashSet::new();
@@ -544,7 +544,7 @@ impl Schema {
     }
 
     /// Each `rule-id` that a reference can name, of a section or a block,
-    /// in schema order, with the line of its rule (TL_15).
+    /// in schema order, with the line of its rule (`TL_15`).
     pub(crate) fn referable_id_lines(&self) -> Vec<(String, usize)> {
         let mut ids = Vec::new();
         self.each_name(&mut |kind, id, line, _| {
@@ -559,7 +559,7 @@ impl Schema {
     /// `rule_captures_key` owns them: the heading example of the section,
     /// or the example of each unit rule, else its format's, else its
     /// block's. These are the parents that the example of a key deriving
-    /// from the rule starts with (TL_127, TLMD_205).
+    /// from the rule starts with (`TL_127`, `TLMD_205`).
     pub(crate) fn example_keys(&self, id: &str) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(p) = &self.preamble {

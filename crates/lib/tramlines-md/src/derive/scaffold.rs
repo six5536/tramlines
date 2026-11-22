@@ -11,7 +11,7 @@
 //! satisfies the checker and teaches nothing is worse than an error, and
 //! the agent that reads a scaffold imitates what it is given.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Write as _};
 
 use super::{Deriver, deriver::push_unique};
 use crate::{
@@ -46,8 +46,12 @@ pub fn no_template(type_name: &str, schema: Option<&RepoPath>, refusals: &[Refus
     let mut out = format!("the schema of `{type_name}` derives no scaffold:");
     for r in refusals {
         match schema {
-            Some(path) => out.push_str(&format!("\n  {path}:{}: {}", r.line, r.what)),
-            None => out.push_str(&format!("\n  line {}: {}", r.line, r.what)),
+            Some(path) => {
+                let _ = write!(out, "\n  {path}:{}: {}", r.line, r.what);
+            }
+            None => {
+                let _ = write!(out, "\n  line {}: {}", r.line, r.what);
+            }
         }
     }
     out.push_str("\nwrite the `example` each rule asks for");

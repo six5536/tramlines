@@ -37,7 +37,7 @@ struct Pairer<'a> {
     common: &'a RuleCommon,
     /// Whether it demands a pair for each key: not where the part that
     /// holds it is declared only by a state that the document could be in
-    /// (TLMD_230), though a pair that it holds is still checked.
+    /// (`TLMD_230`), though a pair that it holds is still checked.
     demands: bool,
 }
 
@@ -144,7 +144,7 @@ fn uniqueness(c: &mut Checker<'_>, captures: &[Capture]) {
             "TLMD_148"
         };
         let mut by_key: BTreeMap<&str, Vec<&Capture>> = BTreeMap::new();
-        for cap in group.iter() {
+        for cap in group {
             by_key.entry(cap.key.as_str()).or_default().push(cap);
         }
         for (key, caps) in &by_key {
@@ -344,7 +344,7 @@ fn pairing(c: &mut Checker<'_>, captures: &[Capture], p: &Pairer<'_>, section: &
 
 /// Each key whose rule derives it starts with a prefix the named rule
 /// captured or the named frontmatter key holds, followed by the separator
-/// (TL_32 and TL_33: the derivation sits beside the key it constrains). A
+/// (`TL_32` and `TL_33`: the derivation sits beside the key it constrains). A
 /// prefix can contain the separator, so the key is matched against each
 /// prefix rather than split; a key that no prefix starts is described by
 /// the text before its last separator, because a prefix can contain the
@@ -398,7 +398,7 @@ fn derivations(c: &mut Checker<'_>, captures: &[Capture]) {
 
 /// The prefixes a derivation allows: the keys its rule captured, or the
 /// value of its frontmatter key. A key that derives from the same name is
-/// no prefix, though it can be filed under the name (TLMD_238).
+/// no prefix, though it can be filed under the name (`TLMD_238`).
 fn prefixes(c: &Checker<'_>, captures: &[Capture], derivation: &KeyDerivation) -> Vec<String> {
     match &derivation.source {
         DerivationSource::Rule(r) => captures

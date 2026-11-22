@@ -288,8 +288,8 @@ impl Grammar {
                 "doc" | "exactly-one-of" | "at-least-one-of" | "rule-common" => {
                     return Err(format!("`schema.{}` is the core grammar's", name.value));
                 }
-                map => match self.rules.get_mut(map) {
-                    Some(core) => {
+                map => {
+                    if let Some(core) = self.rules.get_mut(map) {
                         for (k, v) in value.as_map().unwrap_or(&[]) {
                             match k.value.as_str() {
                                 "keys" => extend_keys(core, v, map)?,
@@ -301,12 +301,11 @@ impl Grammar {
                                 }
                             }
                         }
-                    }
-                    None => {
+                    } else {
                         let added = rule_map(value).map_err(|e| e.to_string())?;
                         self.rules.insert(map.to_string(), added);
                     }
-                },
+                }
             }
         }
         Ok(())
@@ -355,11 +354,11 @@ fn extend_keys(map: &mut RuleMap, keys: &Spanned, name: &str) -> std::result::Re
                     v.as_seq()
                         .unwrap_or(&[])
                         .iter()
-                        .filter_map(|i| i.scalar_text()),
+                        .filter_map(Spanned::scalar_text),
                 ),
                 "requires" if matches!(v.value, Yaml::Map(_)) => core.requires_kind.extend(
                     v.get("kind")
-                        .and_then(|k| k.as_str_or_list())
+                        .and_then(Spanned::as_str_or_list)
                         .unwrap_or_default(),
                 ),
                 "doc" => append_doc(&mut core.doc, v),
@@ -397,7 +396,7 @@ pub fn parse_grammar(text: &str) -> Result<Grammar> {
         .to_string();
     let version = root
         .get("version")
-        .and_then(|v| v.scalar_text())
+        .and_then(Spanned::scalar_text)
         .ok_or_else(|| Error::Internal("grammar: no version".into()))?;
     let schema_node = root
         .get("schema")
@@ -458,8 +457,8 @@ fn key_def(node: &Spanned) -> Result<KeyDef> {
             Yaml::Map(_) => {
                 requires_kind = r
                     .get("kind")
-                    .and_then(|k| k.as_str_or_list())
-                    .unwrap_or_default()
+                    .and_then(Spanned::as_str_or_list)
+                    .unwrap_or_default();
             }
             _ => {}
         }
@@ -471,7 +470,7 @@ fn key_def(node: &Spanned) -> Result<KeyDef> {
         enum_: node
             .get("enum")
             .and_then(|e| e.as_seq())
-            .map(|items| items.iter().filter_map(|i| i.scalar_text()).collect())
+            .map(|items| items.iter().filter_map(Spanned::scalar_text).collect())
             .unwrap_or_default(),
         format: str_of(node, "format"),
         requires_keys,
@@ -486,7 +485,7 @@ fn doc_of(node: &Spanned) -> String {
 }
 
 fn string_list(node: Option<&Spanned>) -> Vec<String> {
-    node.and_then(|n| n.as_str_or_list()).unwrap_or_default()
+    node.and_then(Spanned::as_str_or_list).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -504,7 +503,11 @@ mod tests {
         assert!(g.schema.key("line-limit").unwrap().required);
         assert!(g.schema.key("frontmatter").is_some());
         assert!(g.schema.key("sections").is_none());
-        assert!(g.schema.at_least_one_of.is_empty());
+        assert!(
+            g.schema.at_least_one_of.is_empty(),
+            "{:?}",
+            g.schema.at_least_one_of
+        );
         assert!(g.rule("section").is_none());
         assert!(g.rule("frontmatter-constraint").is_some());
         assert!(g.rule_common.key("severity").is_some());

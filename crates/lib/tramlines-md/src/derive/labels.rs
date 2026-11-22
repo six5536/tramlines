@@ -1,4 +1,4 @@
-//! The label of each unit that a scaffold writes (TLMD_255, TLMD_256): the
+//! The label of each unit that a scaffold writes (`TLMD_255`, `TLMD_256`): the
 //! label that the host names, else the one that the unit's example
 //! carries, else the first of the schema, in the words of the host, where
 //! the unit's rule requires one or its example carries one.
@@ -120,7 +120,7 @@ impl Deriver<'_> {
 
     /// `text`, a unit of `block` that the scaffold wrote, as `rule` reads
     /// it in the check: without the label that the rule reads there, which
-    /// for a rule with no `label` is only a label of the schema (TLMD_247).
+    /// for a rule with no `label` is only a label of the schema (`TLMD_247`).
     pub(super) fn read_as(&self, block: &Block, rule: &Unit, text: &str) -> String {
         self.cut_label(block, Some(rule), text).0
     }

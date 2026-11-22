@@ -86,7 +86,7 @@
     },
     "sections-ordered": {
       "type": "boolean",
-      "description": "Set to `false` to accept the declared sections in any order. When absent, the sections must follow the listed order, and a section out of place is an error that names the first such heading."
+      "description": "Set to `false` to accept the declared sections in any order. When absent, the sections must follow the listed order, and a heading whose section the schema lists before the section of the heading before it is an error that names the heading."
     },
     "sections-prohibited": {
       "type": "array",

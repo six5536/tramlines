@@ -79,12 +79,12 @@ impl Document {
         let body_line = split.body_line;
         Document {
             path,
+            text,
             frontmatter,
             problem,
             body,
             segments,
             body_line,
-            text,
         }
     }
 

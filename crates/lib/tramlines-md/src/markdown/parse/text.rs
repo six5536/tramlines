@@ -1,7 +1,7 @@
 //! A leaf's text as written, and where each piece of it lies in the file,
 //! so a position in a unit's text maps back to a line and a column.
 
-use comrak::nodes::Sourcepos;
+use comrak::nodes::{LineColumn, Sourcepos};
 
 use super::Parser;
 use crate::markdown::Piece;
@@ -50,6 +50,36 @@ impl Parser<'_> {
             });
             text.push_str(piece);
         }
+        (text, pieces)
+    }
+
+    /// A heading's text, and the start of each of its pieces: an ATX
+    /// heading's from its line without its hashes, and a setext heading's
+    /// from its lines without its underline, read from where comrak starts
+    /// it, so past the marker of an item or a quote that holds it
+    /// (`TLMD_173`). An ATX heading with no text keeps a piece where its
+    /// text would start, so that it holds the anchors on its line.
+    // sokf-implements: TLMD_173
+    pub(super) fn heading_text(&self, sp: Sourcepos, setext: bool) -> (String, Vec<Piece>) {
+        if setext {
+            let mut lines = sp;
+            lines.end = LineColumn {
+                line: sp.end.line.saturating_sub(1).max(sp.start.line),
+                column: usize::MAX,
+            };
+            return self.mapped_text(lines);
+        }
+        let (written, pieces) = self.mapped_text(sp);
+        let text = super::atx_text(&written);
+        let lead = written.len() - written.trim_start_matches('#').trim_start().len();
+        let pieces = pieces
+            .into_iter()
+            .take(1)
+            .map(|p| Piece {
+                col: p.col + lead,
+                ..p
+            })
+            .collect();
         (text, pieces)
     }
 }

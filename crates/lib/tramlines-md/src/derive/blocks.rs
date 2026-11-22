@@ -3,8 +3,8 @@
 //! would join.
 
 use super::{Deriver, guide};
-use crate::check::is_run;
 use crate::{
+    check::is_run,
     grammar::{Block, Lang, LifecycleDimension, States},
     markdown::BlockKind,
     text,
@@ -180,7 +180,7 @@ impl Deriver<'_> {
     /// can repeat, and closes with such a position and opens with its kind,
     /// meets itself. A later group whose opening has a shape and is
     /// followed by a block of another kind takes the end of the run by that
-    /// shape (TLMD_193), so the position before it meets nothing.
+    /// shape (`TLMD_193`), so the position before it meets nothing.
     // sokf-implements: MD-7_AC-11
     // sokf-implements: TLMD_149
     fn meetings(&mut self, rules: &[Block]) {
@@ -306,7 +306,7 @@ fn ends<'b>(
 
 /// Whether the group `next` takes the end of a run by the shape of its
 /// opening `o` in every document, as `reserve_for` reserves it in the
-/// check (TLMD_193): `o` is the group's first inner block, required and with
+/// check (`TLMD_193`): `o` is the group's first inner block, required and with
 /// a shape, the group's second block is required and of another kind, and
 /// no other position of `later`, the positions after the run, opens with
 /// that kind and so takes the block after the run itself.

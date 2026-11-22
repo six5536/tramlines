@@ -1,8 +1,9 @@
-//! The anchor each key needs (TLMD_104 to TLMD_109), against the anchors the
+//! The anchor each key needs (`TLMD_104` to `TLMD_109`), against the anchors the
 //! body holds.
 //! A key has one anchor, named by its slug: on the heading that captures it,
 //! where one does, else on the capture that defines it. An anchor that names
-//! no key stays where it stands while a unit that breaks its rule holds it.
+//! no key stays where it stands while a unit or a heading that breaks its
+//! rule holds it.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -102,16 +103,16 @@ fn at_spot(anchor: &Anchor, spot: Spot, body: &Body, text: &str) -> bool {
     }
 }
 
-/// Where `anchor` stands, when a unit that breaks its rule holds it: on a
-/// line of the unit's text, or on the line of anchors before the block of
-/// a line of a fence. No unit holds the slug of a heading, which already
-/// names the heading.
+/// Where `anchor` stands, when a unit or a heading that breaks its rule
+/// holds it: on a line of the unit's or the heading's text, or on the line
+/// of anchors before the block of a line of a fence. None holds the slug of
+/// a heading, which already names the heading.
 fn held(anchor: &Anchor, broken: &[&Broken], body: &Body, text: &str) -> Option<Spot> {
     if body.headings.iter().any(|h| h.slug == anchor.id) {
         return None;
     }
     broken.iter().find_map(|b| match b {
-        Broken::Text(lines) | Broken::Beyond(lines)
+        Broken::Text(lines) | Broken::Beyond(lines) | Broken::Heading(lines)
             if !anchor.alone && lines.contains(&anchor.line) =>
         {
             Some(Spot::Inline(anchor.line, anchor.col))
@@ -129,7 +130,8 @@ fn held(anchor: &Anchor, broken: &[&Broken], body: &Body, text: &str) -> Option<
 /// whether the check recorded a unit before or after its repair. A repair
 /// rewrites a heading, a paragraph, or an item, and the record of a
 /// paragraph or an item holds the lines of its text. Content beyond the
-/// text outlasts the repair, so its record stays.
+/// text outlasts the repair, and so does the finding on a heading that
+/// breaks its rule, so their records stay.
 fn unrepaired<'a>(broken: &'a [Broken], repairs: &[Repair]) -> Vec<&'a Broken> {
     let rewritten: HashSet<usize> = repairs.iter().map(|r| r.line).collect();
     broken
@@ -142,6 +144,10 @@ fn unrepaired<'a>(broken: &'a [Broken], repairs: &[Repair]) -> Vec<&'a Broken> {
 /// each difference, and keep what the repair writes.
 // sokf-implements: TLMD_109
 // sokf-implements: TLMD_139
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass of the check, a split of which is a refactor of its own"
+)]
 pub(super) fn check(c: &mut Checker<'_>) {
     let mut wanted = placements(&c.out.captures);
     let body = c.doc.body;

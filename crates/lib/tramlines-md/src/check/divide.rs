@@ -117,8 +117,8 @@ pub(super) fn commit(docs: &mut Docs<'_>, di: usize, n: usize) {
 /// its own. Each piece carries the lines of the units it keeps.
 pub(super) fn cut(block: &mut Block, n: usize) -> Block {
     let units = block.units.split_off(n);
-    let line = units.first().map(|u| u.line).unwrap_or(block.end_line);
-    let end_line = units.last().map(|u| u.end_line).unwrap_or(block.end_line);
+    let line = units.first().map_or(block.end_line, |u| u.line);
+    let end_line = units.last().map_or(block.end_line, |u| u.end_line);
     let html_lines = block
         .html_lines
         .iter()
@@ -126,7 +126,7 @@ pub(super) fn cut(block: &mut Block, n: usize) -> Block {
         .filter(|l| *l >= line)
         .collect();
     block.html_lines.retain(|l| *l < line);
-    block.end_line = block.units.last().map(|u| u.end_line).unwrap_or(block.line);
+    block.end_line = block.units.last().map_or(block.line, |u| u.end_line);
     Block {
         html_lines,
         ..Block::new(block.kind, line, end_line, units)

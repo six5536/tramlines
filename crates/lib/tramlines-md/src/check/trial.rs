@@ -71,6 +71,17 @@ impl Checker<'_> {
         }
     }
 
+    /// Drop the captures, the repairs, and the gates written since `at`,
+    /// and keep its findings, the units that its rules accepted, and the
+    /// units that break them, as a rollback that keeps them back does,
+    /// where a position refuses its blocks with the findings of a trial.
+    // sokf-implements: TLMD_228
+    pub(super) fn discard(&mut self, at: &Savepoint) {
+        self.out.captures.truncate(at.captures);
+        self.out.repairs.truncate(at.repairs);
+        self.out.gates.truncate(at.gates);
+    }
+
     /// Keep what a refused position wrote after all, where the position
     /// keeps the block: its findings, the units its rules accepted, and
     /// the units that break them.
@@ -85,10 +96,10 @@ impl Checker<'_> {
 }
 
 /// Whether `f` is an error that decides a claim: any error other than a
-/// fault of a label (TLMD_249 to TLMD_251), and other than one that reports
+/// fault of a label (`TLMD_249` to `TLMD_251`), and other than one that reports
 /// more units than a hard `max` above zero allows, the units
-/// of a block (TLMD_160) or the units that a rule takes or counts
-/// (TLMD_159). A `max` of zero is a ban, and its finding says `at most 0`.
+/// of a block (`TLMD_160`) or the units that a rule takes or counts
+/// (`TLMD_159`). A `max` of zero is a ban, and its finding says `at most 0`.
 /// Only the engine's words before the quoted `when-at-limit` decide, so
 /// that the schema's text decides nothing.
 pub(super) fn is_text_error(f: &Finding) -> bool {

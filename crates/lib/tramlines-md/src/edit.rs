@@ -5,7 +5,7 @@
 //! from several sources compose without knowing of each other. Two edits
 //! that claim one line are a defect of whoever made them.
 
-use std::ops::Range;
+use std::{fmt::Write as _, ops::Range};
 
 use crate::{
     Error, Result,
@@ -31,7 +31,10 @@ impl Edit {
     pub fn replace(lines: Range<usize>, new: &[String]) -> Self {
         Edit {
             lines,
-            text: new.iter().map(|l| format!("{l}\n")).collect(),
+            text: new.iter().fold(String::new(), |mut out, l| {
+                let _ = writeln!(out, "{l}");
+                out
+            }),
         }
     }
 }
@@ -350,21 +353,18 @@ pub fn line_edits(
             new.insert(0, gap(raw));
         }
         // sokf-implements: MD-8_AC-1
-        let end = match repair {
-            Some(r) => {
-                new.push(match anchors {
-                    Some(a) => a.rewritten(r),
-                    None => format!("{}{}", r.prefix, r.text),
-                });
-                r.end_line.max(i) + 1
-            }
-            None => {
-                new.push(match anchors {
-                    Some(a) => a.line(i, raw, labels),
-                    None => relabel_raw(i, raw, labels),
-                });
-                i + 1
-            }
+        let end = if let Some(r) = repair {
+            new.push(match anchors {
+                Some(a) => a.rewritten(r),
+                None => format!("{}{}", r.prefix, r.text),
+            });
+            r.end_line.max(i) + 1
+        } else {
+            new.push(match anchors {
+                Some(a) => a.line(i, raw, labels),
+                None => relabel_raw(i, raw, labels),
+            });
+            i + 1
         };
         apart = i < body_start || new.last().is_none_or(|l| l.trim().is_empty());
         // sokf-implements: MD-8_AC-4
@@ -416,9 +416,8 @@ pub fn apply(text: &str, edits: &[Edit]) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{RepoPath, document::Document, markdown::Dialect};
-
     use super::*;
+    use crate::{RepoPath, document::Document, markdown::Dialect};
 
     #[test]
     fn anchors_go_in_from_the_right() {
@@ -551,9 +550,9 @@ mod tests {
         );
     }
 
-    // Comrak drops the backslash of each `\|` in a paragraph directly
-    // before a table, and a respelling there still reaches the text right
-    // up to a code span and leaves the code alone.
+    // Past an escaped pipe in a paragraph directly before a table, a
+    // respelling reaches the text right up to a code span and leaves the
+    // code alone.
     // sokf-tests: MD-8_AC-5
     #[test]
     fn a_respelling_past_an_escaped_pipe_before_a_table_leaves_code_alone() {

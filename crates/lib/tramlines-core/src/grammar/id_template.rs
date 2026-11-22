@@ -1,6 +1,8 @@
-//! Id templates (TL_58): the `id` key's template, whose holes are
+//! Id templates (`TL_58`): the `id` key's template, whose holes are
 //! the ones a new document is filled with, `${:seq}`, `${:slug}` and a
 //! lifecycle key's state, `${<key>}`.
+
+use std::fmt::Write as _;
 
 use regex::Regex;
 
@@ -174,11 +176,13 @@ impl IdTemplate {
         for t in &self.tokens {
             match t {
                 Token::Literal(l) => s.push_str(&regex::escape(l)),
-                Token::Seq(n) => s.push_str(&format!("(?P<seq>[0-9]{{{n}}})")),
+                Token::Seq(n) => {
+                    let _ = write!(s, "(?P<seq>[0-9]{{{n}}})");
+                }
                 Token::Slug => s.push_str(SLUG),
                 Token::Key { name, states } => {
                     let alts: Vec<String> = states.iter().map(|s| regex::escape(s)).collect();
-                    s.push_str(&format!("(?P<key_{name}>{})", alts.join("|")));
+                    let _ = write!(s, "(?P<key_{name}>{})", alts.join("|"));
                 }
             }
         }
@@ -240,7 +244,7 @@ impl IdTemplate {
             match t {
                 Token::Literal(l) => s.push_str(l),
                 Token::Seq(n) => {
-                    let digits = format!("{seq:0width$}", width = n);
+                    let digits = format!("{seq:0n$}");
                     if digits.len() > *n {
                         return Err(format!("the next number {seq} needs more than {n} digits"));
                     }
@@ -272,6 +276,8 @@ impl IdTemplate {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -293,10 +299,10 @@ mod tests {
     fn kind(states: &[&str]) -> LifecycleDimension {
         LifecycleDimension {
             key: "kind".into(),
-            states: states.iter().map(|s| s.to_string()).collect(),
+            states: states.iter().map(ToString::to_string).collect(),
             guidance: None,
             line: 1,
-            extensions: Default::default(),
+            extensions: BTreeMap::default(),
         }
     }
 

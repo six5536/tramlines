@@ -39,7 +39,7 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 2
+        max: { soft: 2, when-at-limit: "Name each thing that the reader needs first in the section Before you begin." }
         guidance: The opening says when the reader needs to do this task, and what they have when they finish.
         example: When two schemas check the same kind of line, write its format once in a formats file and name it from each schema.
   - heading: Before you begin
@@ -64,7 +64,10 @@ sections:
             - kind: prose
               optional: true
               repeat: true
-              example: 'This changelog schema bans the word `TODO`:'
+              guidance: A paragraph before a list or a file introduces it, and ends with a colon.
+              each:
+                pattern: ':$'
+                example: 'This changelog schema bans the word `TODO`:'
             - kind: bullet-list
               optional: true
               repeat: true

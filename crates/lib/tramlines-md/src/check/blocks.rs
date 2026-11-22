@@ -6,7 +6,7 @@ use std::{borrow::Cow, ops::Range};
 use super::{
     Capture, Checker, Paired, Spot, Subject,
     bound::check_text,
-    claim::check_blocks,
+    claim::{at_unit, check_blocks},
     rules::{check_lines, check_rules, reach},
     short,
 };
@@ -37,6 +37,9 @@ pub(super) fn unit_of(kind: BlockKind) -> &'static str {
         BlockKind::Image => "image",
         BlockKind::References => "definition",
         BlockKind::Code | BlockKind::Html => "line",
+        // sokf-implements: TLMD_146
+        // sokf-implements: TLMD_160
+        BlockKind::Group => "repetition",
         _ => "unit",
     }
 }
@@ -55,6 +58,10 @@ pub(super) fn noun(kind: BlockKind) -> &'static str {
 
 /// Check one block against its rule. A group is not one: `claim` walks
 /// its inner rules over the blocks it covers.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass of the check, a split of which is a refactor of its own"
+)]
 pub(super) fn check_plain(c: &mut Checker<'_>, block: &Block, rule: &Rule, section: Option<usize>) {
     c.gate(&rule.common, block.line);
     // A quote that holds only headings has them where its text should be,
@@ -422,14 +429,19 @@ fn match_units(
             }
         }
         if count == 0 && !rule.optional {
-            let line = units.get(ui).map(|u| u.line).unwrap_or(at);
+            let line = units.get(ui).map_or(at, |u| u.line);
+            // The missing position is the rule's own finding, so it names
+            // the rule.
             // sokf-implements: TLMD_147
-            c.emit(
-                &rule.common,
-                Some(line),
-                "TLMD_147",
-                format!("position {} of the sequence is missing", pi + 1),
-            );
+            // sokf-implements: TL_73
+            c.located(at_unit(&c.at, rule), |c| {
+                c.emit(
+                    &rule.common,
+                    Some(line),
+                    "TLMD_147",
+                    format!("position {} of the sequence is missing", pi + 1),
+                );
+            });
         }
     }
     for unit in &units[ui.min(units.len())..] {
@@ -457,7 +469,7 @@ pub(super) fn reads(what: &str, example: Option<&str>) -> String {
 /// Where the anchor of a key whose match starts at byte `offset` of the
 /// unit's text goes: before the block when a line of a code block carries
 /// it, else before the match, or before the code span or link the match
-/// starts inside (TLMD_105).
+/// starts inside (`TLMD_105`).
 fn spot(c: &Checker<'_>, unit: &Unit, offset: usize) -> Spot {
     if let Some(line) = c.lines_block {
         return Spot::Before(line);
@@ -508,7 +520,7 @@ fn line_at(unit: &Unit, squashed: &Squashed, offset: usize) -> usize {
 }
 
 /// One unit against a unit rule. Every shape reads the unit's text
-/// squashed, each run of whitespace one space (TL_23).
+/// squashed, each run of whitespace one space (`TL_23`).
 // sokf-implements: TL_23
 // sokf-implements: TLMD_6
 // sokf-implements: TL_30
@@ -529,6 +541,29 @@ pub(super) fn check_unit(
         check_nested(c, unit, rule, section);
         return;
     }
+    // The rule's own findings name the rule, and those of the blocks that
+    // the item holds name their own positions.
+    // sokf-implements: TL_73
+    c.located(at_unit(&c.at, rule), |c| {
+        check_own(c, unit, rule, block, section, judges_label);
+    });
+    check_nested(c, unit, rule, section);
+}
+
+/// The checks of `unit` by its `rule` itself, without the blocks that the
+/// unit holds.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one pass of the check, a split of which is a refactor of its own"
+)]
+fn check_own(
+    c: &mut Checker<'_>,
+    unit: &Unit,
+    rule: &UnitRule,
+    block: &Rule,
+    section: Option<usize>,
+    judges_label: bool,
+) {
     // Every reading of the unit by its rule leaves out its label.
     // sokf-implements: TLMD_248
     let read = c.read(unit, block, Some(rule));
@@ -682,7 +717,6 @@ pub(super) fn check_unit(
     if broke || by_label {
         c.broke(unit);
     }
-    check_nested(c, unit, rule, section);
 }
 
 /// Whether `rule` accepts a unit, the `noun` of its kind, whose squashed
@@ -694,14 +728,16 @@ fn accepts(c: &Checker<'_>, noun: &str, text: &str, rule: &UnitRule) -> bool {
     matches!(noun, "paragraph" | "item" | "row") && has_shape(c, text, rule)
 }
 
-/// The blocks inside an item, against the rule's `blocks`, or none.
+/// The blocks inside an item, against the rule's `blocks`, each under the
+/// locator of its own position, or none, which the rule itself reports.
 fn check_nested(c: &mut Checker<'_>, unit: &Unit, rule: &UnitRule, section: Option<usize>) {
     match &rule.blocks {
         Some(nested) => {
             let inner: Vec<&Block> = unit.nested.iter().collect();
             check_blocks(c, Some(nested), &inner, true, section, unit.line);
         }
-        None => no_nested(c, unit, &rule.common),
+        // sokf-implements: TL_73
+        None => c.located(at_unit(&c.at, rule), |c| no_nested(c, unit, &rule.common)),
     }
 }
 

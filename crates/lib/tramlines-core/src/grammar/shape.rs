@@ -1,4 +1,4 @@
-//! The shape of one unit (TL_22 to TL_26): exact `text`, a `template` with typed
+//! The shape of one unit (`TL_22` to `TL_26`): exact `text`, a `template` with typed
 //! holes, or a `pattern` regex, one key per meaning wherever a rule
 //! declares a shape. Every shape reads the unit's text squashed, each run
 //! of whitespace one space.

@@ -56,6 +56,7 @@ impl Locator {
     }
 
     /// The same schema, at the rule `at`.
+    #[must_use]
     pub fn at(&self, at: impl Into<String>) -> Locator {
         Locator {
             schema: self.schema.clone(),

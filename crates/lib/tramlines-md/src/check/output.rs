@@ -20,7 +20,7 @@ pub struct Capture {
     /// The name that the key is filed under: the `key-of` of the
     /// capturing rule, else the `rule-id` of its block, its group, or its
     /// section. No key is filed under a unit rule's own `rule-id`
-    /// (TLMD_236).
+    /// (`TLMD_236`).
     pub rule_id: Option<String>,
     /// The `rule-id` that names the capturing rule in a finding: the
     /// rule's own, else its block's, its group's, or its section's.
@@ -32,13 +32,13 @@ pub struct Capture {
     /// Whether the capturing rule declares `key-repeats`.
     pub repeats: bool,
     /// Where the key's anchor goes, when this capture is the one that
-    /// places it (TLMD_104 to TLMD_109).
+    /// places it (`TLMD_104` to `TLMD_109`).
     pub spot: Spot,
     /// The prefix the key takes, where the capturing rule derives it.
     pub derives: Option<KeyDerivation>,
 }
 
-/// Where a key's anchor goes (TLMD_104 to TLMD_109).
+/// Where a key's anchor goes (`TLMD_104` to `TLMD_109`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Spot {
     /// At the start of the text of the heading on this line.
@@ -59,7 +59,7 @@ impl Spot {
 }
 
 /// The anchor one key needs, or one that a unit which breaks its rule
-/// holds (TLMD_139): its id, the key, and where it goes.
+/// holds (`TLMD_139`): its id, the key, and where it goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
     /// The key's slug.
@@ -126,7 +126,7 @@ impl Repair {
 // sokf:begin check-output
 /// Text of one line that a repair rewrites where it stands: a label
 /// written as its key, rewritten in the words that the host gives for it
-/// (TLMD_254).
+/// (`TLMD_254`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LabelRepair {
     /// The line.

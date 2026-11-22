@@ -2,12 +2,13 @@
 type: Schema
 id: schema-non-goals
 title: Non-goals schema
-description: What the system that a knowledge store describes doesn't do, and why.
+description: A non-goals document lists what the project's system leaves out on purpose, each with its reason, for a developer or agent to check before adding a feature.
 ---
 
 <!-- prettier-ignore -->
 ````yaml
 line-limit: 200
+labels: [human, agent]
 
 guidance: >
   The non-goals document lists what the system doesn't do, each thing with its reason. A
@@ -24,7 +25,6 @@ frontmatter:
     template: "What ${} doesn't do"
     example: What the plumber doesn't do
   description:
-    guidance: The description says whose non-goals the document lists.
     example: The things that the plumber doesn't do, each with its reason.
 
 sections:
@@ -32,28 +32,32 @@ sections:
     level: 1
     blocks:
       - kind: prose
-        max: 1
         guidance: >
-          The opening is one paragraph. It says what the list contains, the things that
-          the system leaves out on purpose, each with its reason. It also says that a
-          developer reads the list before adding a feature.
+          The opening says what the list contains, the things that the system leaves out on
+          purpose, each with its reason. It also says that a developer reads the list before
+          adding a feature. Each item holds the reason for its non-goal. The architecture's
+          Overview holds the background on the system, such as what it is for, and the
+          glossary holds the meaning of each term.
         example: This document lists the things that the plumber leaves out on purpose, each with its reason. A developer reads the list before adding a feature to the plumber.
       - kind: bullet-list
         guidance: >
-          Each item has three parts: a topic in bold with a colon, one sentence about
-          something the system doesn't do, and the reason after _Why:_. An item records
+          Each item has a topic in bold with a colon, one sentence about something the
+          system doesn't do, and the reasons after _Why:_. Where the system does something
+          else instead, a sentence of its own says what, before _Why:_. Each reason is one
+          sentence, and an item can give several. An item records
           something that a developer would expect the system to do. That thing extends an
-          existing feature, or someone proposed it and the maintainers rejected the
+          existing feature, or someone proposed it and the developers rejected the
           proposal. A rejected way to build one building block belongs in that block's
-          design, as a decision. The list has at most 10 items, because a longer list
-          becomes a log of every rejection. The change that makes the system do one of
-          these things also removes that item.
+          design, as a decision, and stays in this list while the block has no design. The
+          change that makes the system do one of these things also removes that item. Its
+          label says whether the developer set the non-goal or an agent proposed it.
+        label: required
         rules:
           - template: '**${}**: ${}. Why: ${}.'
+            rule-id: non-goal
             min: 1
-            max: 10
             example:
-              - '**Delivery confirmation**: The plumber doesn''t tell a sender when the receiving program has read the message. Why: in a user interface, a write to `send` that never waits matters more than certain delivery.'
-              - '**Data interpretation**: The plumber doesn''t interpret the data of a message beyond matching the rules'' patterns against it. Why: the rules alone decide where a message goes, and the receiving program decides what the data means.'
-              - '**Other users**: The plumber doesn''t pass a message to another user''s programs. Why: one plumber runs for each user on each terminal, and it applies only that user''s rules.'
+              - '[agent] **Delivery confirmation**: The plumber doesn''t tell a sender when the receiving program has read the message. A write to `send` returns when the plumber has queued the message. Why: in a user interface, a write to `send` that never waits matters more than certain delivery.'
+              - '[agent] **Data interpretation**: The plumber doesn''t interpret the data of a message beyond matching the rules'' patterns against it. Why: the rules alone decide where a message goes, and the receiving program decides what the data means.'
+              - '[agent] **Other users**: The plumber doesn''t pass a message to another user''s programs. Why: one plumber runs for each user on each terminal, and it applies only that user''s rules.'
 ````

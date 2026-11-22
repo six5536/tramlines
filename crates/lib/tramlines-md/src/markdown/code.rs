@@ -27,9 +27,8 @@ pub(super) fn each_line(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
     std::iter::from_fn(move || {
         while i < bytes.len() {
             let ending = match bytes[i] {
-                b'\n' => 1,
                 b'\r' if bytes.get(i + 1) == Some(&b'\n') => 2,
-                b'\r' => 1,
+                b'\n' | b'\r' => 1,
                 _ => 0,
             };
             i += ending.max(1);

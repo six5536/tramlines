@@ -1,5 +1,5 @@
 //! The layered registry of line formats and the hole types they are
-//! written with (TL_34 to TL_41): the schema, the host, the pack layer,
+//! written with (`TL_34` to `TL_41`): the schema, the host, the pack layer,
 //! and the shared layer.
 
 use std::{borrow::Cow, collections::BTreeMap};
@@ -231,6 +231,10 @@ impl FormatRegistry {
     // sokf-implements: TL_125
     // sokf-implements: CORE-5_AC-12
     // sokf:begin format-registry
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "a public signature of a published crate"
+    )]
     pub fn layer(
         registry: &Spanned,
         types: Option<&Spanned>,
@@ -287,22 +291,19 @@ impl FormatRegistry {
             // sokf-implements: TL_37
             // sokf-implements: TL_41
             let merged;
-            let entry = if whole.get("patch").and_then(|p| p.as_bool()) == Some(true) {
-                match base.and_then(|b| b.entries.get(&name.value)) {
-                    Some((f, _)) => {
-                        merged = merge_patch(&f.raw, whole);
-                        &merged
-                    }
-                    None => {
-                        findings.push(fail(
-                            whole.line,
-                            Problem::new(
-                                "TL_41",
-                                format!("format `{}` patches no farther entry", name.value),
-                            ),
-                        ));
-                        continue;
-                    }
+            let entry = if whole.get("patch").and_then(Spanned::as_bool) == Some(true) {
+                if let Some((f, _)) = base.and_then(|b| b.entries.get(&name.value)) {
+                    merged = merge_patch(&f.raw, whole);
+                    &merged
+                } else {
+                    findings.push(fail(
+                        whole.line,
+                        Problem::new(
+                            "TL_41",
+                            format!("format `{}` patches no farther entry", name.value),
+                        ),
+                    ));
+                    continue;
                 }
             } else {
                 whole
@@ -427,33 +428,31 @@ impl FormatRegistry {
         let mut clashes = Vec::new();
         for (path, file) in files.iter().copied() {
             for (name, entry) in &file.entries {
-                match origin.get(name.as_str()) {
-                    Some(first) => clashes.push(Clash {
+                if let Some(first) = origin.get(name.as_str()) {
+                    clashes.push(Clash {
                         what: "format",
                         name: name.clone(),
                         first: (*first).clone(),
                         later: path.clone(),
                         line: Some(entry.0.raw.line),
-                    }),
-                    None => {
-                        origin.insert(name, path);
-                        packs.entries.insert(name.clone(), entry.clone());
-                    }
+                    });
+                } else {
+                    origin.insert(name, path);
+                    packs.entries.insert(name.clone(), entry.clone());
                 }
             }
             for (name, def) in &file.types.entries {
-                match type_origin.get(name.as_str()) {
-                    Some(first) => clashes.push(Clash {
+                if let Some(first) = type_origin.get(name.as_str()) {
+                    clashes.push(Clash {
                         what: "type",
                         name: name.clone(),
                         first: (*first).clone(),
                         later: path.clone(),
                         line: None,
-                    }),
-                    None => {
-                        type_origin.insert(name, path);
-                        packs.types.entries.insert(name.clone(), def.clone());
-                    }
+                    });
+                } else {
+                    type_origin.insert(name, path);
+                    packs.types.entries.insert(name.clone(), def.clone());
                 }
             }
         }
@@ -487,16 +486,13 @@ impl FormatRegistry {
         }
         let mut refused = Vec::new();
         for (name, format) in again {
-            match format {
-                Some(format) => {
-                    if let Some(entry) = packs.entries.get_mut(&name) {
-                        entry.0 = format;
-                    }
+            if let Some(format) = format {
+                if let Some(entry) = packs.entries.get_mut(&name) {
+                    entry.0 = format;
                 }
-                None => {
-                    packs.entries.remove(&name);
-                    refused.push(name);
-                }
+            } else {
+                packs.entries.remove(&name);
+                refused.push(name);
             }
         }
         // A shared format that a type of the layer breaks stays as this

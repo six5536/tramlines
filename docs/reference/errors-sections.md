@@ -374,7 +374,7 @@ A section appears before another section that the schema lists earlier ([TLMD_22
 
 ### Cause
 
-The schema doesn't set `sections-ordered: false`, so its sections must appear in the order that it lists them. The document places them in another order. The error names only the first heading that is out of place. For a heading that occurs again where its section doesn't declare `repeat`, the command reports [TLMD_151](#tlmd_151) instead.
+The schema doesn't set `sections-ordered: false`, so its sections must appear in the order that it lists them. The document places them in another order. The error names each heading whose section the schema lists before the section of the heading before it, so each place where the order breaks has one error, and the subsections that follow a section out of place in their own order have none. For a heading that occurs again where its section doesn't declare `repeat`, the command reports [TLMD_151](#tlmd_151) instead.
 
 ### Fix
 

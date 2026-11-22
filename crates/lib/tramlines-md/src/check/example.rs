@@ -273,11 +273,13 @@ impl Examples<'_> {
     }
 
     /// Read `f` with the place narrowed to `rule_id` or to the block at
-    /// `pos`, as the check names a block's rule, and put it back after.
+    /// `pos`, as the check names a block's rule, and put it back after: a
+    /// block names its own `rule-id` or its place, and a unit rule its own
+    /// `rule-id` or its block's.
     fn inside(&mut self, pos: Option<usize>, rule_id: Option<&String>, f: impl FnOnce(&mut Self)) {
         let mut at = self.at.clone();
         at.blocks.extend(pos);
-        if rule_id.is_some() {
+        if pos.is_some() || rule_id.is_some() {
             at.rule_id = rule_id.cloned();
         }
         let held = std::mem::replace(&mut self.at, at);
@@ -385,7 +387,11 @@ impl Examples<'_> {
                         "the example `{text}` is taken by the rule at line {} first, so this rule takes nothing: order the rules from the narrowest",
                         rules[earlier].common.line
                     ));
-                    self.say(rule.common.line, "TLMD_58", item(n, &examples, problem));
+                    // The finding is about the later rule, so it names it.
+                    // sokf-implements: TL_73
+                    self.inside(None, rule.rule_id.as_ref(), |e| {
+                        e.say(rule.common.line, "TLMD_58", item(n, &examples, problem));
+                    });
                 }
             }
         }
@@ -426,7 +432,7 @@ fn has_shape(schema: &Schema, words: &Words, block: &Block, rule: &Unit, text: &
 impl Examples<'_> {
     /// The example `text` of a unit of `block` that `rule` governs, as the
     /// rule reads it: squashed, without the label that it carries, and the
-    /// label (TLMD_257).
+    /// label (`TLMD_257`).
     fn label_of(
         &self,
         block: &Block,
@@ -438,7 +444,7 @@ impl Examples<'_> {
 
     /// The label `found` that the example `text` carries, as `bare` reads
     /// without it, against what `rule` of `block` declares and the words of
-    /// the host, as a unit's label is held to them (TLMD_257).
+    /// the host, as a unit's label is held to them (`TLMD_257`).
     // sokf-implements: TLMD_257
     // sokf-implements: MD-6_AC-10
     fn label_problem(

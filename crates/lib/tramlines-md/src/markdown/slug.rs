@@ -1,4 +1,4 @@
-//! Heading slugs, formed as repository hosts form theirs (TLMD_101).
+//! Heading slugs, formed as repository hosts form theirs (`TLMD_101`).
 
 /// Lowercase; keep letters, digits, spaces, hyphens and underscores; drop
 /// every other character; spaces to hyphens.

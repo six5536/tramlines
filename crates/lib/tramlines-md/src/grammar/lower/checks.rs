@@ -188,7 +188,7 @@ impl MdLowerer<'_> {
     /// The `example-columns` of a table block: at least one column, and
     /// only beside `columns: []` and `columns-open: true`, whose check
     /// accepts the header that the scaffold writes from it. The derivation
-    /// holds each row that the scaffold writes to the columns (TLMD_208).
+    /// holds each row that the scaffold writes to the columns (`TLMD_208`).
     // sokf-implements: MD-2_AC-8
     fn check_example_columns(&mut self, b: &Block) {
         let Some(header) = &b.example_columns else {

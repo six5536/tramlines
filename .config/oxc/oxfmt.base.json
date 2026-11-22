@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": [
+    ".sokf/**",
+    ".pakf/**",
+    ".claude/settings.json",
+    ".claude/skills/sokf/**",
+    "AGENTS.md"
+  ]
+}

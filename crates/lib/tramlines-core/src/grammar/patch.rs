@@ -1,5 +1,5 @@
 //! JSON Merge Patch over YAML values, which a format entry declaring
-//! `patch` is merged onto the entry it shadows with (TL_38, TL_39).
+//! `patch` is merged onto the entry it shadows with (`TL_38`, `TL_39`).
 
 use crate::{Spanned, Yaml};
 
@@ -32,6 +32,8 @@ pub(super) fn merge_patch(base: &Spanned, patch: &Spanned) -> Spanned {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
+
     use proptest::prelude::*;
 
     use super::*;
@@ -67,7 +69,7 @@ mod tests {
             let mut text = String::new();
             for (key, choice) in ["a", "b", "c"].iter().zip(&choices) {
                 if let Some(i) = choice {
-                    text.push_str(&format!("{key}: {}\n", VALUES[*i]));
+                    let _ = writeln!(text, "{key}: {}", VALUES[*i]);
                 }
             }
             if text.is_empty() {

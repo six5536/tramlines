@@ -1,17 +1,45 @@
+# The tools and tasks that only tramlines has. The packs supply everything
+# else, in .config/mise/conf.d/.
+
 [tools]
-node = "24"
+# The documentation site: mdBook builds it, and lychee checks its links.
+# Only the jobs on Linux build the site, so the Windows jobs skip both.
+"cargo:mdbook" = { version = "0.5.4", os = ["linux", "macos"] }
+"cargo:lychee" = { version = "0.24.2", os = ["linux", "macos"] }
 
-python = '3.14'
-# 1.96 is the project toolchain; nightly is used only by the coverage
-# subcommand (cargo +nightly llvm-cov), which needs `coverage(off)` markers.
-rust = ['1.96', 'nightly']
-zig = "0.16.0"
-cargo-binstall = "1.23.0"
+# After the launcher's smoke test, which builds the host's binary when no
+# release build has staged one.
+[tasks."test:smoke:tramlines"]
+hide = true
+depends = ["test:smoke:launcher"]
+run = "node scripts/release-smoke.mts"
 
+[tasks."docs:build"]
+description = "Build the documentation site into target/book"
+run = ["node scripts/docs-build.mts", "mdbook build"]
 
-"cargo:cargo-zigbuild" = "0.23.4"
-"cargo:cargo-nextest" = "0.9.146"
-"cargo:cargo-llvm-cov" = "0.9.1"
-# The documentation site: mdBook builds it, lychee checks its links.
-"cargo:mdbook" = "0.5.4"
-"cargo:lychee" = "0.24.2"
+[tasks."docs:serve"]
+description = "Build the documentation site and serve it; run it again after a change to its sources"
+run = ["node scripts/docs-build.mts", "mdbook serve --open"]
+
+# The site builds, and the links between its pages resolve. The links that
+# leave the site are exogenous, so audit:links checks them.
+[tasks."release:check:docs"]
+hide = true
+depends = ["docs:build"]
+run = "lychee --offline --include-fragments --no-progress --exclude-path target/book/404.html 'target/book/**/*.html'"
+
+# The links of the site that leave it, which a site that moves or goes down
+# breaks through no change here.
+[tasks."audit:links"]
+hide = true
+depends = ["docs:build"]
+run = "lychee --no-progress --exclude-path target/book/404.html 'target/book/**/*.html'"
+
+# The JSON Schema of a schema, which the GitHub release attaches beside the
+# archives, so that an editor can check the keys of a schema. publish:github
+# attaches each file of dist/assets/.
+# sokf-implements: CLI-15_AC-3
+[tasks."build:release:ubuntu:assets"]
+hide = true
+run = ["mkdir -p dist/assets", "cp schemas/tramlines-md.schema.json dist/assets/"]

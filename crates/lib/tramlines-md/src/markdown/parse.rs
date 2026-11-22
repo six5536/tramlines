@@ -23,7 +23,7 @@ mod definitions;
 mod text;
 
 pub(super) use columns::written_pos;
-use columns::{line_at, precedes_table, row_pos};
+use columns::{line_at, precedes_table};
 pub(super) use definitions::Defined;
 pub(super) use text::strip_prefix;
 
@@ -35,10 +35,10 @@ impl BrokenLinkCallback for KeepLabel {
         if r.original.starts_with('^') {
             return None;
         }
-        Some(ResolvedReference {
-            url: format!("{REF}{}", r.original),
-            title: String::new(),
-        })
+        Some(ResolvedReference::new(
+            format!("{REF}{}", r.original),
+            String::new(),
+        ))
     }
 }
 
@@ -136,9 +136,7 @@ pub(crate) fn code_spans_in(text: &str) -> Vec<Range<usize>> {
 }
 
 /// Whether `cell`, a table cell, holds no inline node. Comrak adds such a
-/// cell for each one missing from a body row, in its function
-/// `try_opening_row`, at the column after the end of the row's last cell,
-/// which holds the closing pipe in a row that ends with one, and GFM reads
+/// cell for each one missing from a body row, with no width, and GFM reads
 /// it as empty. A written cell holds no node only where it is empty.
 // sokf-implements: TLMD_4
 fn empty_cell<'b>(cell: &'b AstNode<'b>) -> bool {
@@ -237,7 +235,7 @@ fn facts(value: &NodeValue) -> Facts {
         },
         NodeValue::BlockQuote => Facts::BlockQuote,
         NodeValue::HtmlBlock(h) => Facts::Html(h.literal.trim().to_string()),
-        NodeValue::ThematicBreak => Facts::ThematicBreak,
+        NodeValue::ThematicBreak(_) => Facts::ThematicBreak,
         NodeValue::FootnoteDefinition(d) => Facts::Footnote(d.name.clone()),
         _ => Facts::Other,
     }
@@ -280,14 +278,34 @@ impl<'a> Parser<'a> {
 
     /// Cover the lines of `node`, a paragraph or a heading that starts at
     /// `sp`, past its opening definitions. Inside an item or a quote, the
-    /// definitions stay covered, because `reference_blocks` reads each line
-    /// that no block covers as a line of the top level.
+    /// definitions that open a paragraph or a setext heading stay covered,
+    /// because `reference_blocks` reads each line that no block covers as a
+    /// line of the top level. comrak starts the block past them, so they are
+    /// the lines just above its start, up to a blank line, a line that a
+    /// block covers, or the start of the item or the quote that holds it.
     fn cover_text<'b>(&mut self, node: &'b AstNode<'b>, sp: Sourcepos) {
-        let sp = if self.depth > 0 {
+        let mut sp = if self.depth > 0 {
             node.data().sourcepos
         } else {
             sp
         };
+        // Only a paragraph or a setext heading opens with definitions.
+        let opens = match &node.data().value {
+            NodeValue::Paragraph => true,
+            NodeValue::Heading(h) => h.setext,
+            _ => false,
+        };
+        if self.depth > 0 && opens {
+            let floor = node.parent().map_or(1, |p| p.data().sourcepos.start.line);
+            while sp.start.line > floor {
+                let above = self.offset + sp.start.line - 1;
+                let covered = self.covered.iter().any(|&(s, e)| s <= above && above <= e);
+                if covered || strip_prefix(self.src(above)).trim().is_empty() {
+                    break;
+                }
+                sp.start.line -= 1;
+            }
+        }
         self.cover(sp);
     }
 
@@ -301,6 +319,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Group sibling nodes into blocks.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass of the parser over sibling nodes, a split of which is a refactor of its own"
+    )]
     fn group<'b>(&mut self, nodes: impl Iterator<Item = &'b AstNode<'b>>) -> Vec<Block> {
         let mut blocks: Vec<Block> = Vec::new();
         let mut last_prose = false;
@@ -315,24 +337,24 @@ impl<'a> Parser<'a> {
             let block = match facts {
                 Facts::Heading { level, setext } => {
                     self.cover_text(node, sp);
-                    let text = if setext {
-                        let mut parts = Vec::new();
-                        for n in line..end_line {
-                            let t = strip_prefix(self.src(n)).trim();
-                            if !t.is_empty() {
-                                parts.push(t.to_string());
-                            }
-                        }
-                        parts.join(" ")
-                    } else {
-                        atx_text(&self.source_text(sp))
-                    };
+                    let (text, pieces) = self.heading_text(sp, setext);
                     // A heading inside an item or a quote is part of that
-                    // block, not a heading of the document.
+                    // block, not a heading of the document. Its unit's text
+                    // starts with its hashes, which map to no column.
                     // sokf-implements: TLMD_173
                     if self.depth > 0 {
-                        let text = format!("{} {text}", "#".repeat(usize::from(level)));
-                        let unit = Unit::leaf(text, line, end_line);
+                        let hashes = format!("{} ", "#".repeat(usize::from(level)));
+                        let pieces = pieces
+                            .into_iter()
+                            .map(|p| super::Piece {
+                                offset: p.offset + hashes.len(),
+                                ..p
+                            })
+                            .collect();
+                        let unit = Unit {
+                            pieces,
+                            ..Unit::leaf(format!("{hashes}{text}"), line, end_line)
+                        };
                         blocks.push(Block::new(BlockKind::Heading, line, end_line, vec![unit]));
                         continue;
                     }
@@ -472,8 +494,11 @@ impl<'a> Parser<'a> {
             let is_para = matches!(first.data().value, NodeValue::Paragraph);
             let sp = definitions::block_pos(first, self.lines, &self.defined);
             if is_para && images_of(first, self.lines, &self.defined).is_none() {
-                // Its opening definitions stay part of the item.
-                self.cover(first.data().sourcepos);
+                // Its opening definitions stay part of the item: comrak
+                // starts the paragraph past them, and the item at its marker.
+                let mut covers = first.data().sourcepos;
+                covers.start = item.data().sourcepos.start;
+                self.cover(covers);
                 (text, pieces) = self.mapped_text(sp);
                 end_line = self.end_line(sp);
                 children.next();
@@ -506,10 +531,10 @@ impl<'a> Parser<'a> {
         for row in table.children() {
             let (header, sp) = {
                 let ast = row.data();
-                let NodeValue::TableRow(header) = ast.value else {
+                let NodeValue::TableRow(row) = &ast.value else {
                     continue;
                 };
-                (header, ast.sourcepos)
+                (row.header, ast.sourcepos)
             };
             let row_line = self.line(sp);
             let cells: Vec<(String, Vec<super::Piece>)> = row
@@ -518,7 +543,7 @@ impl<'a> Parser<'a> {
                     if empty_cell(cell) {
                         (String::new(), Vec::new())
                     } else {
-                        self.mapped_text(row_pos(cell, cell.data().sourcepos, self.lines))
+                        self.mapped_text(cell.data().sourcepos)
                     }
                 })
                 .collect();

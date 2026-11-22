@@ -6,19 +6,34 @@
 // GitHub at DOCS_REF (default `main`). SUMMARY.md lists the pages by kind,
 // each kind by `order`.
 
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, posix, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const root = join(import.meta.dirname, "..");
 const out = join(root, "target", "book-src");
-const ref = process.env.DOCS_REF || "main";
+const ref =
+  process.env.DOCS_REF === undefined || process.env.DOCS_REF === "" ? "main" : process.env.DOCS_REF;
 const github = `https://github.com/six5536/tramlines/blob/${ref}`;
 
+/** A page of the book: its source, its path in the book, and its frontmatter. */
+interface Page {
+  source: string;
+  book: string;
+  front: Record<string, string>;
+}
+
 /** Every markdown file under `dir`, as a path from the root, `/`-separated. */
-function walk(dir) {
-  const found = [];
-  for (const name of readdirSync(join(root, dir)).sort()) {
+function walk(dir: string): string[] {
+  const found: string[] = [];
+  for (const name of readdirSync(join(root, dir)).toSorted()) {
     const path = posix.join(dir, name);
     if (statSync(join(root, path)).isDirectory()) {
       found.push(...walk(path));
@@ -30,14 +45,17 @@ function walk(dir) {
 }
 
 /** The frontmatter of `text` as a map of its top-level scalars, and the body. */
-function split(text) {
+function split(text: string, source: string): { front: Record<string, string>; body: string } {
   if (!text.startsWith("---\n")) {
     return { front: {}, body: text };
   }
   const end = text.indexOf("\n---\n", 4);
-  const front = {};
+  if (end === -1) {
+    throw new Error(`${source}: the frontmatter has no closing \`---\` line`);
+  }
+  const front: Record<string, string> = {};
   for (const line of text.slice(4, end).split("\n")) {
-    const m = line.match(/^([a-z-]+):\s*(.*)$/);
+    const m = /^([a-z-]+):\s*(.*)$/.exec(line);
     if (m) {
       front[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
     }
@@ -46,27 +64,27 @@ function split(text) {
 }
 
 // The pages: their source, their path in the book, and their frontmatter.
-const pages = [];
-pages.push({ source: "README.md", book: "index.md", front: { title: "Introduction" } });
+const pages: Page[] = [{ source: "README.md", book: "index.md", front: { title: "Introduction" } }];
 for (const source of walk("docs")) {
   if (source.startsWith("docs/schemas/") || source.endsWith("/index.md")) {
     continue;
   }
-  const { front } = split(readFileSync(join(root, source), "utf8"));
+  const { front } = split(readFileSync(join(root, source), "utf8"), source);
   pages.push({ source, book: source.slice("docs/".length), front });
 }
 for (const name of ["tramlines-spec.md", "tramlines-md-spec.md"]) {
   const source = `knowledge/spec/${name}`;
-  const { front } = split(readFileSync(join(root, source), "utf8"));
+  const { front } = split(readFileSync(join(root, source), "utf8"), source);
   pages.push({ source, book: `spec/${name}`, front });
 }
 const bookOf = new Map(pages.map((p) => [`/${p.source}`, p.book]));
 
 /** The target of a link from the page at `from`, given as a repository path. */
-function target(from, path) {
-  const [file, fragment] = path.split("#");
+function target(from: string, path: string): string {
+  const hash = path.indexOf("#");
+  const file = hash === -1 ? path : path.slice(0, hash);
+  const tail = hash === -1 ? "" : path.slice(hash);
   const book = bookOf.get(file);
-  const tail = fragment === undefined ? "" : `#${fragment}`;
   if (book !== undefined) {
     const rel = posix.relative(posix.dirname(from), book) || posix.basename(book);
     return `${rel}${tail}`;
@@ -78,14 +96,25 @@ function target(from, path) {
 }
 
 // The links to a page of the book that isn't there.
-const broken = [];
+const broken: string[] = [];
 
 /** The body of a page with its links resolved for the book. */
-function rewrite(page) {
+function rewrite(page: Page): string {
   const text = readFileSync(join(root, page.source), "utf8");
-  let { body } = split(text);
+  let { body } = split(text, page.source);
+  if (page.source === "README.md") {
+    // The README links files beside it; on the site they live on GitHub. A link that
+    // starts with `/` is a path of the repository, which the pass below resolves.
+    body = body.replaceAll(
+      /\]\((?!https?:|#|\/)([^)\s]+)\)/g,
+      (_, path: string) => `](${github}/${path})`,
+    );
+  }
   // Link definitions, as sokf writes them: `[label]: /path#fragment`.
-  body = body.replace(/^(\[[^\]]+\]): (\/[^\s]*)$/gm, (_, label, path) => `${label}: ${target(page.book, path)}`);
+  body = body.replaceAll(
+    /^(\[[^\]]+\]): (\/[^\s]*)$/gm,
+    (_, label: string, path: string) => `${label}: ${target(page.book, path)}`,
+  );
   // A sokf link with no definition resolved to no document.
   const defined = new Set([...body.matchAll(/^\[([^\]]+)\]: /gm)].map((m) => m[1]));
   for (const m of body.matchAll(/\]\[(sokf:[^\]]+)\]/g)) {
@@ -94,10 +123,11 @@ function rewrite(page) {
     }
   }
   // Inline links and images to a path of the repository.
-  body = body.replace(/\]\((\/[^)\s]+)\)/g, (_, path) => `](${target(page.book, path)})`);
+  body = body.replaceAll(
+    /\]\((\/[^)\s]+)\)/g,
+    (_, path: string) => `](${target(page.book, path)})`,
+  );
   if (page.source === "README.md") {
-    // The README links files beside it; on the site they live on GitHub.
-    body = body.replace(/\]\((?!https?:|#)([^)\s]+)\)/g, (_, path) => `](${github}/${path})`);
     // The README's first line is its name and its second a badge.
     body = body.replace(/^\[!\[[^\n]*\n/m, "");
   }
@@ -113,18 +143,32 @@ for (const page of pages) {
 
 // SUMMARY.md: the pages of each kind, by `order`; the error pages under
 // the overview of the errors.
-const byOrder = (a, b) => Number(a.front.order) - Number(b.front.order);
-const of = (type) => pages.filter((p) => p.front.type === type).sort(byOrder);
-const entry = (p, indent = "") => `${indent}- [${p.front.title}](${p.book})`;
+const byOrder = (a: Page, b: Page) => Number(a.front.order) - Number(b.front.order);
+const of = (type: string) => {
+  const list = pages.filter((p) => p.front.type === type);
+  for (const p of list) {
+    if (!/^[1-9][0-9]*$/.test(p.front.order)) {
+      throw new Error(`${p.source}: the frontmatter has no \`order\` that is a number`);
+    }
+  }
+  return list.toSorted(byOrder);
+};
+const entry = (p: Page, indent = "") => `${indent}- [${p.front.title}](${p.book})`;
 const lines = ["# Summary", "", "[Introduction](index.md)", ""];
-const part = (title, list) => {
+const part = (title: string, list: string[]) => {
   if (list.length > 0) {
     lines.push(`# ${title}`, "", ...list, "");
   }
 };
-part("Tutorials", of("Tutorial").map((p) => entry(p)));
-part("How-to guides", of("HowTo").map((p) => entry(p)));
-const reference = [];
+part(
+  "Tutorials",
+  of("Tutorial").map((p) => entry(p)),
+);
+part(
+  "How-to guides",
+  of("HowTo").map((p) => entry(p)),
+);
+const reference: string[] = [];
 for (const p of of("Reference")) {
   reference.push(entry(p));
   if (p.front.id === "reference-errors") {
@@ -132,7 +176,10 @@ for (const p of of("Reference")) {
   }
 }
 part("Reference", reference);
-part("Explanations", of("Explanation").map((p) => entry(p)));
+part(
+  "Explanations",
+  of("Explanation").map((p) => entry(p)),
+);
 part("Specification", [
   "- [Core specification](spec/tramlines-spec.md)",
   "- [Markdown specification](spec/tramlines-md-spec.md)",
@@ -141,7 +188,10 @@ writeFileSync(join(out, "SUMMARY.md"), lines.join("\n"));
 // The JSON Schema of a schema, which the site serves beside the pages so
 // that an editor can read it at a stable address.
 // sokf-implements: CLI-15_AC-4
-copyFileSync(join(root, "schemas", "tramlines-md.schema.json"), join(out, "tramlines-md.schema.json"));
+copyFileSync(
+  join(root, "schemas", "tramlines-md.schema.json"),
+  join(out, "tramlines-md.schema.json"),
+);
 if (broken.length > 0) {
   console.error(`docs-build: links to no page of the book:\n  ${broken.join("\n  ")}`);
   process.exit(1);

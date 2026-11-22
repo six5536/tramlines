@@ -132,7 +132,7 @@ impl Spanned {
 }
 
 // sokf:begin yaml-error
-/// A construct the YAML dialect refuses (TL_14), or a syntax
+/// A construct the YAML dialect refuses (`TL_14`), or a syntax
 /// error, with its line.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum YamlError {

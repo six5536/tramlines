@@ -104,13 +104,13 @@ pub fn code_list<T: std::fmt::Display>(items: impl IntoIterator<Item = T>, sep: 
 /// before a vowel sound, judged from its spelling, which reads a `u` that
 /// sounds as "you" and an `h` that is silent.
 pub fn article(word: &str) -> &'static str {
-    let w = word
-        .trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
-        .to_ascii_lowercase();
     const YOU: [&str; 13] = [
         "uni", "uin", "uid", "uli", "use", "usu", "uti", "utf", "uri", "url", "uk", "uu", "eu",
     ];
     const SILENT: [&str; 5] = ["hour", "honest", "honor", "heir", "html"];
+    let w = word
+        .trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+        .to_ascii_lowercase();
     let vowel = w.starts_with(['a', 'e', 'i', 'o', 'u'])
         && !YOU.iter().any(|p| w.starts_with(p))
         && !w.starts_with("one");

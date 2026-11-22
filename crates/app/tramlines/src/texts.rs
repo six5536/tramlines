@@ -84,7 +84,7 @@ impl Texts {
 
     fn add(&mut self, entries: Vec<Entry>) {
         for e in entries {
-            self.entries.insert((e.language, e.entry), e.text);
+            self.entries.insert((e.language, e.key), e.text);
         }
     }
 
@@ -274,11 +274,11 @@ impl FrontmatterHost for Words<'_> {
     }
 }
 
-/// One entry of a file of texts: its language in lower case, the entry,
+/// One entry of a file of texts: its language in lower case, its key,
 /// and its text.
 struct Entry {
     language: String,
-    entry: String,
+    key: String,
     text: Text,
 }
 
@@ -331,7 +331,7 @@ fn parse(text: &str) -> Result<Vec<Entry>, Fault> {
         let mut push = |entry: String, text: Text| {
             out.push(Entry {
                 language: language.clone(),
-                entry,
+                key: entry,
                 text,
             });
         };
