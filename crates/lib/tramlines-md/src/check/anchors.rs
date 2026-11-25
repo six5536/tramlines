@@ -5,66 +5,146 @@
 //! no key stays where it stands while a unit or a heading that breaks its
 //! rule holds it.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::{Broken, Capture, Checker, Placement, Repair, Spot};
 use crate::{
     Finding,
-    markdown::{Anchor, Body, render_anchor, slug},
+    grammar::KeyText,
+    markdown::{Anchor, Body, render_anchor},
+    text,
 };
 
 /// The anchor each key of `captures` needs, in the order the keys were
-/// first captured. A key whose heading already carries its slug, a key
-/// whose slug another key took first, and a key that only references
-/// capture, need none.
+/// first captured, named by the `Capture::anchor` that the check gives
+/// its captures, so `captures` are those of one check, as it returns them.
+/// A key whose heading already carries its slug, a key whose slug another
+/// key took first, and a key that only references capture, need none.
 // sokf-implements: TLMD_103
 // sokf-implements: TLMD_104
 // sokf-implements: TLMD_105
 // sokf-implements: TLMD_106
 // sokf-implements: MD-4_AC-8
 pub fn placements(captures: &[Capture]) -> Vec<Placement> {
-    let mut by_key: BTreeMap<&str, Vec<&Capture>> = BTreeMap::new();
-    let mut order: Vec<&str> = Vec::new();
-    for cap in captures {
-        let entry = by_key.entry(&cap.key).or_default();
+    // The captures of one key, a capture that pairs with a key of another
+    // reading among them (`TLMD_287`), by the first capture of the key.
+    let firsts = identities(captures);
+    let mut by_key: BTreeMap<usize, Vec<&Capture>> = BTreeMap::new();
+    let mut order: Vec<usize> = Vec::new();
+    for (cap, &first) in captures.iter().zip(&firsts) {
+        let entry = by_key.entry(first).or_default();
         if entry.is_empty() {
-            order.push(&cap.key);
+            order.push(first);
         }
         entry.push(cap);
     }
     let mut ids: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     for key in order {
-        let caps = &by_key[key];
-        let id = slug(key);
+        let caps = &by_key[&key];
+        let heading = caps.iter().find(|c| c.heading_slug.is_some());
+        let holder = holder(caps);
+        // The id that the check gives each capture of the key, which a host
+        // reads too (`MD-4_AC-22`), where the check gave it to every capture
+        // of the key, and else the id of the capture that holds the anchor.
+        let anchor = caps[0].anchor.as_str();
+        let id = if !anchor.is_empty() && caps.iter().all(|c| c.anchor == anchor) {
+            anchor.to_string()
+        } else {
+            holder.unwrap_or(caps[0]).id()
+        };
         if id.is_empty() || ids.contains(&id) {
             continue;
         }
-        // Where the key is described: the heading that captures it. A
-        // heading whose own slug is the key's is its anchor already.
-        // Else where it is defined: a paired capture refers to a key
-        // that another rule defines, and holds no anchor of its own.
-        let spot = match caps.iter().find(|c| c.heading_slug.is_some()) {
-            Some(h) if h.heading_slug.as_deref() == Some(id.as_str()) => None,
-            Some(h) => Some(h.spot),
-            // A rule that declares `key-repeats` refers to its keys, so a
-            // capture by another rule defines the key where there is one.
-            None => caps
-                .iter()
-                .find(|c| c.pairs.is_none() && !c.repeats)
-                .or_else(|| caps.iter().find(|c| c.pairs.is_none()))
-                .map(|c| c.spot),
+        // A heading whose own slug is the key's is its anchor already.
+        let spot = match (heading, holder) {
+            (Some(h), _) if h.heading_slug.as_deref() == Some(id.as_str()) => None,
+            (_, holder) => holder.map(|c| c.spot),
         };
         ids.insert(id.clone());
-        if let Some(spot) = spot {
+        // The key as the capture that holds the anchor reads it.
+        if let (Some(spot), Some(holder)) = (spot, holder) {
             out.push(Placement {
                 id,
-                key: key.to_string(),
+                key: holder.key.clone(),
                 spot,
             });
         }
     }
     out
+}
+
+/// The capture of one key, among all its `caps`, that holds its anchor:
+/// where the key is described, the heading that captures it, else where it
+/// is defined. A paired capture refers to a key that another rule defines,
+/// and holds no anchor of its own. A rule that declares `key-repeats`
+/// refers to its keys, so a capture by another rule defines the key where
+/// there is one. The holder names the anchor, because the id reads the key
+/// as that capture writes it.
+pub(super) fn holder<'a>(caps: &[&'a Capture]) -> Option<&'a Capture> {
+    caps.iter()
+        .find(|c| c.heading_slug.is_some())
+        .or_else(|| caps.iter().find(|c| c.pairs.is_none() && !c.repeats))
+        .or_else(|| caps.iter().find(|c| c.pairs.is_none()))
+        .copied()
+}
+
+/// For each of `captures`, the index of the capture that stands for its
+/// key: the first capture of its key, and for a capture that pairs, the
+/// first capture of the key of the set that it pairs with, as the check of
+/// the pairing reads the set, which a key of
+/// another reading can be by its plain text (`TLMD_287`). So a capture that
+/// pairs refers to that key, holds no anchor, and shares its slug.
+// sokf-implements: TLMD_287
+pub(super) fn identities(captures: &[Capture]) -> Vec<usize> {
+    let mut first: HashMap<&str, usize> = HashMap::new();
+    for (i, cap) in captures.iter().enumerate() {
+        first.entry(cap.key.as_str()).or_insert(i);
+    }
+    let own = |cap: &Capture| first[cap.key.as_str()];
+    if captures.iter().all(|cap| cap.pairs.is_none()) {
+        return captures.iter().map(own).collect();
+    }
+    let texts: Vec<KeyText> = captures.iter().map(Capture::text).collect();
+    captures
+        .iter()
+        .enumerate()
+        .map(|(i, cap)| {
+            let Some(paired) = &cap.pairs else {
+                return own(cap);
+            };
+            captures
+                .iter()
+                .enumerate()
+                .find(|(j, other)| {
+                    other
+                        .pairs
+                        .as_ref()
+                        .is_none_or(|q| !q.with.iter().any(|w| paired.with.contains(w)))
+                        && other
+                            .rule_id
+                            .as_ref()
+                            .is_some_and(|r| paired.with.contains(r))
+                        && texts[*j].same(&texts[i])
+                })
+                .map_or_else(|| own(cap), |(_, other)| own(other))
+        })
+        .collect()
+}
+
+/// The id of the anchor of the key of each of `captures`, whose key is
+/// that of the capture that `firsts` names: the id of the capture that
+/// holds the anchor, else of the key's first capture.
+pub(super) fn anchor_ids(captures: &[Capture], firsts: &[usize]) -> Vec<String> {
+    let mut by_key: BTreeMap<usize, Vec<&Capture>> = BTreeMap::new();
+    for (cap, &first) in captures.iter().zip(firsts) {
+        by_key.entry(first).or_default().push(cap);
+    }
+    let ids: BTreeMap<usize, String> = by_key
+        .into_iter()
+        .map(|(first, caps)| (first, holder(&caps).unwrap_or(caps[0]).id()))
+        .collect();
+    firsts.iter().map(|first| ids[first].clone()).collect()
 }
 
 /// The byte column where the text of the heading on `line` starts, in the
@@ -119,6 +199,9 @@ fn held(anchor: &Anchor, broken: &[&Broken], body: &Body, text: &str) -> Option<
         }
         Broken::Before(line) if at_spot(anchor, Spot::Before(*line), body, text) => {
             Some(Spot::Before(*line))
+        }
+        Broken::Block(lines) if !anchor.alone && lines.contains(&anchor.line) => {
+            Some(Spot::Inline(anchor.line, anchor.col))
         }
         _ => None,
     })
@@ -178,8 +261,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 &mut findings,
                 p.spot.line(),
                 format!(
-                    "key `{}` has no anchor; its repair writes `{}` before it",
-                    p.key,
+                    "key {} has no anchor; its repair writes `{}` before it",
+                    text::code(&p.key),
                     render_anchor(&p.id)
                 ),
             ),
@@ -187,8 +270,9 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 &mut findings,
                 body.anchors[found[0]].line,
                 format!(
-                    "the anchor `#{}` is not where its key `{}` is; its repair moves it",
-                    p.id, p.key
+                    "the anchor {} is not where its key {} is; its repair moves it",
+                    text::code(&format!("#{}", p.id)),
+                    text::code(&p.key)
                 ),
             ),
         }
@@ -204,9 +288,10 @@ pub(super) fn check(c: &mut Checker<'_>) {
         }
         // A capture of a key with the anchor's slug on the anchor's line.
         let captured_here = |paired: bool| {
-            c.out.captures.iter().any(|cap| {
-                cap.pairs.is_some() == paired && cap.line == a.line && slug(&cap.key) == a.id
-            })
+            c.out
+                .captures
+                .iter()
+                .any(|cap| cap.pairs.is_some() == paired && cap.line == a.line && cap.id() == a.id)
         };
         if !wanted_ids.contains(a.id.as_str()) {
             // A paired capture refers to its key and holds no anchor, so an
@@ -226,8 +311,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                         &mut findings,
                         a.line,
                         format!(
-                            "the anchor `#{}` occurs more than once; its repair keeps one",
-                            a.id
+                            "the anchor {} occurs more than once; its repair keeps one",
+                            text::code(&format!("#{}", a.id))
                         ),
                     );
                     continue;
@@ -243,8 +328,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 &mut findings,
                 a.line,
                 format!(
-                    "the anchor `#{}` names no key of this document; its repair removes it",
-                    a.id
+                    "the anchor {} names no key of this document; its repair removes it",
+                    text::code(&format!("#{}", a.id))
                 ),
             );
         } else if body.anchors.iter().filter(|o| o.id == a.id).count() > 1 {
@@ -262,8 +347,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 &mut findings,
                 a.line,
                 format!(
-                    "the anchor `#{}` occurs more than once; its repair keeps one",
-                    a.id
+                    "the anchor {} occurs more than once; its repair keeps one",
+                    text::code(&format!("#{}", a.id))
                 ),
             );
         }

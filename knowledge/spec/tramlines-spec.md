@@ -103,10 +103,11 @@ A shape defines the text of one unit, in one of three forms:
 - `template` - The text, with a typed hole `${name:type}` where it varies.
 - `pattern` - A regular expression, for what a template cannot say.
 
-Each shape matches the text with each run of whitespace collapsed to one space.
+Each shape matches the text with each run of whitespace collapsed to one space. A format grammar can read the text of a unit in a fixed spelling of its markup, as markdown reads emphasis, so that two spellings of the same markup match alike.
 
 - <a id="tl_22"></a>TL_22 [human] [unwanted]: IF a format, a variant, or a rule of the format grammar declares more than one of `text`, `template`, `pattern`, and `format`, a frontmatter constraint declares more than one of `text`, `template` and `pattern`, or a format declares one of them beside `variants`, THEN the engine SHALL report a finding on the schema that names them.
 - <a id="tl_23"></a>TL_23 [human] [ubiquitous]: the engine SHALL read the text of a unit with each run of whitespace as one space, for every shape, key, guard, and ban.
+- <a id="tl_141"></a>TL_141 [agent] [ubiquitous]: the engine SHALL match every shape, key, guard, and ban against the text of a unit as its format grammar reads it, and read a literal text of the schema and a frontmatter value bound to a unit as the format grammar reads a unit.
 - <a id="tl_24"></a>TL_24 [human] [ubiquitous]: the engine SHALL match a template against the whole text of a unit, each hole against the regular expression of its type.
 - <a id="tl_105"></a>TL_105 [human] [unwanted]: IF a format declares none of `text`, `template`, `pattern`, and `variants`, or a variant or a heading rule declares none of `text`, `template` and `pattern`, THEN the engine SHALL report a finding on the schema.
 - <a id="tl_25"></a>TL_25 [human] [unwanted]: IF a template has no hole, THEN the engine SHALL report a finding on the schema that names the template.
@@ -167,6 +168,7 @@ Frontmatter is the authority over the body. A repair rewrites the body to agree 
 - <a id="tl_123"></a>TL_123 [human] [unwanted]: IF frontmatter contains an anchor, an alias, or a tag, THEN the engine SHALL report a finding on its first line and check no frontmatter rule.
 - <a id="tl_94"></a>TL_94 [human] [state]: WHILE a document has no frontmatter, the engine SHALL check it as a document whose frontmatter is an empty map.
 - <a id="tl_54"></a>TL_54 [human] [unwanted]: IF a frontmatter key that the schema declares, and does not mark `optional`, is missing, THEN the engine SHALL report a finding that names the key.
+- <a id="tl_143"></a>TL_143 [agent] [unwanted]: IF a frontmatter key that the schema declares, and does not mark `optional`, holds an empty value, a null or a text of only whitespace, THEN the engine SHALL report a finding that names the key as missing its value, in place of every other finding on the value.
 - <a id="tl_55"></a>TL_55 [human] [unwanted]: IF a frontmatter key is not declared, not reserved by the host, and not the key of a lifecycle dimension, and the schema declares no `frontmatter-open`, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_56"></a>TL_56 [human] [unwanted]: IF a frontmatter value, or an element of the value of a key that declares `list`, fails its `const`, `template`, `pattern`, `enum`, or `format`, THEN the engine SHALL report a finding that names the key.
 - <a id="tl_106"></a>TL_106 [human] [unwanted]: IF the value of a key that declares `list` has fewer elements than its `min`, THEN the engine SHALL report a finding that names the key, the bound, and the count.
@@ -210,6 +212,7 @@ A finding has a file, a line where one applies, a severity, the key of the crite
 - <a id="tl_75"></a>TL_75 [human] [unwanted]: IF a text matches a prohibited pattern, THEN the engine SHALL report the span that the pattern matched and the message of the ban.
 - <a id="tl_76"></a>TL_76 [human] [unwanted]: IF a text matches a prohibited pattern of a rule or a format, THEN the engine SHALL report the example of that rule beside the span and the message.
 - <a id="tl_77"></a>TL_77 [human] [ubiquitous]: the engine SHALL include in a finding no text that a schema writes to explain it, other than the message of a ban, which [TL_75](#tl_75) reports, and the `when-at-limit` of a hard `max`, which the finding on a count above that `max` quotes after the engine's own words and the label `When at the limit:`.
+- <a id="tl_142"></a>TL_142 [agent] [ubiquitous]: the engine SHALL quote each text of a document or of a schema in a finding as one code span, in the shortest run of backticks that the text holds no run of, with one space inside each end where the text starts or ends with a backtick.
 - <a id="tl_78"></a>TL_78 [human] [ubiquitous]: the host SHALL handle a scope, a format, or a block kind that it added.
 - <a id="tl_79"></a>TL_79 [human] [unwanted]: IF the host cannot supply what a rule needs to know, THEN the engine SHALL skip the rule.
 - <a id="tl_80"></a>TL_80 [human] [invariant]: FOR ANY format and any line that it rejects on shape, the engine SHALL report text that contains the example of the expected shape and nothing else that a schema wrote.

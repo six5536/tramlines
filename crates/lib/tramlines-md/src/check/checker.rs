@@ -7,8 +7,8 @@ use std::{
 };
 
 use super::{
-    Accepted, Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, frontmatter, keys, label,
-    limits, markers, sections,
+    Accepted, Capture, CheckOutput, DocView, Gate, Host, Repair, anchors, bound, bound::Bound,
+    frontmatter, keys, label, limits, markers, sections,
 };
 use crate::{
     Finding, Locator,
@@ -16,7 +16,7 @@ use crate::{
         Block as Rule, LifecycleDimension, RuleCommon, Schema, Section, States, Text,
         Unit as UnitRule, Words, squash,
     },
-    markdown::{Block, Heading, Unit},
+    markdown::{Block, BlockKind, Heading, Unit},
 };
 
 // sokf:begin check-against
@@ -61,6 +61,12 @@ pub(crate) enum Broken {
     /// heading corrects. That finding outlasts every repair of the heading,
     /// so no repair sets the record aside.
     Heading(RangeInclusive<usize>),
+    /// On the lines of a block that breaks its rule as a whole, such as a
+    /// block that no position takes or one under a heading that no declared
+    /// section takes: a quoted item, a table's header row, and a heading in
+    /// a quote, which no unit holds. No repair rewrites such a block, so no
+    /// repair sets the record aside.
+    Block(RangeInclusive<usize>),
 }
 
 /// Where in a schema the rule being checked sits. The reader a finding
@@ -179,6 +185,24 @@ pub(crate) struct Checker<'a> {
     /// The label of each link reference definition of the document, in
     /// lower case, which no label's words can be (`TLMD_243`).
     pub links: HashSet<String>,
+    /// The blocks that the body being checked declares, those of a
+    /// section or of the preamble, whose unit rules a repair of a fixed
+    /// text reads (`TLMD_280`).
+    pub body: &'a [Rule],
+    /// The line and the message of each finding of a fixed text that a
+    /// repair settles (`TLMD_279`).
+    pub settled: Vec<(Option<usize>, String)>,
+    /// Each unit that reads as the frontmatter value that its rule binds it
+    /// to, whose text is then the value's own (`TLMD_312`).
+    pub(super) bound: Vec<Bound>,
+    /// The line of each repair of a fixed text that the walk of a group's
+    /// repetition holds back where the repetition is the group's last: an
+    /// empty optional position after the group would take its unit
+    /// (`TLMD_286`).
+    pub deferred: Vec<usize>,
+    /// How many groups the walk is inside: the repairs that a repetition
+    /// holds back wait for the outermost group to end.
+    pub group_depth: usize,
 }
 
 impl Checker<'_> {
@@ -207,6 +231,14 @@ impl Checker<'_> {
             .frontmatter
             .and_then(|f| f.get(key))
             .and_then(tramlines_core::Spanned::scalar_text)
+    }
+
+    /// The value of the frontmatter `key` as `rule` reads a unit: its
+    /// reading where the rule reads prose (`TLMD_259`), which the document
+    /// holds and the check reads when it compares.
+    // sokf-implements: TLMD_259
+    pub fn front_reading(&self, key: &str, rule: &UnitRule) -> Option<String> {
+        self.front_value(key).map(|v| rule.read_text(&v))
     }
 
     /// The text a `text` rule demands: its literal, or the value of the
@@ -275,6 +307,24 @@ impl Checker<'_> {
                 .frontmatter
                 .iter()
                 .any(|(k, rule)| k == key && !rule.optional && rule.common.only.admits(self.states))
+    }
+
+    /// Whether the frontmatter key `key` is one that the schema requires at
+    /// the document's states and that holds no value, which the check of
+    /// the frontmatter reports as missing (`TL_143`), so that a heading or
+    /// a unit bound to it reports nothing of its own (`TLMD_300`).
+    // sokf-implements: TLMD_300
+    pub fn value_missing(&self, key: &str) -> bool {
+        let required =
+            self.schema.core.frontmatter.iter().any(|(k, rule)| {
+                k == key && !rule.optional && rule.common.only.admits(self.states)
+            });
+        required
+            && self
+                .doc
+                .frontmatter
+                .and_then(|f| f.get(key))
+                .is_some_and(tramlines_core::frontmatter::holds_no_value)
     }
 
     /// Whether `section` may be absent from the document: its `optional`
@@ -370,6 +420,12 @@ impl Checker<'_> {
     /// the block, or that no declared section takes the heading above it,
     /// and checks none of them.
     pub fn broke_block(&mut self, block: &Block) {
+        self.record(Broken::Block(block.line..=block.end_line.max(block.line)));
+        // A code or an HTML block holds the line of anchors before it, as
+        // one of its lines does, an empty fence too.
+        if matches!(block.kind, BlockKind::Code | BlockKind::Html) {
+            self.record(Broken::Before(block.line));
+        }
         for unit in &block.units {
             self.broke(unit);
             for inner in &unit.nested {
@@ -447,6 +503,11 @@ pub fn check_against(
             .iter()
             .map(|(label, _, _)| squash(label).to_lowercase())
             .collect(),
+        body: &[],
+        settled: Vec::new(),
+        bound: Vec::new(),
+        deferred: Vec::new(),
+        group_depth: 0,
     };
     // sokf-implements: MD-4_AC-1
     frontmatter::check(&mut c);
@@ -460,6 +521,7 @@ pub fn check_against(
     anchors::check(&mut c);
     limits::check(&mut c);
     markers::check(&mut c);
+    bound::report_values(&mut c);
     // The host's rules run last, so that they can read what the engine
     // captured.
     // sokf-implements: MD-5_AC-12
@@ -473,7 +535,7 @@ pub fn check_against(
 /// declares, so that a fault in the state is reported once, on the
 /// frontmatter.
 // sokf-implements: TLMD_230
-fn possible(states: &States, lifecycle: &[LifecycleDimension]) -> States {
+pub(super) fn possible(states: &States, lifecycle: &[LifecycleDimension]) -> States {
     let mut possible = states.clone();
     for dim in lifecycle {
         let known = states
@@ -488,7 +550,7 @@ fn possible(states: &States, lifecycle: &[LifecycleDimension]) -> States {
 }
 
 /// Each section's `parent`, by its index among `sections`.
-fn parents(sections: &[&Section]) -> Vec<Option<usize>> {
+pub(super) fn parents(sections: &[&Section]) -> Vec<Option<usize>> {
     sections
         .iter()
         .map(|s| {
@@ -500,8 +562,14 @@ fn parents(sections: &[&Section]) -> Vec<Option<usize>> {
         .collect()
 }
 
+/// A unit's text, shortened, as one code span, as a finding quotes it
+/// (`TL_142`).
+pub(crate) fn quoted(text: &str) -> String {
+    crate::text::code(&short(text))
+}
+
 /// Shorten a unit's text for a message.
-pub(crate) fn short(text: &str) -> String {
+fn short(text: &str) -> String {
     const MAX: usize = 60;
     if text.chars().count() <= MAX {
         return text.to_string();

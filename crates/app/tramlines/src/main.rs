@@ -9,10 +9,14 @@
 //! line, `path:line: severity[KEY]: message`, then a count, or one JSON
 //! object with `--json`. Exit 0 on no error, 1 on an error, 2 on a usage
 //! error or a file that cannot be read.
+//!
+//! **This crate is unstable.** It is at a 0.x version, and its commands,
+//! options and file formats can change in any release.
 
 #![warn(missing_docs)]
 
 mod cli;
+mod guide;
 mod info;
 mod load;
 mod man;

@@ -17,12 +17,14 @@ A line of a code block matches none of the `lines` rules of its block ([TLMD_87]
 ### Message
 
 ```text
+<file>:<line>: error[TLMD_87]: `<line>` matches no rule of the fence; the nearest <failure>; a line of this kind reads `<example>`; declare it or set `lines-open` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_87]: `<line>` matches no rule of the fence; a line of this kind reads `<example>`, or reads `<example>`; declare it or set `lines-open` (schema <id>, <place of the rule>)
 <file>:<line>: error[TLMD_87]: `<line>` matches no rule of the fence; declare it or set `lines-open` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
 
-The unit rule of a code block declares `lines`, a grammar for the lines of the block. None of its rules with a shape matches this line, in whole or in part. The engine skips blank lines and ignores the indent of each line. When a line partly matches a rule, the engine reports `TLMD_57` instead.
+The unit rule of a code block declares `lines`, a grammar for the lines of the block. None of its rules with a shape matches this line, in whole or in part. The engine skips blank lines and ignores the indent of each line. When a line partly matches a rule, the engine reports `TLMD_57` instead. As for [TLMD_53][sokf:errors-units#tlmd_53], the message names the rule whose example begins as the line does for longest, or else gives the example of each rule whose example begins as it does for as long.
 
 ### Fix
 
@@ -60,7 +62,7 @@ port=80
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:5: error[TLMD_87]: `# the default` matches no rule of the fence; declare it or set `lines-open` (schema note, section "Config" block 1)
+note.md:5: error[TLMD_87]: `# the default` matches no rule of the fence; a line of this kind reads `port=80`; declare it or set `lines-open` (schema note, section "Config" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -160,13 +162,13 @@ A rule pairs a unit or a section with each key that another rule captures, and o
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_95]: no <unit> names key `<key>` of rule `<rule-id>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_95]: no <unit> names key `<key>` of set `<set>` (schema <id>, <place of the rule>)
 <file>:<line>: error[TLMD_95]: no `<section>` section for key `<key>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
 
-A unit rule or a section declares `for-each-key-of`, which names a set of keys by the `rule-id` of a section or a block, or by a `key-of`. The engine expects one unit or section for each key of the set, and the document contains none for this key. The error is on the line that captures the key. Where the section declares a `parent`, the engine checks each occurrence of the parent on its own, and ends the message with ``under `<parent heading>` ``.
+A unit rule or a section declares `for-each-key-of`, which names a set of keys by the `rule-id` of a section or a block, or by a `key-of`. The engine expects one unit or section for each key of the set, and the document contains none for this key. A key of a line of a fence, which reads as written, and a key of prose are one key where they show the same text as prose, so the item `a*b* - One.` names the key `a*b*` of a line of a fence, and so does `ab - One.` ([TLMD_287][sokf:tramlines:tramlines-md-spec#tlmd_287]). The error is on the line that captures the key. Where the section declares a `parent`, the engine checks each occurrence of the parent on its own, and ends the message with ``under `<parent heading>` ``.
 
 ### Fix
 
@@ -208,7 +210,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:4: error[TLMD_95]: no item names key `saw` of rule `tools` (schema note, section "Tools")
+note.md:4: error[TLMD_95]: no item names key `saw` of set `tools` (schema note, section "Tools")
 1 error, 0 warnings
 [exit 1]
 ```
@@ -239,8 +241,8 @@ A unit or a section names a key that its paired rule doesn't capture ([TLMD_96][
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_96]: key `<key>` is not one rule `<rule-id>` captured (schema <id>, <place of the rule>)
-<file>:<line>: error[TLMD_96]: section names key `<key>`, which rule `<rule-id>` did not capture (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_96]: key `<key>` is not a key of set `<set>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_96]: section names key `<key>`, which is not a key of set `<set>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
@@ -249,7 +251,7 @@ A unit rule or a section declares `for-each-key-of`, which names a set of keys b
 
 ### Fix
 
-Change the key in the document to one that the named rule captures, add the key to that rule, or remove the unit or section.
+Change the key in the document to one that the named set holds, add the key to a rule that the set takes its keys from, or remove the unit or section.
 
 ### Example
 
@@ -268,7 +270,7 @@ The schema is the same as in the `TLMD_95` example. This document describes `dri
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:6: error[TLMD_96]: key `drill` is not one rule `tools` captured (schema note, section "Tools")
+note.md:6: error[TLMD_96]: key `drill` is not a key of set `tools` (schema note, section "Tools")
 1 error, 0 warnings
 [exit 1]
 ```
@@ -373,8 +375,8 @@ The `for-each-key-of` of a section or a unit rule names no section, block, or `k
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_167]: `for-each-key-of` names no rule `<rule-id>`
-<file>:<line>: error[TLMD_167]: `for-each-key-of` names rule `<rule-id>`, which captures no key
+<file>:<line>: error[TLMD_167]: `for-each-key-of` names no set `<set>`
+<file>:<line>: error[TLMD_167]: `for-each-key-of` names set `<set>`, which holds no key
 <file>:<line>: error[TLMD_167]: `for-each-key-of` names `<rule-id>`, the `rule-id` of a unit rule, which holds no key: declare `key-of: <rule-id>` on each rule whose keys it means, or name the `key-of` that the rule declares
 ```
 
@@ -413,7 +415,7 @@ The document is the fixed document from the `TLMD_96` example:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.yaml:11: error[TLMD_167]: `for-each-key-of` names no rule `tool`
+note.yaml:11: error[TLMD_167]: `for-each-key-of` names no set `tool`
 1 error, 0 warnings
 [exit 1]
 ```
@@ -522,8 +524,10 @@ $ tramlines validate --schema note.yaml note.md
 
 <!-- sokf:links -->
 
+[sokf:errors-units#tlmd_53]: /docs/reference/errors-units.md#tlmd_53
 [sokf:tramlines:tramlines-md-spec#tlmd_167]: /knowledge/spec/tramlines-md-spec.md#tlmd_167
 [sokf:tramlines:tramlines-md-spec#tlmd_237]: /knowledge/spec/tramlines-md-spec.md#tlmd_237
+[sokf:tramlines:tramlines-md-spec#tlmd_287]: /knowledge/spec/tramlines-md-spec.md#tlmd_287
 [sokf:tramlines:tramlines-md-spec#tlmd_87]: /knowledge/spec/tramlines-md-spec.md#tlmd_87
 [sokf:tramlines:tramlines-md-spec#tlmd_90]: /knowledge/spec/tramlines-md-spec.md#tlmd_90
 [sokf:tramlines:tramlines-md-spec#tlmd_95]: /knowledge/spec/tramlines-md-spec.md#tlmd_95

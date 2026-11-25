@@ -216,73 +216,6 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
-## TLMD_145
-
-A code block opens with fewer backticks than the `fence` of its block requires ([TLMD_145][sokf:tramlines:tramlines-md-spec#tlmd_145]).
-
-### Message
-
-```text
-<file>:<line>: error[TLMD_145]: the fence has <count> backticks; at least <fence> are needed (schema <id>, <place of the rule>)
-```
-
-### Cause
-
-The block of kind `code` sets `fence`, the minimum number of backticks in its fences. The fence of the code block in the document is shorter. A longer fence lets the block contain lines of three backticks, such as a Markdown example with its own code block.
-
-### Fix
-
-Open and close the code block in the document with at least as many backticks as `fence` sets. If a shorter fence is enough, lower `fence` in the schema, or remove it to use the default of three.
-
-### Example
-
-This schema expects Markdown in a fence of four backticks, and the document uses three:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-sections:
-  - heading: Config
-    level: 1
-    blocks:
-      - { kind: code, lang: markdown, fence: 4, example: '# Title' }
-```
-
-**`note.md`**
-
-````markdown
-# Config
-
-```markdown
-# Title
-```
-````
-
-```console
-$ tramlines validate --schema note.yaml note.md
-note.md:3: error[TLMD_145]: the fence has 3 backticks; at least 4 are needed (schema note, section "Config" block 1)
-1 error, 0 warnings
-[exit 1]
-```
-
-Use four backticks:
-
-**`note.md`**
-
-`````markdown
-# Config
-
-````markdown
-# Title
-````
-`````
-
-```console
-$ tramlines validate --schema note.yaml note.md
-0 errors, 0 warnings
-```
-
 ## TLMD_44
 
 The header row of a table differs from the `columns` that its block declares ([TLMD_44][sokf:tramlines:tramlines-md-spec#tlmd_44]).
@@ -563,8 +496,8 @@ The path of an image doesn't match the `source-pattern` of its block ([TLMD_163]
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_163]: the image `<path>` does not match `<pattern>`; a target of this kind reads <example> (schema <id>, <place of the rule>)
-<file>:<line>: error[TLMD_163]: the image `<reference>` names a document; this rule takes what matches `<pattern>`, a file or an asset by its path; a target of this kind reads <example> (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_163]: the image `<path>` does not match `<pattern>`; a target of this kind reads `<example>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_163]: the image `<reference>` names a document; this rule takes what matches `<pattern>`, a file or an asset by its path; a target of this kind reads `<example>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
@@ -602,7 +535,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:3: error[TLMD_163]: the image `flow.png` does not match `^images/.+\.svg$`; a target of this kind reads ![Flow](images/flow.svg) (schema note, section "Diagram" block 1)
+note.md:3: error[TLMD_163]: the image `flow.png` does not match `^images/.+\.svg$`; a target of this kind reads `![Flow](images/flow.svg)` (schema note, section "Diagram" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -773,7 +706,6 @@ $ tramlines validate --schema note.yaml note.md
 <!-- sokf:links -->
 
 [sokf:errors-blocks#tlmd_162]: /docs/reference/errors-blocks.md#tlmd_162
-[sokf:tramlines:tramlines-md-spec#tlmd_145]: /knowledge/spec/tramlines-md-spec.md#tlmd_145
 [sokf:tramlines:tramlines-md-spec#tlmd_153]: /knowledge/spec/tramlines-md-spec.md#tlmd_153
 [sokf:tramlines:tramlines-md-spec#tlmd_163]: /knowledge/spec/tramlines-md-spec.md#tlmd_163
 [sokf:tramlines:tramlines-md-spec#tlmd_172]: /knowledge/spec/tramlines-md-spec.md#tlmd_172

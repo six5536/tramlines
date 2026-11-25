@@ -13,7 +13,10 @@
 
 use std::{collections::BTreeMap, fmt::Write as _};
 
-use super::{Deriver, deriver::push_unique};
+use super::{
+    Deriver,
+    deriver::{Examples, Mode, push_unique},
+};
 use crate::{
     RepoPath,
     check::{self, Host},
@@ -84,7 +87,7 @@ pub fn derive(schema: &Schema, host: &dyn Host) -> std::result::Result<Derived, 
     // sokf-implements: MD-7_AC-8
     // sokf-implements: MD-7_AC-1
     for states in combinations(schema) {
-        let (result, omitted) = one(schema, &states, host);
+        let (result, omitted) = one(schema, &states, host, Mode::Scaffold, &BTreeMap::new());
         push_unique(&mut derived.omitted, omitted);
         match result {
             // sokf-implements: MD-7_AC-9
@@ -104,6 +107,7 @@ pub fn derive(schema: &Schema, host: &dyn Host) -> std::result::Result<Derived, 
 }
 
 /// The document at one state combination.
+// sokf-implements: MD-7_AC-19
 // sokf:begin derive
 pub fn derive_one(
     schema: &Schema,
@@ -111,18 +115,74 @@ pub fn derive_one(
     host: &dyn Host,
 ) -> std::result::Result<String, Vec<Refusal>> {
     // sokf:end derive
-    one(schema, states, host).0
+    derive_for(schema, states, host, &BTreeMap::new())
 }
 
-/// The document at one state combination, and the optional parts left out.
-fn one(
+/// The scaffold at one state combination for a document whose frontmatter
+/// holds `values`, such as the id and the title that the host has given it:
+/// each value is written in place of the schema's, unless the schema fixes
+/// the key by `const`, and each heading, unit and key that derives from a
+/// value derives from the document's.
+// sokf-implements: MD-7_AC-18
+// sokf:begin derive
+pub fn derive_for(
     schema: &Schema,
     states: &States,
     host: &dyn Host,
-) -> (std::result::Result<String, Vec<Refusal>>, Vec<Refusal>) {
+    values: &BTreeMap<String, String>,
+) -> std::result::Result<String, Vec<Refusal>> {
+    // sokf:end derive
+    one(schema, states, host, Mode::Scaffold, values).0
+}
+
+/// The skeleton of a new document at one state combination, whose
+/// frontmatter holds `values`: what the schema prescribes and the values,
+/// and no example and no guidance. A schema that derives no scaffold at
+/// those states derives no skeleton either, with the same refusals.
+// sokf-implements: MD-17_AC-1
+// sokf-implements: MD-17_AC-2
+// sokf-implements: TLMD_302
+// sokf:begin skeleton
+pub fn skeleton(
+    schema: &Schema,
+    states: &States,
+    host: &dyn Host,
+    values: &BTreeMap<String, String>,
+) -> std::result::Result<String, Vec<Refusal>> {
+    // sokf:end skeleton
+    one(schema, states, host, Mode::Plain, values).0?;
+    one(schema, states, host, Mode::Skeleton, values).0
+}
+
+/// The text that the scaffold for a document whose frontmatter holds
+/// `values` writes for each part, or `None` where the schema derives no
+/// scaffold at `states`.
+pub(super) fn examples(
+    schema: &Schema,
+    states: &States,
+    host: &dyn Host,
+    values: &BTreeMap<String, String>,
+) -> Option<Examples> {
+    let mut d = deriver(schema, states, host, Mode::Plain, values);
+    d.examples = Some(Examples::default());
+    run(&mut d).0.ok()?;
+    d.examples
+}
+
+/// The derivation of one state combination in `mode`.
+fn deriver<'a>(
+    schema: &'a Schema,
+    states: &'a States,
+    host: &'a dyn Host,
+    mode: Mode,
+    given: &'a BTreeMap<String, String>,
+) -> Deriver<'a> {
     // sokf-implements: MD-5_AC-1
     let dialect = host.dialect();
     let mut d = Deriver {
+        mode,
+        given,
+        examples: None,
         schema,
         host,
         dialect,
@@ -146,24 +206,43 @@ fn one(
             .scaffold_label(&schema.labels)
             .filter(|k| d.labels.has_key(k));
     }
+    d
+}
+
+/// The document at one state combination in `mode`, and the optional parts
+/// left out.
+fn one(
+    schema: &Schema,
+    states: &States,
+    host: &dyn Host,
+    mode: Mode,
+    given: &BTreeMap<String, String>,
+) -> (std::result::Result<String, Vec<Refusal>>, Vec<Refusal>) {
+    run(&mut deriver(schema, states, host, mode, given))
+}
+
+/// Run the derivation `d`.
+fn run(d: &mut Deriver<'_>) -> (std::result::Result<String, Vec<Refusal>>, Vec<Refusal>) {
+    let dialect = d.dialect;
     let mut lines = d.frontmatter();
     if !lines.is_empty() {
         lines.push(String::new());
     }
     lines.extend(d.body());
     if !d.refusals.is_empty() {
-        return (Err(d.refusals), d.omitted);
+        return (Err(d.refusals.clone()), d.omitted.clone());
     }
     merge_optional(&mut lines, &dialect);
     let mut text = lines.join("\n");
     // sokf-implements: MD-7_AC-10
+    // sokf-implements: MD-17_AC-6
     while text.ends_with("\n\n") {
         text.pop();
     }
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    (Ok(text), d.omitted)
+    (Ok(text), d.omitted.clone())
 }
 
 /// Two optional regions that meet, with only blank lines between them,

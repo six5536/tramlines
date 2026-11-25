@@ -5,7 +5,9 @@ use std::collections::HashSet;
 
 use super::MdLowerer;
 use crate::{
-    grammar::{Block, DerivationSource, KeyDerivation, Label, Schema, Shape, Unit},
+    grammar::{
+        Block, DerivationSource, KeyDerivation, Label, Schema, Segment, Shape, Unit, carries_labels,
+    },
     markdown::BlockKind,
     text,
 };
@@ -112,8 +114,8 @@ impl MdLowerer<'_> {
                 s.common.line,
                 "TLMD_157",
                 format!(
-                    "section `{}` is not listed after its `parent` `{p}` with only its subsections between",
-                    s.label()
+                    "section {} is not listed after its `parent` `{p}` with only its subsections between",
+                    text::code(&s.label())
                 ),
             );
         }
@@ -178,6 +180,22 @@ impl MdLowerer<'_> {
                         b.kind.name_in(&self.dialect)
                     );
                     self.fail(u.common.line, "TLMD_90", message);
+                }
+                // A label stands straight after the key and before more
+                // text (TLMD_243, TLMD_244), so a unit that is only its key
+                // has no place for one.
+                // sokf-implements: TLMD_269
+                if carries_labels(b.kind)
+                    && b.label_of(Some(u)) == Some(Label::Required)
+                    && let Some(key) = only_key(schema, u)
+                {
+                    self.fail(
+                        u.common.line,
+                        "TLMD_269",
+                        format!(
+                            "a unit of this rule is only its key, the hole `{key}`, which leaves no place for a label, and the rule requires one: give the template text after the key, or declare `label: optional`"
+                        ),
+                    );
                 }
                 self.check_unit(u, Some(b.kind), schema);
             }
@@ -341,5 +359,38 @@ impl MdLowerer<'_> {
         for line in u.lines.iter().flatten() {
             self.check_unit(line, None, schema);
         }
+    }
+}
+
+/// The key that is the whole of a unit of `u`: the name of the one hole of
+/// a template, its own or its format's, that is nothing but that hole and
+/// captures the rule's key.
+fn only_key<'a>(schema: &'a Schema, u: &'a Unit) -> Option<&'a str> {
+    let (shape, key) = match (&u.shape, &u.format) {
+        (Some(shape), _) => (shape, u.key.as_deref()?),
+        (None, Some(name)) => {
+            let format = schema.core.formats.get(name)?;
+            let key = u.key.as_deref().or(format.key.as_deref())?;
+            // A format with variants is only its key where every variant is.
+            let shapes: Vec<&Shape> = format
+                .shape
+                .iter()
+                .chain(format.variants.iter().map(|(_, v)| &v.shape))
+                .collect();
+            return (!shapes.is_empty() && shapes.iter().all(|s| is_key(s, key))).then_some(key);
+        }
+        (None, None) => return None,
+    };
+    is_key(shape, key).then_some(key)
+}
+
+/// Whether `shape` is a template that is only the hole `key`.
+fn is_key(shape: &Shape, key: &str) -> bool {
+    match shape {
+        Shape::Template(t) => matches!(
+            t.segments.as_slice(),
+            [Segment::Hole { name: Some(n), .. }] if n == key
+        ),
+        _ => false,
     }
 }

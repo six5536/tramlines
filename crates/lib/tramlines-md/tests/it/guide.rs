@@ -2,10 +2,12 @@
 //! of a schema that some states admit, in the order of the schema, with
 //! the words of the scaffold's guidance lines.
 
+use std::collections::BTreeMap;
+
 use serde_json::json;
 use tramlines_md::{
     check::{Counts, Host, NullHost},
-    derive::{derive_one, guide},
+    derive::{derive_for, derive_one, guide, guide_for},
     grammar::{LimitKind, Schema, States},
 };
 
@@ -225,4 +227,116 @@ fn the_guide_serialises_with_the_names_of_the_grammar() {
     // A host can ask for states that admit no gated part.
     let none = guide(&schema, &States::default(), &NullHost);
     assert_eq!(none.sections.len(), 1);
+}
+
+// Each part of the guide gives the text that the scaffold writes for it,
+// without its guidance lines and markers: the line of a frontmatter key,
+// the whole of a section, and the units of a block.
+// sokf-tests: MD-13_AC-5
+// sokf-tests: MD-13_AC-6
+// sokf-tests: TLMD_310
+#[test]
+fn each_part_of_the_guide_gives_its_example() {
+    let schema = compile_ok(ISSUE);
+    let open = states(&[("state", "open")]);
+    let g = guide(&schema, &open, &NullHost);
+    assert_eq!(
+        g.frontmatter[0].example.as_deref(),
+        Some("title: Descale the kettle")
+    );
+    assert_eq!(g.frontmatter[1].example.as_deref(), Some("tags: [kitchen]"));
+    assert_eq!(g.frontmatter[2].example.as_deref(), Some("state: open"));
+    assert_eq!(
+        g.sections[0].example.as_deref(),
+        Some("# Descale the kettle\n\nThe kettle needs descaling before it breaks.")
+    );
+    assert_eq!(
+        g.sections[1].blocks[0].example.as_deref(),
+        Some("1. Step: buy vinegar.")
+    );
+    let values = [("title".to_string(), "Fix the tap".to_string())].into();
+    let mine = guide_for(&schema, &open, &NullHost, &values);
+    assert_eq!(
+        mine.sections[0].example.as_deref(),
+        Some("# Fix the tap\n\nThe kettle needs descaling before it breaks.")
+    );
+    assert_eq!(guide_for(&schema, &open, &NullHost, &BTreeMap::new()), g);
+}
+
+// A key that derives from a value of the frontmatter derives, in the
+// scaffold for a document and in the guide's example, from the document's
+// value, and a `const` keeps its value.
+// sokf-tests: MD-7_AC-18
+// sokf-tests: MD-7_AC-19
+// sokf-tests: TLMD_301
+#[test]
+fn the_values_of_a_document_derive_its_keys() {
+    let schema = compile_ok(
+        "line-limit: 0\nfrontmatter:\n  type:\n    const: Note\n  id:\n    example: P-1\nsections:\n  - heading: Items\n    level: 2\n    blocks:\n      - kind: bullet-list\n        each:\n          template: '${key} - ${}'\n          key: key\n          key-derives-from: { from: id, separator: '-' }\n          example: P-1-a - One.\n",
+    );
+    let at = States::default();
+    let values: BTreeMap<String, String> = [
+        ("id".to_string(), "Q-9".to_string()),
+        ("type".to_string(), "Other".to_string()),
+    ]
+    .into();
+    assert_eq!(
+        derive_for(&schema, &at, &NullHost, &values).unwrap(),
+        "---\ntype: Note\nid: Q-9\n---\n\n## Items\n\n- Q-9-a - One.\n"
+    );
+    assert_eq!(
+        guide_for(&schema, &at, &NullHost, &values).sections[0].blocks[0]
+            .example
+            .as_deref(),
+        Some("- Q-9-a - One.")
+    );
+    assert_eq!(
+        derive_for(&schema, &at, &NullHost, &BTreeMap::new()),
+        derive_one(&schema, &at, &NullHost)
+    );
+}
+
+// A schema that derives no scaffold gives no example of any part.
+// sokf-tests: TLMD_310
+#[test]
+fn a_schema_that_derives_nothing_gives_no_example() {
+    let schema = compile_ok(
+        "line-limit: 0\nsections:\n  - heading: Note\n    level: 1\n    blocks:\n      - kind: prose\n",
+    );
+    let g = guide(&schema, &States::default(), &NullHost);
+    assert_eq!(g.sections[0].example, None);
+    assert_eq!(g.sections[0].blocks[0].example, None);
+}
+
+// An optional section that the scaffold leaves out, because a rule inside
+// it has no example, gives no example of any of its parts.
+// sokf-tests: TLMD_310
+#[test]
+fn a_part_that_the_scaffold_leaves_out_gives_no_example() {
+    let schema = compile_ok(
+        "line-limit: 0\nsections:\n  - heading: Note\n    level: 1\n    blocks: []\n  - heading: Notes\n    level: 2\n    optional: true\n    blocks:\n      - kind: prose\n        example: A first note.\n      - kind: bullet-list\n",
+    );
+    let g = guide(&schema, &States::default(), &NullHost);
+    assert_eq!(g.sections[1].example, None);
+    assert_eq!(g.sections[1].blocks[0].example, None);
+}
+
+// A part that the scaffold writes without an optional part inside it, which
+// a rule of that part keeps out, gives the text that the scaffold writes.
+// sokf-tests: TLMD_310
+#[test]
+fn a_part_keeps_its_example_without_an_optional_part_left_out() {
+    let schema = compile_ok(
+        "line-limit: 0\nsections:\n  - heading: Note\n    level: 1\n    blocks:\n      - kind: prose\n        example: A first note.\n      - kind: bullet-list\n        optional: true\n  - heading: Steps\n    level: 2\n    blocks:\n      - kind: bullet-list\n        each:\n          example: A step.\n          blocks:\n            - kind: code\n              lang: any\n              optional: true\n",
+    );
+    let g = guide(&schema, &States::default(), &NullHost);
+    assert_eq!(
+        g.sections[0].example.as_deref(),
+        Some("# Note\n\nA first note.")
+    );
+    assert_eq!(g.sections[0].blocks[1].example, None);
+    assert_eq!(
+        g.sections[1].blocks[0].example.as_deref(),
+        Some("- A step.")
+    );
 }

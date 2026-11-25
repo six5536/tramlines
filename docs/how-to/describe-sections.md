@@ -128,7 +128,7 @@ crepes.md:9: error[TLMD_19]: heading `## Step one: Mix` is not declared (schema 
    - `subheadings-open: true` accepts undeclared headings deeper than the level of the section.
    - `headings-open: true` accepts undeclared headings at the level of the section or deeper.
 
-   The region runs to the next heading that the schema declares. Only the rules that apply to the whole document, such as `line-limit`, check the bodies inside it.
+   The region runs to the next heading that the schema declares, or to the next heading that the region doesn't accept: one of a higher level after `headings-open`, or one of the section's level or higher after `subheadings-open`. Only the rules that apply to the whole document, such as `line-limit`, check the bodies inside it.
 
 6. To keep some headings out of every open region, list them under `sections-prohibited`. Here writers can add any subheading under `Notes`, except `Draft`:
 

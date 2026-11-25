@@ -88,7 +88,7 @@ The body of a section contains a block that none of the blocks of the section cl
 
 ### Cause
 
-The engine checks the body of a section against exactly the blocks that the section declares under `blocks`, in order unless the section sets `blocks-ordered: false`. The block in the document comes after the blocks that the schema declares, or no declared block takes its kind. A stray block can also come before a declared block, when no later block of the section declares its kind. The engine reports the stray block once, then checks the following declared block as usual.
+The engine checks the body of a section against exactly the blocks that the section declares under `blocks`, in order unless the section sets `blocks-ordered: false`. The block in the document comes after the blocks that the schema declares, or no declared block takes its kind. A stray block can also come before a declared block, when no later block of the section declares its kind. The engine reports the stray block once, then checks the following declared block as usual. Link reference definitions at the top level of the body form a `references` block. A definition whose destination or title stands on a line after its label is one definition, as CommonMark reads it. A definition inside a list item, a blockquote, or a footnote's definition forms no block.
 
 ### Fix
 

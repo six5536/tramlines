@@ -37,7 +37,7 @@ When the body of a section must contain certain paragraphs, lists, tables, or co
 
 6. Add the keys of each kind:
 
-   - A `code` block needs `lang`: a tag, a list of tags, or `any`. A fence without a tag always fails. `fence` sets the minimum number of backticks. The default is three.
+   - A `code` block needs `lang`: a tag, a list of tags, or `any`. A fence without a tag always fails. `fence` sets the least number of backticks of the fence that a scaffold writes. The default is three. The check accepts a fence of any length, of backticks or of tildes.
    - A `table` needs `columns`, the cells of its header row in order. `columns-open: true` accepts more columns after them. A unit of a table is a row, and a template matches the row as its cells separated by ` | `.
    - An `image` block takes `source-pattern`, a regular expression that each image path must match.
    - Any block takes `inline-html: true`. Without it, HTML other than a comment fails.
@@ -191,7 +191,7 @@ sync.md:14: error[TLMD_39]: unexpected prose block (schema meeting, section "Att
 sync.md:16: error[TLMD_44]: the table header is `Name | Team`; expected `Name | Role` (schema meeting, section "Attendees" block 1)
 sync.md:22: error[TLMD_45]: inline HTML is not accepted here (schema meeting, section "Decisions" block 1)
 sync.md:24: error[TLMD_43]: the code block is tagged `sh`; expected `text` or `console` (schema meeting, section "Decisions" block 2)
-sync.md:30: error[TLMD_163]: the image `board.png` does not match `^images/.+\.png$`; a target of this kind reads ![Whiteboard](images/board.png) (schema meeting, section "Photos" block 1)
+sync.md:30: error[TLMD_163]: the image `board.png` does not match `^images/.+\.png$`; a target of this kind reads `![Whiteboard](images/board.png)` (schema meeting, section "Photos" block 1)
 6 errors, 0 warnings
 [exit 1]
 ```

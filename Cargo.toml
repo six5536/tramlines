@@ -6,7 +6,7 @@ members = ["crates/*/*"]
 default-members = ["crates/app/tramlines", "crates/lib/tramlines-core", "crates/lib/tramlines-md"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 authors = ["six5536 <10079653+six5536@users.noreply.github.com>"]
 edition = "2024"
 rust-version = "1.96.0"
@@ -27,6 +27,7 @@ globset = "0.4"
 ignore = "0.4"
 jmespath = "0.5"
 regex = "1.13"
+regex-syntax = "0.8.12"
 rusqlite = { version = "0.40", features = ["bundled"] }
 saphyr = "0.1"
 saphyr-parser = "0.1"
@@ -44,8 +45,8 @@ boon = "0.6"
 proptest = "1.11"
 
 # Internal crates
-tramlines-core = { path = "crates/lib/tramlines-core", version = "0.5.0" }
-tramlines-md = { path = "crates/lib/tramlines-md", version = "0.5.0" }
+tramlines-core = { path = "crates/lib/tramlines-core", version = "0.6.0" }
+tramlines-md = { path = "crates/lib/tramlines-md", version = "0.6.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

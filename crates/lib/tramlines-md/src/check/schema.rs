@@ -2,13 +2,14 @@
 //! scaffold of each state combination, the `only` markers of each
 //! scaffold, and the complete examples.
 
-use super::{CheckOptions, Gate, Host, check_against, example, short};
+use super::{CheckOptions, Gate, Host, check_against, example, label, quoted, spelling};
 use crate::{
     Finding, Locator, RepoPath, Severity,
     derive::derive,
     document::Document,
     grammar::{Block, Condition, Only, RuleCommon, Schema, States, squash},
     markdown::Dialect,
+    text,
 };
 
 /// Every finding a compiled schema raises on itself, reported on `path`;
@@ -28,6 +29,9 @@ pub fn check_schema(schema: &Schema, host: &dyn Host, path: &RepoPath, id: &str)
     // sokf-implements: MD-6_AC-1
     // sokf-implements: MD-6_AC-7
     let (mut findings, failed) = example::check_examples(schema, host, path, id);
+    // sokf-implements: MD-6_AC-11
+    findings.extend(spelling::check(schema, path, id));
+    findings.extend(same_words(schema, host, path));
     // sokf-implements: MD-6_AC-2
     let scaffolds = match derive(schema, host) {
         Ok(derived) => {
@@ -100,7 +104,7 @@ pub fn check_schema(schema: &Schema, host: &dyn Host, path: &RepoPath, id: &str)
             let at = line_of(f)
                 .map(str::trim)
                 .filter(|l| !l.is_empty())
-                .map(|l| format!(" at `{}`", short(l)))
+                .map(|l| format!(" at {}", quoted(l)))
                 .unwrap_or_default();
             findings.push(Finding::error(
                 path.clone(),
@@ -256,7 +260,7 @@ fn check_markers(
     let lines: Vec<&str> = text.lines().collect();
     let part = |line: usize| {
         let text = lines.get(line.wrapping_sub(1)).map_or("", |l| l.trim());
-        format!("`{}`", short(text))
+        quoted(text)
     };
     let only = dialect.spell("only");
     let mut out = Vec::new();
@@ -280,8 +284,8 @@ fn check_markers(
             out.push((
                 at.first().map(|g| g.rule),
                 format!(
-                    "the `{only}` marker `{}` is malformed; write `{only} <key>=<state>[,<state>]…`, and join the maps of a condition with ` | `",
-                    short(line.trim())
+                    "the `{only}` marker {} is malformed; write `{only} <key>=<state>[,<state>]…`, and join the maps of a condition with ` | `",
+                    quoted(line.trim())
                 ),
             ));
             continue;
@@ -327,6 +331,34 @@ fn check_markers(
         ));
     }
     out
+}
+
+/// A finding for each label whose words, as the host gives them, are the
+/// words of an earlier label, because a document that writes them then
+/// reads as the earlier label alone.
+// sokf-implements: TLMD_270
+fn same_words(schema: &Schema, host: &dyn Host, path: &RepoPath) -> Vec<Finding> {
+    let words = label::words_of(schema, host);
+    let labels: Vec<(&str, &str)> = words.iter().collect();
+    let line = schema.core.key_lines.get("labels").copied();
+    labels
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (key, w))| {
+            // A document's label is matched against the host's words as
+            // given, squashed, so only the same words are one label there.
+            let (first, _) = labels[..i].iter().find(|(_, v)| v == w)?;
+            Some(Finding::error(
+                path.clone(),
+                line,
+                "TLMD_270",
+                format!(
+                    "the labels `{first}` and `{key}` both read {} in the words that the host gives, so a document can't write `{key}`: give each label words of its own",
+                    text::code(&format!("[{w}]"))
+                ),
+            ))
+        })
+        .collect()
 }
 
 #[cfg(test)]

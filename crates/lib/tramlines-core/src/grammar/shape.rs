@@ -6,7 +6,7 @@
 use regex::{Captures, Regex};
 
 use super::{LineTemplate, RegexCache, Text, TypeRegistry, template};
-use crate::{Problem, Spanned};
+use crate::{Problem, Spanned, text};
 
 /// A unit's shape.
 #[derive(Debug, Clone)]
@@ -57,11 +57,31 @@ impl Shape {
     /// sentence that opens with the text: `does not match …` or `fails at
     /// column …`. `text` names the shape of a literal.
     pub fn failure(&self, text: &str) -> String {
+        self.failure_quoting(text, &Quote::same(text))
+    }
+
+    /// As `failure`, for a `text` that a format grammar read in another
+    /// spelling: the column and the text found of a template come from
+    /// `quote`, the text as written.
+    pub fn failure_quoting(&self, text: &str, quote: &Quote<'_>) -> String {
         match self {
-            Shape::Text(Text::Literal(want)) => format!("must read `{}`", squash(want)),
+            Shape::Text(Text::Literal(want)) => format!("must read {}", text::code(&squash(want))),
             Shape::Text(Text::From(key)) => format!("must equal the frontmatter `{key}`"),
-            Shape::Template(t) => format!("fails at {}", t.failure(text).describe(text)),
-            Shape::Pattern(p) => format!("does not match `{}`", p.as_str()),
+            Shape::Template(t) => format!("fails at {}", t.failure(text).quoted(quote)),
+            Shape::Pattern(p) => format!("does not match {}", text::code(p.as_str())),
+        }
+    }
+
+    /// The shape as a format grammar reads it: each literal text read
+    /// through `read`, which reads a text in the grammar's spelling, a
+    /// template read whole with each hole as a placeholder, and a pattern
+    /// and a frontmatter key as they are.
+    #[must_use]
+    pub fn read_with(&self, read: &dyn Fn(&str) -> String) -> Shape {
+        match self {
+            Shape::Text(Text::Literal(want)) => Shape::Text(Text::Literal(read(want))),
+            Shape::Template(t) => Shape::Template(t.read_with(read).unwrap_or_else(|| t.clone())),
+            other => other.clone(),
         }
     }
 
@@ -194,12 +214,57 @@ impl Squashed {
         Squashed { text: out, map }
     }
 
+    /// `text`, whose byte `i` stands for byte `map[i]` of another text,
+    /// squashed, each byte of the result mapped to that other text. `map`
+    /// holds one entry past the end of `text`.
+    pub fn mapped(text: &str, map: &[usize]) -> Squashed {
+        let own = Squashed::new(text);
+        let to = |i: usize| map.get(i).copied().unwrap_or(*map.last().unwrap_or(&0));
+        Squashed {
+            map: own.map.iter().map(|&i| to(i)).collect(),
+            text: own.text,
+        }
+    }
+
     /// The offset in the original text of offset `i` of the squashed one.
     pub fn original(&self, i: usize) -> usize {
         self.map
             .get(i)
             .copied()
             .unwrap_or(*self.map.last().unwrap_or(&0))
+    }
+}
+
+/// How a finding quotes a text that a shape read in another spelling: the
+/// text as written, and the offset in it of each offset of the text as
+/// read, up to one past its end.
+#[derive(Clone, Copy)]
+pub struct Quote<'a> {
+    /// The text as written.
+    pub text: &'a str,
+    /// The offset in `text` of an offset of the text as read.
+    pub at: &'a dyn Fn(usize) -> usize,
+}
+
+impl<'a> Quote<'a> {
+    /// A text quoted as it was read.
+    pub fn same(text: &'a str) -> Quote<'a> {
+        Quote { text, at: &|i| i }
+    }
+
+    /// The offset in the text as written of offset `i` of the text as
+    /// read, on a character boundary.
+    pub fn offset(&self, i: usize) -> usize {
+        self.text
+            .floor_char_boundary((self.at)(i).min(self.text.len()))
+    }
+}
+
+impl std::fmt::Debug for Quote<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Quote")
+            .field("text", &self.text)
+            .finish_non_exhaustive()
     }
 }
 
@@ -237,6 +302,18 @@ mod tests {
         let e = shape_of(&node, &TypeRegistry::built_ins(), &RegexCache::new()).unwrap_err();
         assert!(e.message.contains("one shape"), "{e:?}");
         assert_eq!(e.criterion, "TL_22");
+    }
+
+    #[test]
+    fn a_mapped_text_squashes_and_maps_to_the_other_text() {
+        // `a  _b_` read from `a  *b*`: the same length, mapped one to one,
+        // and `x` read from `\\x`, the backslash dropped.
+        let s = Squashed::mapped("a  _b_", &[0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(s.text, "a _b_");
+        assert_eq!(s.map, vec![0, 1, 3, 4, 5, 6]);
+        let s = Squashed::mapped(" x", &[0, 2, 3]);
+        assert_eq!(s.text, "x");
+        assert_eq!(s.map, vec![2, 3]);
     }
 
     // sokf-tests: TL_23

@@ -357,7 +357,7 @@ examples:
 
 ```console
 $ tramlines validate --schema tasks.yaml tasks.md
-tasks.yaml:11: error[TL_69]: example 1 fails: line 3: [TL_74] `buy milk` fails at column 1: expected `TODO `, found `buy milk`; an item of this kind reads TODO buy milk (schema tasks, section "Tasks" block 1)
+tasks.yaml:11: error[TL_69]: example 1 fails: line 3: [TL_74] `buy milk` fails at column 1: expected `TODO `, found `buy milk`; an item of this kind reads `TODO buy milk` (schema tasks, section "Tasks" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -396,12 +396,12 @@ The key of the example of a rule that declares `key-derives-from` doesn't start 
 
 ```text
 <file>:<line>: error[TL_127]: the key `<key>` of the example does not start with `<parent>`, the value that the scaffold writes for the frontmatter `<frontmatter key>`, followed by the separator `<separator>` (schema <id>, <place of the rule>)
-<file>:<line>: error[TL_127]: the key `<key>` of the example does not start with `<parent>`, a key of the example of rule `<rule-id>`, followed by the separator `<separator>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_127]: the key `<key>` of the example does not start with `<parent>`, a key of an example of set `<set>`, followed by the separator `<separator>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
 
-A key that derives from a frontmatter value or from the key of another rule starts with that prefix and the separator. The value that the schema states for a frontmatter key is the one that the scaffold writes from the schema: its `const`, else the id that its `id` template renders, else its `example`, else the first value of its `enum` ([TL_129][sokf:tramlines:tramlines-spec#tl_129]). For a rule, it is each key that the examples of the rule capture. The scaffold writes its own prefix in place of that value and the separator at the start of the example's key. An example that starts with another prefix contradicts its schema, and the scaffold can't tell which part of the key is the prefix, because a prefix can contain the separator. The first message names the value of a frontmatter key, and the second names the keys of the examples of a rule, each once, joined by `or` when there are several. A key whose value only the host supplies has no value in the schema, so its example is not checked.
+A key that derives from a frontmatter value or from the key of another rule starts with that prefix and the separator. The value that the schema states for a frontmatter key is the one that the scaffold writes from the schema: its `const`, else the id that its `id` template renders, else its `example`, else the first value of its `enum` ([TL_129][sokf:tramlines:tramlines-spec#tl_129]). For a rule, it is each key that the examples of the rule capture. A value of a frontmatter key reads in the fixed spelling of its markup, as the key of the example does, and a key of an example of a line of a fence and a key of an example of prose are compared by the text that each shows as prose ([TLMD_287][sokf:tramlines:tramlines-md-spec#tlmd_287]). The scaffold writes its own prefix in place of that value and the separator at the start of the example's key. An example that starts with another prefix contradicts its schema, and the scaffold can't tell which part of the key is the prefix, because a prefix can contain the separator. The first message names the value of a frontmatter key, and the second names the keys of the examples of a rule, each once, joined by `or` when there are several. A key whose value only the host supplies has no value in the schema, so its example is not checked.
 
 ### Fix
 
@@ -484,6 +484,7 @@ $ tramlines validate --schema bugs.yaml bugs.md
 <!-- sokf:links -->
 
 [sokf:errors-example-lists]: /docs/reference/errors-example-lists.md
+[sokf:tramlines:tramlines-md-spec#tlmd_287]: /knowledge/spec/tramlines-md-spec.md#tlmd_287
 [sokf:tramlines:tramlines-spec#tl_127]: /knowledge/spec/tramlines-spec.md#tl_127
 [sokf:tramlines:tramlines-spec#tl_129]: /knowledge/spec/tramlines-spec.md#tl_129
 [sokf:tramlines:tramlines-spec#tl_64]: /knowledge/spec/tramlines-spec.md#tl_64

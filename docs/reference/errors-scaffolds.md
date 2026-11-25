@@ -84,8 +84,8 @@ tramlines can't derive a scaffold from the schema, because the example of a rule
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_154]: the schema derives no scaffold: a rule demands one unit per key of `<rule-id>`, and its example `<example>` does not carry `<key>` where `<hole>` reads it
-<file>:<line>: error[TLMD_154]: the schema derives no scaffold: a section demands one heading per key of `<rule-id>`, and its example `<example>` does not carry `<key>` where `<hole>` reads it
+<file>:<line>: error[TLMD_154]: the schema derives no scaffold: a rule demands one unit per key of set `<set>`, and its example `<example>` does not carry `<key>` where `<hole>` reads it
+<file>:<line>: error[TLMD_154]: the schema derives no scaffold: a section demands one heading per key of set `<set>`, and its example `<example>` does not carry `<key>` where `<hole>` reads it
 <file>:<line>: error[TLMD_154]: the schema derives no scaffold: a key deriving from <source> cannot be written: `<key>` does not read as `<derived key>` where `<hole>` takes it
 ```
 
@@ -132,7 +132,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.yaml:11: error[TLMD_154]: the schema derives no scaffold: a rule demands one unit per key of rule `tools`, and its example `hammer: drives nails` does not carry `claw hammer` where `name` reads it
+note.yaml:11: error[TLMD_154]: the schema derives no scaffold: a rule demands one unit per key of set `tools`, and its example `hammer: drives nails` does not carry `claw hammer` where `name` reads it
 1 error, 0 warnings
 [exit 1]
 ```
@@ -234,6 +234,75 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
+## TLMD_277
+
+tramlines can't derive a scaffold from the schema, because a paragraph or an item takes a text that no paragraph or item can hold ([TLMD_277][sokf:tramlines:tramlines-md-spec#tlmd_277]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_277]: the schema derives no scaffold: the `text` of a unit rule is empty, which no <unit> can hold
+<file>:<line>: error[TLMD_277]: the schema derives no scaffold: the value that the scaffold writes for the frontmatter `<key>` holds `<value>`, which no <unit> can hold: on a line of its own it starts <block>
+```
+
+### Cause
+
+The scaffold writes the `text` of a unit rule, or the value that it writes for the frontmatter key of `text: { from: <key> }`, as the unit. No text of the unit's kind reads as that text: it is empty, or it starts an HTML block, such as `<div>`. A text that starts another block, such as `# x`, is no error: the scaffold writes it with a backslash before the punctuation character that starts the block. The error is on the schema file, at the line of the rule.
+
+### Fix
+
+In the schema, give the `text`, or the `example` of the frontmatter key, a text that a paragraph or an item can hold.
+
+### Example
+
+The example of the `description` of this schema is an HTML tag:
+
+**`list.yaml`**
+
+```yaml
+line-limit: 0
+frontmatter:
+  description:
+    example: '<div>'
+sections:
+  - heading: List
+    level: 1
+    blocks:
+      - kind: prose
+        each:
+          text: { from: description }
+```
+
+```console
+$ tramlines validate --schema list.yaml
+list.yaml:11: error[TLMD_277]: the schema derives no scaffold: the value that the scaffold writes for the frontmatter `description` holds `<div>`, which no paragraph can hold: on a line of its own it starts an HTML block
+1 error, 0 warnings
+[exit 1]
+```
+
+Give the key an example that a paragraph holds:
+
+**`list.yaml`**
+
+```yaml
+line-limit: 0
+frontmatter:
+  description:
+    example: What to buy this week.
+sections:
+  - heading: List
+    level: 1
+    blocks:
+      - kind: prose
+        each:
+          text: { from: description }
+```
+
+```console
+$ tramlines validate --schema list.yaml
 0 errors, 0 warnings
 ```
 
@@ -541,3 +610,4 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-md-spec#tlmd_154]: /knowledge/spec/tramlines-md-spec.md#tlmd_154
 [sokf:tramlines:tramlines-md-spec#tlmd_155]: /knowledge/spec/tramlines-md-spec.md#tlmd_155
 [sokf:tramlines:tramlines-md-spec#tlmd_164]: /knowledge/spec/tramlines-md-spec.md#tlmd_164
+[sokf:tramlines:tramlines-md-spec#tlmd_277]: /knowledge/spec/tramlines-md-spec.md#tlmd_277

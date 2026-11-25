@@ -326,7 +326,7 @@ A key in the document doesn't start with a prefix that the `key-derives-from` of
 ### Message
 
 ```text
-<file>:<line>: error[TL_33]: key `<key>` derives from `<prefix>`, which rule `<rule-id>` did not capture (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_33]: key `<key>` derives from `<prefix>`, which is not a key of set `<set>` (schema <id>, <place of the rule>)
 <file>:<line>: error[TL_33]: key `<key>` derives from `<prefix>`, which is not `<value>`, the value of the frontmatter `<frontmatter key>` (schema <id>, <place of the rule>)
 <file>:<line>: error[TL_33]: key `<key>` derives from `<prefix>`, and the frontmatter `<frontmatter key>` that it derives from is absent (schema <id>, <place of the rule>)
 <file>:<line>: error[TL_33]: key `<key>` has no `<separator>` separator to derive from (schema <id>, <place of the rule>)
@@ -334,11 +334,11 @@ A key in the document doesn't start with a prefix that the `key-derives-from` of
 
 ### Cause
 
-`key-derives-from: { rule: <rule-id>, separator: <separator> }` requires each key to start with a key that the named rule captured, followed by the separator. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` requires it to start with the value of that frontmatter key, followed by the separator. A prefix can contain the separator, so `CE-BUG-1` derives from `CE-BUG` with the separator `-`, and a key that more than one prefix starts derives from the longest ([TL_126][sokf:tramlines:tramlines-spec#tl_126]). The error means that a key in the document starts with no such prefix, or contains no separator at all. The message names the text before the last separator as the prefix that the key derives from, because a prefix can contain the separator, and shows the value after the frontmatter key's name.
+`key-derives-from: { rule: <rule-id>, separator: <separator> }` requires each key to start with a key of the named set, the keys that the section or the block whose `rule-id` it is and each rule whose `key-of` it is captured, followed by the separator. `key-derives-from: { from: <frontmatter key>, separator: <separator> }` requires it to start with the value of that frontmatter key, followed by the separator. The value reads in the fixed spelling of its markup, as the key does, so the value `a*b*` is the prefix of the key `a*b*-1`, which reads as `a_b_-1`. A key of a line of a fence, which reads as written, and a key of prose are compared by the text that each shows as prose, so the key `a*b*-1` of an item derives from the key `a*b*` of a line of a fence, and so does `ab-1` ([TLMD_287][sokf:tramlines:tramlines-md-spec#tlmd_287]). A prefix can contain the separator, so `CE-BUG-1` derives from `CE-BUG` with the separator `-`, and a key that more than one prefix starts derives from the longest ([TL_126][sokf:tramlines:tramlines-spec#tl_126]). The error means that a key in the document starts with no such prefix, or contains no separator at all. The message names the text before the last separator as the prefix that the key derives from, because a prefix can contain the separator, and shows the value after the frontmatter key's name.
 
 ### Fix
 
-Change the key in the document so that its prefix is a key of the named rule or the frontmatter value. If the schema names the wrong rule, frontmatter key, or separator, fix `key-derives-from` in the schema instead.
+Change the key in the document so that its prefix is a key of the named set or the frontmatter value. If the schema names the wrong set, frontmatter key, or separator, fix `key-derives-from` in the schema instead.
 
 ### Example
 
@@ -506,9 +506,9 @@ A `key-derives-from` names a rule or a frontmatter key that the schema doesn't d
 ### Message
 
 ```text
-<file>:<line>: error[TL_117]: `key-derives-from` names no rule `<rule-id>`
+<file>:<line>: error[TL_117]: `key-derives-from` names no set `<set>`
 <file>:<line>: error[TL_117]: `key-derives-from` names no frontmatter key `<key>`
-<file>:<line>: error[TL_117]: `key-derives-from` names rule `<rule-id>`, which captures no key
+<file>:<line>: error[TL_117]: `key-derives-from` names set `<set>`, which holds no key
 <file>:<line>: error[TL_117]: `key-derives-from` names `<rule-id>`, the `rule-id` of a unit rule, which holds no key: declare `key-of: <rule-id>` on each rule whose keys it means, or name the `key-of` that the rule declares
 ```
 
@@ -749,6 +749,7 @@ $ tramlines validate --schema note.yaml note.md
 
 [sokf:errors-schema#tl_103]: /docs/reference/errors-schema.md#tl_103
 [sokf:errors-schema-shapes#tl_120]: /docs/reference/errors-schema-shapes.md#tl_120
+[sokf:tramlines:tramlines-md-spec#tlmd_287]: /knowledge/spec/tramlines-md-spec.md#tlmd_287
 [sokf:tramlines:tramlines-spec#tl_109]: /knowledge/spec/tramlines-spec.md#tl_109
 [sokf:tramlines:tramlines-spec#tl_113]: /knowledge/spec/tramlines-spec.md#tl_113
 [sokf:tramlines:tramlines-spec#tl_117]: /knowledge/spec/tramlines-spec.md#tl_117

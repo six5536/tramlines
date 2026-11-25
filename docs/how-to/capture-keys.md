@@ -21,7 +21,7 @@ When the parts of a document have ids, such as requirements named `CART-1` and `
 
 2. Give the block a `rule-id`, so that other rules can refer to the keys that it captures. Each key must be unique within the document. A second capture of a key is an error. The `unique` schema key names the scope. Its default, `document`, is the only scope that the command checks. A program that embeds the engine can add wider scopes and check them itself.
 
-3. To require that each key starts with a known prefix, add `key-derives-from` beside `key`. `{ from: code, separator: "-" }` requires each key to start with the frontmatter value of `code` followed by `-`. `{ rule: reqs, separator: "_" }` requires each key to start with a key that the rule `reqs` captured followed by `_`. With it, `CART-1_AC-1` derives from `CART-1`. A prefix can contain the separator, so the code `CE-BUG` gives the key `CE-BUG-1`. This schema describes the list of requirements of one area:
+3. To require that each key starts with a known prefix, add `key-derives-from` beside `key`. `{ from: code, separator: "-" }` requires each key to start with the frontmatter value of `code` followed by `-`. `{ rule: reqs, separator: "_" }` requires each key to start with a key that the rule `reqs` captured followed by `_`. With it, `CART-1_AC-1` derives from `CART-1`. A prefix can contain the separator, so the code `CE-BUG` gives the key `CE-BUG-1`. A key of a line of a fence, which reads as written, and a key of prose are compared by the text that each shows as prose, so the key `a*b*-1` of an item derives from the key `a*b*` of a line of a fence. This schema describes the list of requirements of one area:
 
 **`requirements.yaml`**
 
@@ -70,9 +70,9 @@ cart.md:10: error[TLMD_148]: key `CART-2` is captured more than once; it was fir
 [exit 1]
 ```
 
-5. Write each anchor that the messages name. The command `tramlines validate --fix` writes every anchor that a key needs, then reports what is left. To write an anchor by hand, give it the slug of the key as its id. The slug is the key in lowercase, with letters, digits, `-`, and `_` kept, spaces changed to `-`, and every other character dropped. Put the anchor in the place that fits its key:
+5. Write each anchor that the messages name. The command `tramlines validate --fix` writes every anchor that a key needs, then reports what is left. To write an anchor by hand, give it the slug of the key as its id. The slug is the text that the key shows on the rendered page, without its markup, in lowercase, with letters, digits, `-`, and `_` kept, spaces changed to `-`, and every other character dropped. So `a*b*-1`, which shows as `ab-1`, has the slug `ab-1`. A key that a paragraph, an item, a row, or a heading captures holds the fixed spelling of its markup, as [Write the shape of a line][sokf:how-to-write-line-shapes] describes, so a key written `*Short*` is captured as `_Short_`, with the slug `short`. A key that a line of a code block captures reads as written, so `__init__` there has the slug `__init__`. A key that starts or ends inside a piece of markup, such as `*a-1` in `*a-1 b*`, takes its slug from the markup's fixed spelling instead, `_a-1`, which the message of a missing anchor names. Put the anchor in the place that fits its key:
 
-   - In an item, a row, or a paragraph: directly before the text that the rule matches, or before the code span or link that contains the key.
+   - In an item, a row, or a paragraph: directly before the text that the rule matches, or before the code span or link that contains the key. The anchor goes before a backslash that would otherwise stand directly before it, one that escapes the first character of the text or would escape the anchor's `<`. Where the match starts in an empty first cell of a row, on the ` | ` between two cells, or on the space between two lines, the anchor goes before the next text. In a task item, the anchor goes after the box, as in `- [ ] <a id="a-1"></a>a-1`.
    - In a heading: at the start of the text of the heading, after the `#` marks. A heading whose own slug is the slug of the key needs no anchor.
    - For a line of a code or `html` block: on a line of its own before the block, one line for each key in the order of the lines, then a blank line.
 
@@ -153,7 +153,7 @@ code: CART
 $ tramlines validate --schema requirements.yaml cart.md
 cart.md:8: error[TLMD_109]: key `CART-2` has no anchor; its repair writes `<a id="cart-2"></a>` before it
 cart.md:8: error[TLMD_95]: no `${id} tests` section for key `CART-2` (schema requirements, section "${id} tests")
-cart.md:14: error[TLMD_96]: section names key `CART-3`, which rule `reqs` did not capture (schema requirements, section "${id} tests")
+cart.md:14: error[TLMD_96]: section names key `CART-3`, which is not a key of set `reqs` (schema requirements, section "${id} tests")
 3 errors, 0 warnings
 [exit 1]
 ```

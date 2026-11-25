@@ -317,6 +317,149 @@ $ tramlines validate --schema decisions.yaml --texts texts.yaml decisions.md
 0 errors, 0 warnings
 ```
 
+## TLMD_269
+
+A unit rule requires a label, and its template is only the hole that captures its key ([TLMD_269][sokf:tramlines:tramlines-md-spec#tlmd_269]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_269]: a unit of this rule is only its key, the hole `<hole>`, which leaves no place for a label, and the rule requires one: give the template text after the key, or declare `label: optional`
+```
+
+### Cause
+
+The error is on the schema. A label stands straight after the key of a unit that begins with its key, followed by one space and more text. A unit that is only its key has no text after the key, so no unit of the rule can carry a label, and no example of the rule can pass.
+
+### Fix
+
+In the schema, give the template text after the key, such as `${k:code} ${}`, or declare `label: optional` on the rule.
+
+### Example
+
+This schema requires a label on each code, and each code is only its key:
+
+**`codes.yaml`**
+
+```yaml
+line-limit: 0
+labels: [human, agent]
+types:
+  code: '[A-Z]+-[0-9]+'
+sections:
+  - heading: Codes
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each:
+          template: '${k:code}'
+          key: k
+          label: required
+          example: AB-1
+```
+
+```console
+$ tramlines validate --schema codes.yaml
+codes.yaml:11: error[TLMD_269]: a unit of this rule is only its key, the hole `k`, which leaves no place for a label, and the rule requires one: give the template text after the key, or declare `label: optional`
+1 error, 0 warnings
+[exit 1]
+```
+
+Give each code a text after it, which the label precedes:
+
+**`codes.yaml`**
+
+```yaml
+line-limit: 0
+labels: [human, agent]
+types:
+  code: '[A-Z]+-[0-9]+'
+sections:
+  - heading: Codes
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each:
+          template: '${k:code} ${}'
+          key: k
+          label: required
+          example: AB-1 [human] The kettle needs descaling.
+```
+
+```console
+$ tramlines validate --schema codes.yaml
+0 errors, 0 warnings
+```
+
+## TLMD_270
+
+The host gives two labels of the schema the same words ([TLMD_270][sokf:tramlines:tramlines-md-spec#tlmd_270]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_270]: the labels `<key>` and `<key>` both read `[<words>]` in the words that the host gives, so a document can't write `<key>`: give each label words of its own
+```
+
+### Cause
+
+The error is on the schema, at its `labels`. A document writes a label in the words that the host gives for it, and the engine reads those words as the first label that has them. The second label then can't be written. The `tramlines` command takes the words from the file that `--texts` names.
+
+### Fix
+
+Give each label words of its own, in the file of texts or in the host.
+
+### Example
+
+This file of texts gives both labels the same words:
+
+**`decisions.yaml`**
+
+```yaml
+line-limit: 0
+language: en
+labels: [human, agent]
+sections:
+  - heading: Decisions
+    level: 1
+    blocks:
+      - kind: bullet-list
+        label: required
+        example: '[person] The parser reads one line at a time.'
+```
+
+**`texts.yaml`**
+
+```yaml
+en:
+  labels:
+    human: person
+    agent: person
+```
+
+```console
+$ tramlines validate --schema decisions.yaml --texts texts.yaml
+decisions.yaml:3: error[TLMD_270]: the labels `human` and `agent` both read `[person]` in the words that the host gives, so a document can't write `agent`: give each label words of its own
+1 error, 0 warnings
+[exit 1]
+```
+
+Give the second label words of its own:
+
+**`texts.yaml`**
+
+```yaml
+en:
+  labels:
+    human: person
+    agent: agent
+```
+
+```console
+$ tramlines validate --schema decisions.yaml --texts texts.yaml
+0 errors, 0 warnings
+```
+
 <!-- sokf:links -->
 
 [sokf:how-to-label-units]: /docs/how-to/label-units.md
@@ -324,3 +467,5 @@ $ tramlines validate --schema decisions.yaml --texts texts.yaml decisions.md
 [sokf:tramlines:tramlines-md-spec#tlmd_249]: /knowledge/spec/tramlines-md-spec.md#tlmd_249
 [sokf:tramlines:tramlines-md-spec#tlmd_250]: /knowledge/spec/tramlines-md-spec.md#tlmd_250
 [sokf:tramlines:tramlines-md-spec#tlmd_251]: /knowledge/spec/tramlines-md-spec.md#tlmd_251
+[sokf:tramlines:tramlines-md-spec#tlmd_269]: /knowledge/spec/tramlines-md-spec.md#tlmd_269
+[sokf:tramlines:tramlines-md-spec#tlmd_270]: /knowledge/spec/tramlines-md-spec.md#tlmd_270

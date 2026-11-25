@@ -3,16 +3,22 @@
 //! writing, and not only after breaking it (`TLMD_195`). The bans of a block
 //! are the guide's, in `guide.rs`.
 
-use super::Deriver;
+use super::{Deriver, guide::push_messages};
 
 impl Deriver<'_> {
-    /// `schema_bans` returns the messages of the bans of the whole body.
+    /// `schema_bans` returns the messages of the bans of the whole body,
+    /// each message once by its reading, in order, as a block's guidance
+    /// line holds the messages of its bans.
     pub(super) fn schema_bans(&self) -> Vec<String> {
-        self.schema
-            .core
-            .prohibited_patterns
-            .iter()
-            .map(|b| b.message.clone())
-            .collect()
+        let mut out = Vec::new();
+        push_messages(
+            &mut out,
+            self.schema
+                .core
+                .prohibited_patterns
+                .iter()
+                .map(|b| b.message.clone()),
+        );
+        out
     }
 }

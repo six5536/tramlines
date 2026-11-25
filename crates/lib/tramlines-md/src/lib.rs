@@ -9,6 +9,9 @@
 //! failure as a [`Finding`]. The items of tramlines-core are re-exported,
 //! so a host needs this crate alone.
 //!
+//! **This crate is unstable.** It is at a 0.x version, and its interface can
+//! change in any release.
+//!
 //! Compile a schema and check a document against it:
 //!
 //! ```

@@ -106,7 +106,7 @@ fn attach(stack: &mut [Frame], root: &mut Option<Spanned>, node: Spanned) -> Res
                 if entries.iter().any(|(k, _)| k.value == key) {
                     return Err(YamlError::Syntax {
                         line: node.line,
-                        message: format!("duplicate key `{key}`"),
+                        message: format!("duplicate key {}", crate::text::code(&key)),
                     });
                 }
                 *pending = Some(Spanned::new(key, node.line));

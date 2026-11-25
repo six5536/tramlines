@@ -2,13 +2,13 @@
 type: ErrorReference
 id: errors-lifecycle-and-ids
 title: 'Errors: lifecycle and ids'
-description: The errors that tramlines reports for the lifecycle of a schema and for the id template.
+description: The errors that tramlines reports for the lifecycle of a schema, for the lifecycle keys of a document, and for the id template.
 order: 13
 ---
 
 # Errors: lifecycle and ids
 
-These errors come from the lifecycle of a schema and from the template of the `id` key. Section 6 of the core specification defines these errors.
+These errors come from the lifecycle of a schema, from the lifecycle keys of a document, and from the template of the `id` key. Section 6 of the core specification defines these errors.
 
 ## TL_58
 
@@ -600,9 +600,146 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
+## TL_62
+
+The key of a lifecycle dimension is missing from the frontmatter ([TL_62][sokf:tramlines:tramlines-spec#tl_62]).
+
+### Message
+
+```text
+<file>:<line>: error[TL_62]: lifecycle key `<key>` is missing (schema <id>)
+```
+
+### Cause
+
+The schema declares a `lifecycle`, and each of its dimensions declares a key that the frontmatter of every document must contain. The document leaves the key out.
+
+### Fix
+
+Add the key to the frontmatter of the document, set to one of the states of the dimension.
+
+### Example
+
+This schema declares a lifecycle with the key `status`:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+lifecycle:
+  - { key: status, states: [open, closed] }
+sections:
+  - heading: Note
+    level: 1
+    blocks: []
+```
+
+This document leaves out `status`:
+
+**`note.md`**
+
+```markdown
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+note.md:1: error[TL_62]: lifecycle key `status` is missing (schema note)
+1 error, 0 warnings
+[exit 1]
+```
+
+Add the key with a state:
+
+**`note.md`**
+
+```markdown
+---
+status: open
+---
+
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
+## TL_108
+
+The value of the key of a lifecycle dimension isn't one of the states of the dimension ([TL_108][sokf:tramlines:tramlines-spec#tl_108]).
+
+### Message
+
+```text
+<file>:<line>: error[TL_108]: `<key>` must be one of <states>; `<value>` is not (schema <id>)
+```
+
+### Cause
+
+The schema declares a `lifecycle`, and the dimension lists its `states`. The document sets the key of the dimension to a value that isn't in that list. The command compares the text exactly, so `Open` isn't `open`.
+
+### Fix
+
+In the frontmatter of the document, set the key to one of the states that the message lists. If documents need another state, add it to `states` in the schema.
+
+### Example
+
+This schema declares a lifecycle with the key `status`:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+lifecycle:
+  - { key: status, states: [open, closed] }
+sections:
+  - heading: Note
+    level: 1
+    blocks: []
+```
+
+This document sets `status` to a value that isn't a state:
+
+**`note.md`**
+
+```markdown
+---
+status: done
+---
+
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+note.md:2: error[TL_108]: `status` must be one of `open`, `closed`; `done` is not (schema note)
+1 error, 0 warnings
+[exit 1]
+```
+
+Use one of the states:
+
+**`note.md`**
+
+```markdown
+---
+status: closed
+---
+
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
 <!-- sokf:links -->
 
 [sokf:errors-schema#tl_103]: /docs/reference/errors-schema.md#tl_103
+[sokf:tramlines:tramlines-spec#tl_108]: /knowledge/spec/tramlines-spec.md#tl_108
 [sokf:tramlines:tramlines-spec#tl_112]: /knowledge/spec/tramlines-spec.md#tl_112
 [sokf:tramlines:tramlines-spec#tl_114]: /knowledge/spec/tramlines-spec.md#tl_114
 [sokf:tramlines:tramlines-spec#tl_115]: /knowledge/spec/tramlines-spec.md#tl_115
@@ -610,4 +747,5 @@ $ tramlines validate --schema note.yaml note.md
 [sokf:tramlines:tramlines-spec#tl_122]: /knowledge/spec/tramlines-spec.md#tl_122
 [sokf:tramlines:tramlines-spec#tl_58]: /knowledge/spec/tramlines-spec.md#tl_58
 [sokf:tramlines:tramlines-spec#tl_59]: /knowledge/spec/tramlines-spec.md#tl_59
+[sokf:tramlines:tramlines-spec#tl_62]: /knowledge/spec/tramlines-spec.md#tl_62
 [sokf:tramlines:tramlines-spec#tl_95]: /knowledge/spec/tramlines-spec.md#tl_95

@@ -95,9 +95,51 @@ pub fn is_url(s: &str) -> bool {
 pub fn code_list<T: std::fmt::Display>(items: impl IntoIterator<Item = T>, sep: &str) -> String {
     items
         .into_iter()
-        .map(|i| format!("`{i}`"))
+        .map(|i| code(&i.to_string()))
         .collect::<Vec<_>>()
         .join(sep)
+}
+
+/// The run of backticks and the padding of a code span that holds
+/// `content`, as Markdown writes such a span: the shortest run of
+/// backticks that `content` holds no run of, and whether one space stands
+/// inside each end, which it does where `content` starts or ends with a
+/// backtick, or starts and ends with a space and holds another character,
+/// because CommonMark strips one space at each end of such a span.
+pub fn code_fence(content: &str) -> (usize, bool) {
+    let mut runs = Vec::new();
+    let mut run = 0;
+    for b in content.bytes().chain(std::iter::once(b' ')) {
+        if b == b'`' {
+            run += 1;
+        } else if run > 0 {
+            runs.push(run);
+            run = 0;
+        }
+    }
+    let ticks = (1..=runs.len() + 1)
+        .find(|k| !runs.contains(k))
+        .unwrap_or(1);
+    let pad = content.starts_with('`')
+        || content.ends_with('`')
+        || (content.starts_with(' ')
+            && content.ends_with(' ')
+            && content.bytes().any(|b| b != b' '));
+    (ticks, pad)
+}
+
+/// `content` as one code span, as a finding quotes a text: "`a`", and
+/// "`` `a` b ``" for a text that holds a backtick (`TL_142`). A space
+/// stands inside each end only where `content` starts or ends with a
+/// backtick, because a finding is read as plain text too, where a space
+/// that CommonMark would strip reads as part of the text.
+// sokf-implements: TL_142
+pub fn code(content: &str) -> String {
+    let (ticks, _) = code_fence(content);
+    let ticks = "`".repeat(ticks);
+    let pad = content.starts_with('`') || content.ends_with('`');
+    let space = if pad { " " } else { "" };
+    format!("{ticks}{space}{content}{space}{ticks}")
 }
 
 /// The indefinite article before `word`, as English says the word: `an`
@@ -156,6 +198,18 @@ pub fn at_limit(words: String, when_at_limit: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // sokf-tests: TL_142
+    #[test]
+    fn a_quote_is_one_code_span_whatever_its_backticks() {
+        assert_eq!(code("AB-1"), "`AB-1`");
+        assert_eq!(code(" more"), "` more`");
+        assert_eq!(code("`AB-1` x"), "`` `AB-1` x ``");
+        assert_eq!(code("a ` b `` c"), "```a ` b `` c```");
+        assert_eq!(code(" x "), "` x `");
+        assert_eq!(code(" "), "` `");
+        assert_eq!(code("```sh"), "` ```sh `");
+    }
 
     // sokf-tests: TL_102
     #[test]

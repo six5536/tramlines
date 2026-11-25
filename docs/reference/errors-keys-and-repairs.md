@@ -23,7 +23,7 @@ A key has the same slug as another key or as a heading of the document, so the t
 
 ### Cause
 
-Each key receives an anchor whose id is the slug of the key. Each heading also receives a slug. The slug is the text in lowercase. Spaces become hyphens, and most punctuation drops out. Two keys that differ only in case, or a key that reads like a heading of the document, produce the same id twice. A key that a rule with `for-each-key-of` captures refers to a key and receives no anchor. The command doesn't check its slug for this error.
+Each key receives an anchor whose id is the slug of the key. Each heading also receives a slug. The slug is the text in lowercase. Spaces become hyphens, and most punctuation drops out. A heading's slug comes from its plain text, without the markers of emphasis, code, links, and inline HTML, as GitHub forms the ids of headings: `## _Foo_` has the slug `foo`, and `## See [the guide](x)` the slug `see-the-guide`. Two keys that differ only in case, or a key that reads like a heading of the document, produce the same id twice. A key that a rule with `for-each-key-of` captures refers to a key and receives no anchor. The command doesn't check its slug for this error.
 
 ### Fix
 
@@ -148,7 +148,7 @@ A key has no anchor, an anchor isn't where its key is, an anchor names no key, o
 
 ### Cause
 
-Each key that a rule captures needs one anchor, `<a id="<slug>"></a>`, so that a link can open the page at the key. The anchor goes at the start of the text of a heading, or directly before the text of an item, a paragraph, or a cell. Before a code block, the anchor goes on a separate line. A key that a unit rule with `for-each-key-of` captures refers to the key and needs no anchor. In the document, the anchor is missing, in the wrong place, or written twice, or it belongs to a key that no longer exists. The command reports an anchor written again beside a second capture of a key as [TLMD_148](#tlmd_148) or [TLMD_101](#tlmd_101) instead. An anchor beside a capture with `for-each-key-of` goes with the error of that pairing. The repair removes both kinds of anchor. An item, a paragraph, a row, or a line of a code block whose text doesn't match its rule captures no key. The command leaves the anchors of such a unit alone while it reports an error or a warning on the unit that the repair can't correct, or reports that no rule takes the unit. A heading whose text doesn't match the template of its section captures no key either. The command leaves the anchors of a heading that captures no key alone while it reports an error or a warning on where the heading stands that the repair can't correct, such as that the heading isn't declared ([TLMD_19][sokf:errors-sections#tlmd_19]) or is at the wrong level ([TLMD_144][sokf:errors-sections#tlmd_144]). While no declared section takes such a heading and the command reports it, such as that it isn't declared, that it skips a level ([TLMD_20][sokf:errors-sections#tlmd_20]), or that it is prohibited in an open region ([TLMD_26][sokf:errors-sections#tlmd_26]), the command leaves alone the anchors of each unit between it and the next heading too, because it checks none of them. The anchors under a heading that an open region admits, and on which the command reports nothing, follow the usual rule. It reports no anchor of the unit or the heading that names no key, and the repair leaves each such anchor where it is, so that links to it keep working while you correct the text. The repair that writes a setext heading as ATX writes the heading's anchors at the start of its text. A heading inside a list item, and outside every quote, keeps the anchors on its text in the same way while the command reports an error on it, such as that no position takes it, but not a line of anchors before it, as a paragraph doesn't.
+Each key that a rule captures needs one anchor, `<a id="<slug>"></a>`, so that a link can open the page at the key. The anchor goes at the start of the text of a heading, or directly before the text of an item, a paragraph, or a cell. Before a code block, the anchor goes on a separate line. A key that a unit rule with `for-each-key-of` captures refers to the key and needs no anchor. In the document, the anchor is missing, in the wrong place, or written twice, or it belongs to a key that no longer exists. The command reports an anchor written again beside a second capture of a key as [TLMD_148](#tlmd_148) or [TLMD_101](#tlmd_101) instead. An anchor beside a capture with `for-each-key-of` goes with the error of that pairing. The repair removes both kinds of anchor. An item, a paragraph, a row, or a line of a code block whose text doesn't match its rule captures no key. The command leaves the anchors of such a unit alone while it reports an error or a warning on the unit that the repair can't correct, or reports that no rule takes the unit. A heading whose text doesn't match the template of its section captures no key either. The command leaves the anchors of a heading that captures no key alone while it reports an error or a warning on where the heading stands that the repair can't correct, such as that the heading isn't declared ([TLMD_19][sokf:errors-sections#tlmd_19]) or is at the wrong level ([TLMD_144][sokf:errors-sections#tlmd_144]). While no declared section takes such a heading and the command reports it, such as that it isn't declared, that it skips a level ([TLMD_20][sokf:errors-sections#tlmd_20]), or that it is prohibited in an open region ([TLMD_26][sokf:errors-sections#tlmd_26]), the command leaves alone the anchors of each unit between it and the next heading too, because it checks none of them. The anchors under a heading that an open region admits, and on which the command reports nothing, follow the usual rule. Where the blocks under a heading hold an error that can give a block to another position, such as an item that breaks the pattern of its list, the command leaves the anchors of each unit of those blocks alone too, because it can't be sure which key a unit carries ([TLMD_109][sokf:tramlines:tramlines-md-spec#tlmd_109]). It reports no anchor of the unit or the heading that names no key, and the repair leaves each such anchor where it is, so that links to it keep working while you correct the text. The repair that writes a setext heading as ATX writes the heading's anchors at the start of its text. A heading inside a list item, and outside every quote, keeps the anchors on its text in the same way while the command reports an error on it, such as that no position takes it, but not a line of anchors before it, as a paragraph doesn't.
 
 ### Fix
 
@@ -190,7 +190,7 @@ $ tramlines validate --schema pantry.yaml pantry.md
 
 ## TLMD_165
 
-A heading or a unit that the schema binds to a frontmatter value doesn't equal that value ([TLMD_165][sokf:tramlines:tramlines-md-spec#tlmd_165]).
+A heading or a unit that the schema binds to a frontmatter value doesn't equal that value ([TLMD_165][sokf:tramlines:tramlines-md-spec#tlmd_165]), and the repair rewrites it to the value ([TLMD_283][sokf:tramlines:tramlines-md-spec#tlmd_283]).
 
 ### Message
 
@@ -205,7 +205,7 @@ The schema declares `heading: { from: <key> }` on a section, or `text: { from: <
 
 ### Fix
 
-In the document, change the heading or the text to the value of the frontmatter key, or run `tramlines validate --fix`, which makes the change. If the value is wrong, change the frontmatter instead.
+In the document, change the heading or the text to the value of the frontmatter key, or run `tramlines validate --fix`, which makes the change. A heading whose value ends in a space and `#` is written with that `#` escaped, as `# Notes \#`, because `# Notes #` reads as `Notes`. A heading holds the value without the spaces at its ends, so `title: "Notes "` matches `# Notes` ([TLMD_282][sokf:tramlines:tramlines-md-spec#tlmd_282]). A paragraph or an item whose value would start another block, such as `# x`, `- x`, or `1. x`, is written with a backslash before the punctuation character that starts the block, as `\# x`, `\- x`, or `1\. x`. On the line after a link reference definition, a value that the definition would read as its title, such as `(Right)`, or that would make a table of the definition's line, such as `|---|`, is written with the first backslash that keeps it the unit's text, as `\(Right)` or `|\---|` ([TLMD_291][sokf:tramlines:tramlines-md-spec#tlmd_291]). `--fix` leaves the text as it stands where no backslash does, and where an empty value would make the first item of a list after a paragraph or a definition part of it, or leave out of the item what it holds after a blank line. If the value is wrong, change the frontmatter instead. `--fix` leaves the text as it stands where the check can't be sure that the unit belongs to the bound rule: where the blocks under the same heading hold another error that decides which position takes a block, such as an item that breaks the pattern of its list, or where the unit has the shape of another rule of the section ([TLMD_279][sokf:tramlines:tramlines-md-spec#tlmd_279], [TLMD_280][sokf:tramlines:tramlines-md-spec#tlmd_280]). Correct that error first, and run `--fix` again. It leaves a heading as it stands where an open region of the section before it admits the heading, or where another heading of the document already reads as the value ([TLMD_285][sokf:tramlines:tramlines-md-spec#tlmd_285]): rename or delete the heading that you don't mean.
 
 ### Example
 
@@ -253,6 +253,163 @@ title: Groceries
 ---
 
 # Groceries
+```
+
+```console
+$ tramlines validate --schema list.yaml list.md
+0 errors, 0 warnings
+```
+
+## TLMD_276
+
+A paragraph or an item is bound to a frontmatter value that no paragraph or item can hold, so the repair can't write it ([TLMD_276][sokf:tramlines:tramlines-md-spec#tlmd_276]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_276]: the frontmatter `<key>` is empty, which no <unit> can hold (schema <id>, key `<key>`)
+<file>:<line>: error[TLMD_276]: the frontmatter `<key>` holds `<value>`, which no <unit> can hold: on a line of its own it starts <block> (schema <id>, key `<key>`)
+```
+
+### Cause
+
+The schema declares `text: { from: <key> }` on the rule of a paragraph or an item, and no text of that kind reads as the value of the key. A paragraph holds some text, so an empty value has none. A line that starts with an HTML tag, such as `<div>`, starts an HTML block, and an escaped `\<div>` reads as other text. The error is on the line of the key in the frontmatter, and `tramlines validate --fix` leaves the unit as it stands. A value that starts another block, such as `# x` or `- x`, is no error: the repair writes it with a backslash before the punctuation character that starts the block.
+
+### Fix
+
+In the frontmatter, give the key a value that a paragraph or an item can hold, such as text before the tag.
+
+### Example
+
+This schema binds the paragraph of the list to the frontmatter `description`:
+
+**`list.yaml`**
+
+```yaml
+line-limit: 0
+frontmatter:
+  description:
+    example: What to buy this week.
+sections:
+  - heading: List
+    level: 1
+    blocks:
+      - kind: prose
+        each:
+          text: { from: description }
+```
+
+The description of this document is an HTML tag:
+
+**`list.md`**
+
+```markdown
+---
+description: "<div>"
+---
+
+# List
+
+What to buy this week.
+```
+
+```console
+$ tramlines validate --schema list.yaml list.md
+list.md:2: error[TLMD_276]: the frontmatter `description` holds `<div>`, which no paragraph can hold: on a line of its own it starts an HTML block (schema list, key `description`)
+1 error, 0 warnings
+[exit 1]
+```
+
+Give the description text that a paragraph holds:
+
+**`list.md`**
+
+```markdown
+---
+description: What to buy this week.
+---
+
+# List
+
+What to buy this week.
+```
+
+```console
+$ tramlines validate --schema list.yaml list.md
+0 errors, 0 warnings
+```
+
+## TLMD_312
+
+A paragraph or an item reads as the frontmatter value that it is bound to, and its block refuses what the value holds ([TLMD_312][sokf:tramlines:tramlines-md-spec#tlmd_312]).
+
+### Message
+
+```text
+<file>:<line>: error[TLMD_312]: the frontmatter `<key>` holds `<value>`, which the <unit> bound to it can't hold: <reason> (schema <id>, key `<key>`)
+```
+
+### Cause
+
+The schema declares `text: { from: <key> }` on the rule of a paragraph or an item, and the unit reads as the value, but the value holds what the unit's block refuses: inline HTML in the unit's own text, in a block without `inline-html`, or a text that a ban of the rule matches. The reason names the refusal. A ban of the whole document judges the whole line, with the item's marker and any label beside the value, so it stays on the unit's line as `TL_75`. The frontmatter dictates the unit's text, and `tramlines validate --fix` writes the value back, so the finding is on the line of the key in the frontmatter, once for each key, and the unit draws none. It is a warning only where each rule that refuses the value reports a warning.
+
+### Fix
+
+In the frontmatter, change the value so that the unit's block accepts it, such as by writing the HTML as text, or by leaving out the banned words.
+
+### Example
+
+This schema binds the paragraph of the list to the frontmatter `description`, and accepts no inline HTML:
+
+**`list.yaml`**
+
+```yaml
+line-limit: 0
+frontmatter:
+  description:
+    example: What to buy this week.
+sections:
+  - heading: List
+    level: 1
+    blocks:
+      - kind: prose
+        each:
+          text: { from: description }
+```
+
+The description holds a tag:
+
+**`list.md`**
+
+```markdown
+---
+description: "What to buy <b>this</b> week."
+---
+
+# List
+
+What to buy <b>this</b> week.
+```
+
+```console
+$ tramlines validate --schema list.yaml list.md
+list.md:2: error[TLMD_312]: the frontmatter `description` holds `What to buy <b>this</b> week.`, which the paragraph bound to it can't hold: inline HTML is not accepted here (schema list, key `description`)
+1 error, 0 warnings
+[exit 1]
+```
+
+Write the description, and the paragraph, without the tag:
+
+**`list.md`**
+
+```markdown
+---
+description: What to buy this week.
+---
+
+# List
+
+What to buy this week.
 ```
 
 ```console
@@ -541,4 +698,12 @@ $ tramlines validate --schema recipe.yaml recipe.md
 [sokf:tramlines:tramlines-md-spec#tlmd_148]: /knowledge/spec/tramlines-md-spec.md#tlmd_148
 [sokf:tramlines:tramlines-md-spec#tlmd_165]: /knowledge/spec/tramlines-md-spec.md#tlmd_165
 [sokf:tramlines:tramlines-md-spec#tlmd_168]: /knowledge/spec/tramlines-md-spec.md#tlmd_168
+[sokf:tramlines:tramlines-md-spec#tlmd_276]: /knowledge/spec/tramlines-md-spec.md#tlmd_276
+[sokf:tramlines:tramlines-md-spec#tlmd_279]: /knowledge/spec/tramlines-md-spec.md#tlmd_279
+[sokf:tramlines:tramlines-md-spec#tlmd_280]: /knowledge/spec/tramlines-md-spec.md#tlmd_280
+[sokf:tramlines:tramlines-md-spec#tlmd_282]: /knowledge/spec/tramlines-md-spec.md#tlmd_282
+[sokf:tramlines:tramlines-md-spec#tlmd_283]: /knowledge/spec/tramlines-md-spec.md#tlmd_283
+[sokf:tramlines:tramlines-md-spec#tlmd_285]: /knowledge/spec/tramlines-md-spec.md#tlmd_285
 [sokf:tramlines:tramlines-md-spec#tlmd_29]: /knowledge/spec/tramlines-md-spec.md#tlmd_29
+[sokf:tramlines:tramlines-md-spec#tlmd_291]: /knowledge/spec/tramlines-md-spec.md#tlmd_291
+[sokf:tramlines:tramlines-md-spec#tlmd_312]: /knowledge/spec/tramlines-md-spec.md#tlmd_312

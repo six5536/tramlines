@@ -14,6 +14,11 @@ impl Deriver<'_> {
     pub(super) fn blocks(&mut self, rules: Option<&[Block]>, out: &mut Vec<String>) {
         let rules = rules.unwrap_or(&[]);
         self.meetings(rules);
+        // The kinds of the required blocks that a skeleton leaves out: a
+        // later block of such a kind would stand where the check expects
+        // the block left out, and be read as that one, so it is left out
+        // too, and the check reports both as missing.
+        let mut left_out: Vec<BlockKind> = Vec::new();
         let mut i = 0;
         while i < rules.len() {
             // A run of optional blocks is one region: a label and the list
@@ -25,6 +30,12 @@ impl Deriver<'_> {
                 {
                     j += 1;
                 }
+                // sokf-implements: MD-17_AC-5
+                // sokf-implements: TLMD_306
+                if self.skeleton() {
+                    i = j;
+                    continue;
+                }
                 self.optional_region(out, |d, out| {
                     for block in &rules[i..j] {
                         d.one_block(block, out);
@@ -33,7 +44,23 @@ impl Deriver<'_> {
                 i = j;
                 continue;
             }
+            // sokf-implements: TLMD_311
+            let kind = rules[i].first_position(self.states).map(|b| b.kind);
+            if self.skeleton() && kind.is_some_and(|k| left_out.contains(&k)) {
+                i += 1;
+                continue;
+            }
+            let before = out.len();
             self.one_block(&rules[i], out);
+            let required =
+                rules[i].common.only.admits(self.states) && rules[i].hard_max() != Some(0);
+            if self.skeleton()
+                && required
+                && out.len() == before
+                && let Some(k) = kind
+            {
+                left_out.push(k);
+            }
             i += 1;
         }
     }
@@ -41,21 +68,33 @@ impl Deriver<'_> {
     fn one_block(&mut self, block: &Block, out: &mut Vec<String>) {
         // A block the states exclude is not this scaffold's, and one
         // whose hard `max` admits no unit bans rather than demands.
-        if !block.common.only.admits(self.states) || block.hard_max() == Some(0) {
+        let optional = block.optional_at(self.states, &self.schema.core.lifecycle);
+        if !block.common.only.admits(self.states)
+            || block.hard_max() == Some(0)
+            || (optional && self.skeleton())
+        {
             return;
         }
         // An optional block is written where the derivation can write it,
         // and left out where a rule inside it offers nothing, as an
         // optional section is.
         // sokf-implements: TLMD_123
-        self.attempt(
-            block.optional_at(self.states, &self.schema.core.lifecycle),
-            out,
-            |d, out| d.block(block, out),
-        );
+        self.attempt(optional, out, |d, out| d.block(block, out));
     }
 
+    /// Write `block`, and record its text as the block's example, unless a
+    /// refusal inside it stands, as a section records its own.
     fn block(&mut self, block: &Block, out: &mut Vec<String>) {
+        let start = out.len();
+        let refused = self.refusals.len();
+        self.write_block(block, out);
+        if self.refusals.len() == refused {
+            let lines = out[start..].to_vec();
+            self.record_block(block, &lines);
+        }
+    }
+
+    fn write_block(&mut self, block: &Block, out: &mut Vec<String>) {
         // The host's words and the `when-at-limit` of each limit, and the
         // messages of the block's bans, follow its guidance, as the host's
         // guide gives them.
@@ -77,6 +116,16 @@ impl Deriver<'_> {
             return;
         }
         let units = self.units_of(block);
+        // A skeleton writes a block only where the schema fixes a unit of
+        // it, or the block has no unit, as a thematic break has none.
+        // sokf-implements: MD-17_AC-5
+        // sokf-implements: TLMD_308
+        if self.skeleton()
+            && (units.is_empty() || example_header(block))
+            && block.kind != BlockKind::ThematicBreak
+        {
+            return;
+        }
         // Each fence of a code block is a block of its own, so each one
         // carries its own `only` marker, which the match below writes.
         if block.kind != BlockKind::Code {
@@ -110,41 +159,25 @@ impl Deriver<'_> {
                 }
                 out.push(String::new());
             }
-            BlockKind::Table => {
-                // A table with no declared columns names the header of its
-                // scaffold under `example-columns`, so that the separator
-                // has one `---` for each cell of the header.
-                // sokf-implements: TLMD_206
-                // sokf-implements: MD-7_AC-13
-                let columns = block
-                    .example_columns
-                    .as_deref()
-                    .or(block.columns.as_deref())
-                    .unwrap_or_default();
-                // A `|` in a name would end its cell, so the header escapes
-                // it, as a GFM table writes a pipe inside a cell.
-                let names: Vec<String> = columns.iter().map(|c| c.replace('|', "\\|")).collect();
-                out.push(format!("| {} |", names.join(" | ")));
-                out.push(format!(
-                    "| {} |",
-                    columns
-                        .iter()
-                        .map(|_| "---")
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                ));
-                for text in units {
-                    out.push(format!("| {text} |"));
-                }
-                out.push(String::new());
-            }
+            BlockKind::Table => self.table(block, units, out),
+            // A fence of three backticks, or the `fence` of the block where
+            // that is more, or one more than the longest run of backticks
+            // in the example where that is more still, so that the example
+            // never ends the block early.
+            // sokf-implements: TLMD_265
+            // sokf-implements: MD-7_AC-16
             BlockKind::Code => {
-                let fence = "`".repeat(block.fence.max(3));
                 let tag = match &block.lang {
                     Some(Lang::Tags(tags)) => tags.first().cloned().unwrap_or_default(),
                     Some(Lang::Any) | None => "text".to_string(),
                 };
                 for text in units {
+                    let longest = text
+                        .split(|c| c != '`')
+                        .map(str::len)
+                        .max()
+                        .unwrap_or_default();
+                    let fence = "`".repeat(block.fence.max(3).max(longest + 1));
                     self.marker(&block.common, out);
                     out.push(format!("{fence}{tag}"));
                     out.extend(text.lines().map(str::to_string));
@@ -170,6 +203,37 @@ impl Deriver<'_> {
             BlockKind::Heading => unreachable!("no schema declares a heading block"),
         }
         self.follows(block);
+    }
+
+    /// The rows of a table: its header, its separator and its units. A
+    /// table with no declared columns names the header of its scaffold
+    /// under `example-columns`, so that the separator has one `---` for
+    /// each cell of the header.
+    // sokf-implements: TLMD_206
+    // sokf-implements: MD-7_AC-13
+    fn table(&self, block: &Block, units: Vec<String>, out: &mut Vec<String>) {
+        let header = if self.skeleton() {
+            None
+        } else {
+            block.example_columns.as_deref()
+        };
+        let columns = header.or(block.columns.as_deref()).unwrap_or_default();
+        // A `|` in a name would end its cell, so the header escapes it, as
+        // a GFM table writes a pipe inside a cell.
+        let names: Vec<String> = columns.iter().map(|c| c.replace('|', "\\|")).collect();
+        out.push(format!("| {} |", names.join(" | ")));
+        out.push(format!(
+            "| {} |",
+            columns
+                .iter()
+                .map(|_| "---")
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
+        for text in units {
+            out.push(format!("| {text} |"));
+        }
+        out.push(String::new());
     }
 
     /// Refuse the derivation where a position whose units have no shape
@@ -255,6 +319,12 @@ impl Deriver<'_> {
     fn follows(&mut self, block: &Block) {
         self.kinds.push(block.kind);
     }
+}
+
+/// Whether `block` is a table whose header only `example-columns` names,
+/// an example that a skeleton doesn't write.
+fn example_header(block: &Block) -> bool {
+    block.kind == BlockKind::Table && block.columns.as_deref().is_none_or(<[String]>::is_empty)
 }
 
 /// The blocks that `b` can end with at `states`: `b` itself, or for a

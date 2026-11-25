@@ -83,7 +83,7 @@ sections:
 
 ```console
 $ tramlines validate --schema recipe.yaml scones.md
-scones.md:5: error[TL_74]: `2 cups milk` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`, `tbsp`), found `cups milk`; an item of this kind reads 1.5 tsp baking powder (schema recipe, section "Ingredients" block 1)
+scones.md:5: error[TL_74]: `2 cups milk` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`, `tbsp`), found `cups milk`; an item of this kind reads `1.5 tsp baking powder` (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -169,8 +169,8 @@ sections:
 
 ```console
 $ tramlines validate --schema baking.yaml --formats formats.yaml scones.md
-scones.md:4: error[TL_74]: `1.5 tsp baking powder` fails at column 1: expected an `amount` (`\d+`), found `1.5 tsp baking powder`; an item of this kind reads 250 g flour (schema baking, section "Ingredients" block 1)
-scones.md:5: error[TL_74]: `2 cups milk` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`), found `cups milk`; an item of this kind reads 250 g flour (schema baking, section "Ingredients" block 1)
+scones.md:4: error[TL_74]: `1.5 tsp baking powder` fails at column 1: expected an `amount` (`\d+`), found `1.5 tsp baking powder`; an item of this kind reads `250 g flour` (schema baking, section "Ingredients" block 1)
+scones.md:5: error[TL_74]: `2 cups milk` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`), found `cups milk`; an item of this kind reads `250 g flour` (schema baking, section "Ingredients" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```

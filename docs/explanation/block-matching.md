@@ -140,7 +140,7 @@ When a quote fits neither position, the tip releases it and the warning claims i
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-pancakes.md:3: error[TL_74]: `Note: the pan is hot.` fails at column 1: expected `Warning: `, found `Note: the pan is hot.`; a paragraph of this kind reads Warning: the pan is hot. (schema recipe, section "Method" block 2)
+pancakes.md:3: error[TL_74]: `Note: the pan is hot.` fails at column 1: expected `Warning: `, found `Note: the pan is hot.`; a paragraph of this kind reads `Warning: the pan is hot.` (schema recipe, section "Method" block 2)
 1 error, 0 warnings
 [exit 1]
 ```

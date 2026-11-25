@@ -124,8 +124,8 @@ Check both notes in one run. The command checks every document that you name, an
 
 ```console
 $ tramlines validate --schema schemas/meeting.yaml notes/2026-09-14.md notes/2026-09-21.md
-notes/2026-09-21.md:3: error[TL_56]: `date` `21 September` does not match `^\d{4}-\d{2}-\d{2}$`; a value of this kind reads 2026-09-14 (schema meeting, key `date`)
-notes/2026-09-21.md:18: error[TL_74]: `book a second room` fails at column 5: expected `: `, found ` a second room`; an item of this kind reads Ana: book the room for the launch (schema meeting, section "Actions" block 1)
+notes/2026-09-21.md:3: error[TL_56]: `date` `21 September` does not match `^\d{4}-\d{2}-\d{2}$`; a value of this kind reads `2026-09-14` (schema meeting, key `date`)
+notes/2026-09-21.md:18: error[TL_74]: `book a second room` fails at column 5: expected `: `, found ` a second room`; an item of this kind reads `Ana: book the room for the launch` (schema meeting, section "Actions" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```
@@ -294,7 +294,7 @@ date: 2026-09-28
 
 ```console
 $ tramlines validate --warnings --schema schemas/meeting.yaml notes/2026-09-14.md notes/2026-09-21.md notes/2026-09-28.md
-notes/2026-09-28.md:14: warning[TL_74]: `Keep the weekly release call` does not match `\.$`; an item of this kind reads Ship the beta on 1 October. (schema meeting, section "Decisions" block 1)
+notes/2026-09-28.md:14: warning[TL_74]: `Keep the weekly release call` does not match `\.$`; an item of this kind reads `Ship the beta on 1 October.` (schema meeting, section "Decisions" block 1)
 0 errors, 1 warning
 ```
 

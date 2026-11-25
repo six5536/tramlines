@@ -8,7 +8,7 @@ order: 30
 
 # Errors: frontmatter
 
-These errors come from the frontmatter of a document. The frontmatter can fail to parse, or it can hold keys and values that break their constraints. Section 6 of the core specification defines these errors. [A separate page][sokf:errors-lines] lists the errors for the lines of a document and its length.
+These errors come from the frontmatter of a document. The frontmatter can fail to parse, or it can hold keys and values that break their constraints. Section 6 of the core specification defines these errors. [A separate page][sokf:errors-lines] lists the errors for the lines of a document and its length. [Lifecycle and ids][sokf:errors-lifecycle-and-ids] lists the errors of the lifecycle keys of a document.
 
 ## TL_53
 
@@ -226,6 +226,77 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
+## TL_143
+
+A key that the schema requires holds no value in the frontmatter of the document ([TL_143][sokf:tramlines:tramlines-spec#tl_143]).
+
+### Message
+
+```text
+<file>:<line>: error[TL_143]: frontmatter key `<key>` is missing its value (schema <id>, key `<key>`)
+```
+
+### Cause
+
+The schema declares the key under `frontmatter` without `optional: true`, and the document holds the key with an empty value: nothing after the colon, `null`, `~`, an empty string such as `""`, or a text of only spaces. A new document that `tramlines new` writes holds each required key that way until its writer fills it in. The error takes the place of every other error on the value, such as a value outside an `enum`, and a heading or a unit bound to the key draws no error of its own and no repair, because the value is the one thing to fix.
+
+### Fix
+
+Write the value of the key. If documents of this kind can leave the key empty, set `optional: true` on the key in the schema instead.
+
+### Example
+
+This schema requires a `title`:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+frontmatter:
+  title:
+    example: Groceries
+sections:
+  - heading: Note
+    level: 1
+    blocks: []
+```
+
+This document holds `title` with no value:
+
+**`note.md`**
+
+```markdown
+---
+title:
+---
+
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+note.md:2: error[TL_143]: frontmatter key `title` is missing its value (schema note, key `title`)
+1 error, 0 warnings
+[exit 1]
+```
+
+Write the value:
+
+**`note.md`**
+
+```markdown
+---
+title: Groceries
+---
+
+# Note
+```
+
+```console
+$ tramlines validate --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
 ## TL_55
 
 The frontmatter of the document contains a key that the schema doesn't declare ([TL_55][sokf:tramlines:tramlines-spec#tl_55]).
@@ -306,7 +377,7 @@ A frontmatter value, or an element of a list, doesn't meet the `const`, the shap
 
 ```text
 <file>:<line>: error[TL_56]: `<key>` must be `<const>`; it is `<value>` (schema <id>, key `<key>`)
-<file>:<line>: error[TL_56]: `<key>` `<value>` <failure>; a value of this kind reads <example> (schema <id>, key `<key>`)
+<file>:<line>: error[TL_56]: `<key>` `<value>` <failure>; a value of this kind reads `<example>` (schema <id>, key `<key>`)
 <file>:<line>: error[TL_56]: `<key>` must be one of <values>; `<value>` is not (schema <id>, key `<key>`)
 <file>:<line>: error[TL_56]: `<key>` must be an absolute URL; `<value>` is not (schema <id>, key `<key>`)
 <file>:<line>: error[TL_56]: `<key>` must be a slug; `<value>` is not (schema <id>, key `<key>`)
@@ -597,152 +668,16 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
-## TL_62
-
-The key of a lifecycle dimension is missing from the frontmatter ([TL_62][sokf:tramlines:tramlines-spec#tl_62]).
-
-### Message
-
-```text
-<file>:<line>: error[TL_62]: lifecycle key `<key>` is missing (schema <id>)
-```
-
-### Cause
-
-The schema declares a `lifecycle`, and each of its dimensions declares a key that the frontmatter of every document must contain. The document leaves the key out.
-
-### Fix
-
-Add the key to the frontmatter of the document, set to one of the states of the dimension.
-
-### Example
-
-This schema declares a lifecycle with the key `status`:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-lifecycle:
-  - { key: status, states: [open, closed] }
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-```
-
-This document leaves out `status`:
-
-**`note.md`**
-
-```markdown
-# Note
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-note.md:1: error[TL_62]: lifecycle key `status` is missing (schema note)
-1 error, 0 warnings
-[exit 1]
-```
-
-Add the key with a state:
-
-**`note.md`**
-
-```markdown
----
-status: open
----
-
-# Note
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-0 errors, 0 warnings
-```
-
-## TL_108
-
-The value of the key of a lifecycle dimension isn't one of the states of the dimension ([TL_108][sokf:tramlines:tramlines-spec#tl_108]).
-
-### Message
-
-```text
-<file>:<line>: error[TL_108]: `<key>` must be one of <states>; `<value>` is not (schema <id>)
-```
-
-### Cause
-
-The schema declares a `lifecycle`, and the dimension lists its `states`. The document sets the key of the dimension to a value that isn't in that list. The command compares the text exactly, so `Open` isn't `open`.
-
-### Fix
-
-In the frontmatter of the document, set the key to one of the states that the message lists. If documents need another state, add it to `states` in the schema.
-
-### Example
-
-This schema declares a lifecycle with the key `status`:
-
-**`note.yaml`**
-
-```yaml
-line-limit: 0
-lifecycle:
-  - { key: status, states: [open, closed] }
-sections:
-  - heading: Note
-    level: 1
-    blocks: []
-```
-
-This document sets `status` to a value that isn't a state:
-
-**`note.md`**
-
-```markdown
----
-status: done
----
-
-# Note
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-note.md:2: error[TL_108]: `status` must be one of `open`, `closed`; `done` is not (schema note)
-1 error, 0 warnings
-[exit 1]
-```
-
-Use one of the states:
-
-**`note.md`**
-
-```markdown
----
-status: closed
----
-
-# Note
-```
-
-```console
-$ tramlines validate --schema note.yaml note.md
-0 errors, 0 warnings
-```
-
 <!-- sokf:links -->
 
+[sokf:errors-lifecycle-and-ids]: /docs/reference/errors-lifecycle-and-ids.md
 [sokf:errors-lines]: /docs/reference/errors-lines.md
 [sokf:tramlines:tramlines-spec#tl_106]: /knowledge/spec/tramlines-spec.md#tl_106
 [sokf:tramlines:tramlines-spec#tl_107]: /knowledge/spec/tramlines-spec.md#tl_107
-[sokf:tramlines:tramlines-spec#tl_108]: /knowledge/spec/tramlines-spec.md#tl_108
 [sokf:tramlines:tramlines-spec#tl_123]: /knowledge/spec/tramlines-spec.md#tl_123
+[sokf:tramlines:tramlines-spec#tl_143]: /knowledge/spec/tramlines-spec.md#tl_143
 [sokf:tramlines:tramlines-spec#tl_53]: /knowledge/spec/tramlines-spec.md#tl_53
 [sokf:tramlines:tramlines-spec#tl_54]: /knowledge/spec/tramlines-spec.md#tl_54
 [sokf:tramlines:tramlines-spec#tl_55]: /knowledge/spec/tramlines-spec.md#tl_55
 [sokf:tramlines:tramlines-spec#tl_56]: /knowledge/spec/tramlines-spec.md#tl_56
 [sokf:tramlines:tramlines-spec#tl_57]: /knowledge/spec/tramlines-spec.md#tl_57
-[sokf:tramlines:tramlines-spec#tl_62]: /knowledge/spec/tramlines-spec.md#tl_62

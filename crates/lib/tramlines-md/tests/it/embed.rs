@@ -3,13 +3,16 @@
 
 use tramlines_md::{
     Finding, Locator, RepoPath,
-    check::{CheckOptions, NullHost, check_against, check_schema, example::check_formats},
-    derive::derive,
+    check::{
+        CheckOptions, MatchedBy, NullHost, check_against, check_schema, example::check_formats,
+        match_headings, respelt,
+    },
+    derive::{derive, guide_for, skeleton},
     document::Document,
     edit::{AnchorEdit, apply, line_edits},
     grammar::{
-        FormatRegistry, FormatSource, Grammar, RegexCache, Schema, compile, load_core_grammar,
-        load_grammar,
+        FormatRegistry, FormatSource, Grammar, RegexCache, Schema, States, compile,
+        load_core_grammar, load_grammar,
     },
     markdown::Dialect,
     yaml,
@@ -138,6 +141,19 @@ fn a_host_compiles_checks_repairs_and_derives() {
     // sokf:end derive
     assert!(scaffold.contains("title: Groceries"), "{scaffold}");
     assert!(scaffold.contains("- Milk x2"), "{scaffold}");
+
+    // sokf:begin skeleton
+    // A new document holds only what is true of it: the values that the
+    // host gives it, and what the schema fixes. The guide gives each part
+    // its guidance and its example, with the document's values in it.
+    let states = States::default();
+    let values = [("title".to_string(), "Shopping".to_string())].into();
+    let new = skeleton(&schema, &states, &NullHost, &values).expect("the schema derives");
+    let parts = guide_for(&schema, &states, &NullHost, &values);
+    let example = parts.sections[0].blocks[0].example.as_deref();
+    // sokf:end skeleton
+    assert_eq!(new, "---\ntitle: Shopping\n---\n\n# Shopping\n");
+    assert_eq!(example, Some("- Milk x2"));
 }
 
 #[test]
@@ -226,6 +242,54 @@ fn layer_formats(
     (registry, findings)
 }
 // sokf:end packs
+
+// sokf-tests: MD-15_AC-3
+// sokf-tests: MD-16_AC-1
+#[test]
+fn a_host_reads_headings_and_patterns_as_the_check_does() {
+    let grammar = load_grammar().expect("the grammar is built in");
+    let schema = compile_schema(&grammar, SCHEMA).expect("the schema compiles");
+    let text = "---\ntitle: Groceries\n---\n\n# Shopping\n\n- Milk x2\n";
+    let document = Document::parse(
+        RepoPath::parse("/shopping.md").expect("a path"),
+        text,
+        &Dialect::default(),
+    );
+    // sokf:begin read-as-check
+    // The sections that the headings hold, as the check reads them: a
+    // heading at its section's level that reads as the section's heading,
+    // as one of its `renamed-from`, or as the frontmatter value where the
+    // section's heading is bound to one, and not a heading that only
+    // stands in the place of a bound heading.
+    let states = schema.states(document.frontmatter.as_ref());
+    let matches = match_headings(document.view(), &schema, &states);
+    let held: Vec<usize> = document
+        .body
+        .headings
+        .iter()
+        .zip(&matches)
+        .filter_map(|(heading, found)| {
+            let found = (*found)?;
+            let level = schema.sections[found.section].level;
+            (heading.level == level && found.by != MatchedBy::Place).then_some(found.section)
+        })
+        .collect();
+    // A pattern of the program's own that reads `Unit::reading` never
+    // matches a run that the reading spells otherwise, outside a code span,
+    // a link's destination and title, and inline HTML.
+    let warnings: Vec<String> = respelt(r"^\*Note\*: ")
+        .into_iter()
+        .map(|(run, reading)| format!("the pattern names `{run}`, which reads `{reading}`"))
+        .collect();
+    // sokf:end read-as-check
+    // `# Shopping` only stands in the place of the heading `Groceries`.
+    assert_eq!(matches[0].map(|m| m.by), Some(MatchedBy::Place));
+    assert!(held.is_empty(), "{held:?}");
+    assert_eq!(
+        warnings,
+        ["the pattern names `*Note*: `, which reads `_Note_: `"]
+    );
+}
 
 const TASKS: &str = "registry:\n  task:\n    template: 'TODO ${}'\n    example: TODO buy milk\n";
 

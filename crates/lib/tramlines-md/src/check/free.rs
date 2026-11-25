@@ -6,7 +6,7 @@ use std::borrow::Cow;
 
 use super::{
     Checker, blocks,
-    claim::{self, Around, Claimed, Docs},
+    claim::{self, Around, Claimed, Docs, Later},
 };
 use crate::{grammar::Block as Rule, markdown::BlockKind};
 
@@ -44,18 +44,21 @@ pub(super) fn match_free(
             // The positions after a rule are the other free rules, and not
             // the rule itself, whose next repetition is its own business.
             // sokf-implements: TLMD_71
-            let later: Vec<&Rule> = free
+            let later: Vec<Later<'_>> = free
                 .iter()
                 .filter(|&&k| k != ri)
-                .map(|&k| rules[k])
+                .map(|&k| Later {
+                    rule: rules[k],
+                    divides: false,
+                    own: 0,
+                })
                 .collect();
-            let kinds = claim::opened(&later, c);
+            let kinds = claim::opened(later.iter().map(|l| l.rule), c);
             let around = Around {
                 later: &later,
                 kinds: &kinds,
                 held: held[ri],
                 ordered: false,
-                dividing: &[],
             };
             // Dividing a run needs an order to divide it along, so the
             // free walk takes whole blocks (LANG-5_AC-4).
@@ -63,7 +66,7 @@ pub(super) fn match_free(
             match claim::claim(c, docs, di, rules[ri], section, false, false, around) {
                 // A group that took no block leaves it to the rules after
                 // it, and to the report of a block nobody claimed, and keeps
-                // nothing that it wrote, such as its gate.
+                // nothing that it wrote.
                 Ok(Claimed { blocks: 0, .. }) => {
                     c.rollback(&before);
                 }

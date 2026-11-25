@@ -1,6 +1,6 @@
 [package]
 name = "tramlines-md"
-description = "Checks markdown documents against a schema, and derives the scaffold a schema implies."
+description = "Checks markdown documents against a schema, and derives the scaffold a schema implies. Unstable: its interface can change in any release."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -15,6 +15,7 @@ categories.workspace = true
 tramlines-core.workspace = true
 comrak.workspace = true
 regex.workspace = true
+regex-syntax.workspace = true
 serde.workspace = true
 
 [dev-dependencies]

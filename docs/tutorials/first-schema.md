@@ -294,7 +294,7 @@ A light sponge with a sharp lemon glaze.
 ```console
 $ tramlines validate --schema recipe.yaml cake.md
 cake.md: error[TLMD_18]: section `## Method` is missing (schema recipe, section "Method")
-cake.md:12: error[TL_74]: `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
+cake.md:12: error[TL_74]: `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads `200 g flour` (schema recipe, section "Ingredients" block 1)
 cake.md:14: error[TLMD_19]: heading `## Steps` is not declared (schema recipe)
 3 errors, 0 warnings
 [exit 1]
@@ -442,7 +442,7 @@ examples:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-recipe.yaml:33: error[TL_69]: example 1 fails: line 12: [TL_74] `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
+recipe.yaml:33: error[TL_69]: example 1 fails: line 12: [TL_74] `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads `200 g flour` (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```

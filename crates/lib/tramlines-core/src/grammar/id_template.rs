@@ -66,13 +66,19 @@ impl IdTemplate {
                     if seqs > 1 {
                         return Err(Problem::new(
                             "TL_114",
-                            format!("template `{source}` has more than one `seq` hole"),
+                            format!(
+                                "template {source} has more than one `seq` hole",
+                                source = text::code(source)
+                            ),
                         ));
                     }
                     if width == 0 {
                         return Err(Problem::new(
                             "TL_102",
-                            format!("template `{source}`: `seq-width` must be positive"),
+                            format!(
+                                "template {source}: `seq-width` must be positive",
+                                source = text::code(source)
+                            ),
                         ));
                     }
                     tokens.push(Token::Seq(width));
@@ -87,7 +93,8 @@ impl IdTemplate {
                         return Err(Problem::new(
                             "TL_58",
                             format!(
-                                "template `{source}`: the hole `${{{name}}}` names no lifecycle key"
+                                "template {source}: the hole `${{{name}}}` names no lifecycle key",
+                                source = text::code(source)
                             ),
                         ));
                     };
@@ -95,7 +102,8 @@ impl IdTemplate {
                         return Err(Problem::new(
                             "TL_122",
                             format!(
-                                "template `{source}`: the state `{bad}` of `{name}` is not a slug, so no id can hold it"
+                                "template {source}: the state `{bad}` of `{name}` is not a slug, so no id can hold it",
+                                source = text::code(source)
                             ),
                         ));
                     }
@@ -108,8 +116,9 @@ impl IdTemplate {
                     return Err(Problem::new(
                         "TL_58",
                         format!(
-                            "template `{source}`: an id holds only the holes a new document is filled with, `${{:seq}}`, `${{:slug}}` and `${{<lifecycle key>}}`, not {} `{ty}`",
-                            text::article(ty)
+                            "template {source}: an id holds only the holes a new document is filled with, `${{:seq}}`, `${{:slug}}` and `${{<lifecycle key>}}`, not {} `{ty}`",
+                            text::article(ty),
+                            source = text::code(source)
                         ),
                     ));
                 }
@@ -125,7 +134,10 @@ impl IdTemplate {
         if !is_slug(&sample) {
             return Err(Problem::new(
                 "TL_122",
-                format!("template `{source}` admits a non-slug: `{sample}` is not a slug"),
+                format!(
+                    "template {source} admits a non-slug: `{sample}` is not a slug",
+                    source = text::code(source)
+                ),
             ));
         }
         Ok(IdTemplate {
@@ -141,7 +153,7 @@ impl IdTemplate {
         if !is_slug(id) {
             return Err(Problem::new(
                 "TL_122",
-                format!("the id `{id}` is not a slug"),
+                format!("the id {} is not a slug", text::code(id)),
             ));
         }
         Ok(IdTemplate {

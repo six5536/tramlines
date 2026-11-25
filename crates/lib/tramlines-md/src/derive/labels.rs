@@ -9,7 +9,7 @@ use crate::{
         Block, Found, Label, Shape, Squashed, Unit, begins_with_key, carries_labels, cut, squash,
         task_box,
     },
-    markdown::BlockKind,
+    markdown::{BlockKind, Reading},
 };
 
 /// What an example says of its label: whether it carries one, and the key
@@ -52,7 +52,11 @@ impl Deriver<'_> {
             matches!(r.shape, Some(Shape::Template(_) | Shape::Pattern(_))) || r.format.is_some()
         };
         if let Some(r) = rule.filter(|r| shaped(r))
-            && !r.fits(&self.schema.core.formats, &squash(&bare), |_| None)
+            && !r.fits(
+                self.schema.formats_of(r),
+                &squash(&r.read_text(&bare)),
+                |_| None,
+            )
         {
             return (
                 text,
@@ -104,15 +108,19 @@ impl Deriver<'_> {
         let label = format!("[{words}] ");
         let item = matches!(block.kind, BlockKind::BulletList | BlockKind::NumberedList);
         let base = if item { task_box(&text) } else { 0 };
-        let formats = &self.schema.core.formats;
+        // The rule captures its key from the reading, so the key is found
+        // there, and its end mapped back to the text as written.
+        let read = rule.map_or_else(|| Reading::written(&text), |r| r.reading_of(&text));
+        let read_base = if item { task_box(&read.text) } else { 0 };
         let after_key = rule
             .filter(|r| self.schema.unit_captures_key(r))
-            .and_then(|r| r.key_in(formats, &squash(&text)))
-            .filter(|k| begins_with_key(&text[base..], k));
+            .and_then(|r| r.key_in(self.schema.formats_of(r), &squash(&read.text)))
+            .filter(|k| begins_with_key(&read.text[read_base..], k))
+            .map(|k| read.original(read_base + k.len()).max(base));
         let at = match after_key {
             // A unit that is only its key has no room for a label after it.
-            Some(k) if text.len() == base + k.len() => return text,
-            Some(k) => base + k.len() + 1,
+            Some(end) if end >= text.len() => return text,
+            Some(end) => end + 1,
             None => base,
         };
         format!("{}{label}{}", &text[..at], &text[at..])

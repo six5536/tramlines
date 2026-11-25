@@ -426,7 +426,10 @@ impl Validator<'_> {
                 self.fail_on(
                     value.line,
                     "TL_102",
-                    format!("`{key}` must be a slug: `{text}` is not"),
+                    format!(
+                        "`{key}` must be a slug: {text} is not",
+                        text = text::code(text)
+                    ),
                 );
             }
             Some("language-tag") if !is_language_tag(text) => {
@@ -435,8 +438,7 @@ impl Validator<'_> {
                     value.line,
                     "TL_102",
                     format!(
-                        "`{key}` must be a BCP 47 language tag, such as `en` or `de-CH`: `{text}` is not"
-                    ),
+                        "`{key}` must be a BCP 47 language tag, such as `en` or `de-CH`: {text} is not", text = text::code(text)),
                 );
             }
             // References resolve when the schema is lowered.
@@ -454,8 +456,9 @@ impl Validator<'_> {
                 value.line,
                 "TL_102",
                 format!(
-                    "`{key}` must be one of {}; `{text}` is not",
-                    list(&def.enum_)
+                    "`{key}` must be one of {}; {text} is not",
+                    list(&def.enum_),
+                    text = text::code(&text)
                 ),
             );
         }

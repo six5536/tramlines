@@ -115,11 +115,13 @@ Makes eight pancakes.
 
 ```console
 $ tramlines validate --schema recipe.yaml crepes.md
-crepes.md:8: error[TL_74]: `2 eggs` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`, `tbsp`, `whole`), found `eggs`; an item of this kind reads 200 g plain flour (schema recipe, section "Ingredients" block 1)
-crepes.md:13: error[TL_74]: `fry each pancake for a minute on each side.` does not match `^[A-Z][^.]*\.$`; an item of this kind reads Whisk the flour, eggs and milk into a smooth batter. (schema recipe, section "Method" block 1)
+crepes.md:8: error[TL_74]: `2 eggs` fails at column 3: expected a `unit` (one of `g`, `ml`, `tsp`, `tbsp`, `whole`), found `eggs`; an item of this kind reads `200 g plain flour` (schema recipe, section "Ingredients" block 1)
+crepes.md:13: error[TL_74]: `fry each pancake for a minute on each side.` does not match `^[A-Z][^.]*\.$`; an item of this kind reads `Whisk the flour, eggs and milk into a smooth batter.` (schema recipe, section "Method" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```
+
+A shape reads each paragraph, item, row, and heading in one fixed spelling of its markup, the one that formatters such as oxfmt and Prettier write: each emphasis as `_x_`, each strong emphasis as `**x**`, each code span in its shortest backticks, and each escape that changes nothing as the plain character. The text of the schema reads the same way, so the template `*Note*: ${}` takes both `*Note*: the end.` and `_Note_: the end.`. A pattern reads the same spelling, so write the markup that it names in that spelling, as `^_Note_: `. A piece of markup whose fixed spelling would change what the text means reads as written, such as `__a*__`, which as `**a***` would end the strong emphasis before the `*`. A table row reads each cell alone, and so do the shape of its rule and the format that the rule binds, so the template `*${a} | ${b}*` takes the row `| *x | y* |`.
 
 ## Troubleshooting
 
@@ -131,6 +133,7 @@ crepes.md:13: error[TL_74]: `fry each pancake for a minute on each side.` does n
 - `TL_109`: the regular expression of a type contains an anchor or a capture group. See [TL_109][sokf:errors-schema-types-keys-lifecycle#tl_109].
 - `TL_66`: a rule with a `template` or a `pattern` lacks an `example`. Add one. See [TL_66][sokf:errors-examples#tl_66].
 - `TL_74`: a line fails its shape. Compare it with the example in the message, from the column that the message names. See [TL_74][sokf:errors-lines#tl_74].
+- `TLMD_264`: a pattern names a spelling of markup that the engine never reads, such as `\*Note\*`. Write it in the fixed spelling, as `_Note_`. See [TLMD_264][sokf:errors-schema-shapes#tlmd_264].
 
 ## See also
 
@@ -149,6 +152,7 @@ crepes.md:13: error[TL_74]: `fry each pancake for a minute on each side.` does n
 [sokf:errors-schema-shapes#tl_120]: /docs/reference/errors-schema-shapes.md#tl_120
 [sokf:errors-schema-shapes#tl_22]: /docs/reference/errors-schema-shapes.md#tl_22
 [sokf:errors-schema-shapes#tl_25]: /docs/reference/errors-schema-shapes.md#tl_25
+[sokf:errors-schema-shapes#tlmd_264]: /docs/reference/errors-schema-shapes.md#tlmd_264
 [sokf:errors-schema-types-keys-lifecycle#tl_109]: /docs/reference/errors-schema-types-keys-lifecycle.md#tl_109
 [sokf:errors-schema-types-keys-lifecycle#tl_29]: /docs/reference/errors-schema-types-keys-lifecycle.md#tl_29
 [sokf:how-to-capture-keys]: /docs/how-to/capture-keys.md

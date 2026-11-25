@@ -458,7 +458,7 @@ A line matches the shape of its rule but lacks the key that the rule or its form
 ### Message
 
 ```text
-<file>:<line>: error[TL_44]: `<text>` carries no key: `<key>` captures nothing; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_44]: `<text>` carries no key: `<key>` captures nothing; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
 <file>:<line>: error[TL_44]: `<text>` carries no key: the format `<name>` captures `<key>` (schema <id>, <place of the rule>)
 ```
 
@@ -501,7 +501,7 @@ This item has no key:
 
 ```console
 $ tramlines validate --schema tasks.yaml tasks.md
-tasks.md:3: error[TL_44]: `buy milk` carries no key: `id` captures nothing; an item of this kind reads T-1: buy milk (schema tasks, section "Tasks" block 1)
+tasks.md:3: error[TL_44]: `buy milk` carries no key: `id` captures nothing; an item of this kind reads `T-1: buy milk` (schema tasks, section "Tasks" block 1)
 1 error, 0 warnings
 [exit 1]
 ```

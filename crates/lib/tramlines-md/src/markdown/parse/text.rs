@@ -4,7 +4,7 @@
 use comrak::nodes::{LineColumn, Sourcepos};
 
 use super::Parser;
-use crate::markdown::Piece;
+use crate::markdown::{Piece, Reading, apply, body, changes};
 
 impl Parser<'_> {
     /// A leaf node's text as written: the first line from its start column,
@@ -81,6 +81,30 @@ impl Parser<'_> {
             })
             .collect();
         (text, pieces)
+    }
+}
+
+impl Parser<'_> {
+    /// The reading of `text`, a unit's or a heading's, whose pieces are
+    /// `pieces`, and each of its changes that lies on one line recorded in
+    /// `Body::reading_changes`.
+    // sokf-implements: TLMD_258
+    // sokf-implements: MD-3_AC-15
+    pub(super) fn read(&mut self, text: &str, pieces: &[Piece]) -> Reading {
+        let found = changes(text);
+        for c in &found {
+            let last = c.range.end.saturating_sub(1).max(c.range.start);
+            if let (Some((line, start)), Some((end_line, end))) = (
+                body::position(pieces, c.range.start),
+                body::position(pieces, last),
+            ) && line == end_line
+            {
+                self.body
+                    .reading_changes
+                    .push((line, start, end + 1, c.with.clone()));
+            }
+        }
+        apply(text, &found)
     }
 }
 

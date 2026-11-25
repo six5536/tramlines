@@ -2,13 +2,13 @@
 type: ErrorReference
 id: errors-schema-shapes
 title: 'Errors: shapes and templates'
-description: The errors that tramlines reports for the shapes of the rules of a schema, and for the holes of its templates.
+description: The errors that tramlines reports for the shapes of the rules of a schema and for the holes of its templates, and the warning on a pattern that names a spelling of markup that the engine never reads.
 order: 11
 ---
 
 # Errors: shapes and templates
 
-These errors come from the shapes of the rules of a schema: the one shape that each rule declares, and the holes of a template. Section 4 of the core specification defines these errors. For a template or a pattern of a format, a message starts with ``format `<format>`: ``, and for a variant, with ``format `<format>`: variant `<variant>`: ``.
+These errors come from the shapes of the rules of a schema: the one shape that each rule declares, and the holes of a template. Section 4 of the core specification defines these errors, and section 8 of the markdown specification the warning on a pattern that names a spelling of markup that the engine never reads. For a template or a pattern of a format, a message starts with ``format `<format>`: ``, and for a variant, with ``format `<format>`: variant `<variant>`: ``.
 
 ## TL_22
 
@@ -443,8 +443,83 @@ $ tramlines validate --schema note.yaml note.md
 0 errors, 0 warnings
 ```
 
+## TLMD_264
+
+A pattern of the schema names a spelling of markup that the engine never reads, so the pattern never matches that text ([TLMD_264][sokf:tramlines:tramlines-md-spec#tlmd_264]).
+
+### Message
+
+```text
+<file>:<line>: warning[TLMD_264]: the pattern `<pattern>` names `<text>`, which reads `<reading>`; a pattern reads the fixed spelling, so it never matches that text outside a code span (schema <id>, <place of the rule>)
+```
+
+### Cause
+
+The warning is on the schema. The engine reads each paragraph, item, row, and heading in one fixed spelling of its markup: each emphasis as `_x_`, each strong emphasis as `**x**`, each code span in its shortest backticks, and each escape that changes nothing as the plain character. A `pattern`, a `select-pattern`, a ban, and a type read that spelling, so that a formatter's choice of spelling changes no finding. A run of literal text of the pattern reads otherwise, such as `\*Note\*`, which names `*Note*`, read as `_Note_`. The pattern never matches that text in any document, outside a code span, whose content reads as written. The lines of a fence read as written, so a rule of the lines of a fence draws no warning. A table row reads each cell alone, so a pattern of a rule of a row, and of a format that such a rule binds, reads each run as the cells read it.
+
+### Fix
+
+Change the schema. Write the run of the pattern in the fixed spelling, such as `_Note_` for `*Note*`, and `**Note**` for `__Note__`.
+
+### Example
+
+This schema matches a note by its emphasis, written with asterisks, and the run lists the warning with `--warnings`. The example of the rule fails its pattern for the same reason:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Notes
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each:
+          pattern: '^\*Note\*: '
+          example: '*Note*: the end.'
+```
+
+**`note.md`**
+
+```markdown
+# Notes
+
+- _Note_: the end.
+```
+
+```console
+$ tramlines validate --warnings --schema note.yaml note.md
+note.md:3: error[TL_74]: `_Note_: the end.` does not match `^\*Note\*: `; an item of this kind reads `*Note*: the end.` (schema note, section "Notes" block 1)
+note.yaml:8: error[TL_64]: the example `*Note*: the end.` does not match `^\*Note\*: ` (schema note, section "Notes" block 1)
+note.yaml:8: warning[TLMD_264]: the pattern `^\*Note\*: ` names `*Note*: `, which reads `_Note_: `; a pattern reads the fixed spelling, so it never matches that text outside a code span (schema note, section "Notes" block 1)
+2 errors, 1 warning
+[exit 1]
+```
+
+Write the emphasis in the fixed spelling:
+
+**`note.yaml`**
+
+```yaml
+line-limit: 0
+sections:
+  - heading: Notes
+    level: 1
+    blocks:
+      - kind: bullet-list
+        each:
+          pattern: '^_Note_: '
+          example: '*Note*: the end.'
+```
+
+```console
+$ tramlines validate --warnings --schema note.yaml note.md
+0 errors, 0 warnings
+```
+
 <!-- sokf:links -->
 
+[sokf:tramlines:tramlines-md-spec#tlmd_264]: /knowledge/spec/tramlines-md-spec.md#tlmd_264
 [sokf:tramlines:tramlines-spec#tl_105]: /knowledge/spec/tramlines-spec.md#tl_105
 [sokf:tramlines:tramlines-spec#tl_119]: /knowledge/spec/tramlines-spec.md#tl_119
 [sokf:tramlines:tramlines-spec#tl_120]: /knowledge/spec/tramlines-spec.md#tl_120

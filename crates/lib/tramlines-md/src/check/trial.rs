@@ -2,7 +2,12 @@
 //! stands before the trial, and what a rollback of the trial drops or
 //! keeps.
 
-use super::{Accepted, Broken, Checker, LabelRepair};
+use std::collections::HashSet;
+
+use super::{
+    Accepted, Broken, Checker, LabelRepair,
+    bound::{self, Bound},
+};
 use crate::{Finding, Severity, text};
 
 /// The length of everything a check writes, taken before a trial.
@@ -10,11 +15,14 @@ use crate::{Finding, Severity, text};
 pub(super) struct Savepoint {
     pub(super) findings: usize,
     captures: usize,
-    repairs: usize,
+    pub(super) repairs: usize,
     label_repairs: usize,
     gates: usize,
     accepted: usize,
     broken: usize,
+    settled: usize,
+    bound: usize,
+    deferred: usize,
 }
 
 impl Checker<'_> {
@@ -28,6 +36,9 @@ impl Checker<'_> {
             gates: self.out.gates.len(),
             accepted: self.out.accepted.len(),
             broken: self.broken.len(),
+            settled: self.settled.len(),
+            bound: self.bound.len(),
+            deferred: self.deferred.len(),
         }
     }
 
@@ -53,12 +64,17 @@ impl Checker<'_> {
 
     /// Drop everything written since `at`, yielding the findings, the
     /// records of accepted units, and the units that break their rules
-    /// dropped. Every list grows and none shrinks, so savepoints nest.
+    /// dropped. A list shrinks only back to a savepoint, or, for the repairs,
+    /// at the end of a walk or of a body, back to its start or inside it
+    /// (`sure.rs`), where no savepoint taken inside it is still live, so
+    /// savepoints nest.
     // sokf-implements: TLMD_64
     pub(super) fn rollback(&mut self, at: &Savepoint) -> Dropped {
         self.out.captures.truncate(at.captures);
         self.out.repairs.truncate(at.repairs);
         self.out.gates.truncate(at.gates);
+        self.settled.truncate(at.settled);
+        self.deferred.truncate(at.deferred);
         // sokf-implements: TLMD_213
         // sokf-implements: MD-4_AC-15
         let accepted = self.out.accepted.split_off(at.accepted);
@@ -67,6 +83,7 @@ impl Checker<'_> {
             accepted,
             broken: self.broken.split_off(at.broken),
             label_repairs: self.out.label_repairs.split_off(at.label_repairs),
+            bound: self.bound.split_off(at.bound).into_boxed_slice(),
             blocks: 1,
         }
     }
@@ -80,6 +97,9 @@ impl Checker<'_> {
         self.out.captures.truncate(at.captures);
         self.out.repairs.truncate(at.repairs);
         self.out.gates.truncate(at.gates);
+        self.settled.truncate(at.settled);
+        self.deferred.truncate(at.deferred);
+        bound::release(&mut self.bound[at.bound..]);
     }
 
     /// Keep what a refused position wrote after all, where the position
@@ -92,6 +112,27 @@ impl Checker<'_> {
         self.out.accepted.extend(dropped.accepted);
         self.broken.extend(dropped.broken);
         self.out.label_repairs.extend(dropped.label_repairs);
+        self.bound.extend(bound::released(dropped.bound.into_vec()));
+    }
+
+    /// Report why a position that the schema requires refused a block of
+    /// its own kind that went on to the positions after it: its findings,
+    /// the units that break its rules, and the units that read as their
+    /// bound values, whose position took no block (`TLMD_66`, `TLMD_312`).
+    pub(super) fn report_refusal(&mut self, dropped: Dropped) {
+        self.out.findings.extend(dropped.findings);
+        self.broken.extend(dropped.broken);
+        self.bound.extend(bound::released(dropped.bound.into_vec()));
+    }
+
+    /// The tags of the findings written since `at` that are their bound
+    /// values' faults, where the unit's position took its block
+    /// (`TLMD_312`).
+    pub(super) fn claimed_tags_since(
+        &self,
+        at: &Savepoint,
+    ) -> HashSet<(&str, Option<usize>, &str)> {
+        bound::claimed_tags(&self.bound[at.bound..])
     }
 }
 
@@ -126,6 +167,9 @@ pub(super) struct Dropped {
     pub(super) broken: Vec<Broken>,
     /// The repairs of labels, which the kept findings report.
     label_repairs: Vec<LabelRepair>,
+    /// The units that read as their bound values, whose findings a position
+    /// that keeps its block keeps (`TLMD_312`).
+    bound: Box<[Bound]>,
     /// The blocks that the refusal covers, from the block refused: one,
     /// or each block of the repetition that an absent group gave back.
     pub(super) blocks: usize,
@@ -140,6 +184,7 @@ impl Default for Dropped {
             accepted: Vec::new(),
             broken: Vec::new(),
             label_repairs: Vec::new(),
+            bound: Box::default(),
             blocks: 1,
         }
     }

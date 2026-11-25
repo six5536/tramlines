@@ -104,9 +104,9 @@ $ tramlines validate --schema changelog.yaml CHANGELOG.md
 
 ```console
 $ tramlines validate --schema changelog.yaml CHANGELOG.md
-CHANGELOG.md:4: error[TLMD_57]: `Fixed: the slow search` matches no rule of the block; the nearest fails at column 23: expected `.`, found the end; an item of this kind reads Fixed: the crash on start. (schema changelog, section "${:int}.${:int}.${:int}" block 1)
+CHANGELOG.md:4: error[TLMD_57]: `Fixed: the slow search` matches no rule of the block; the nearest fails at column 23: expected `.`, found the end; an item of this kind reads `Fixed: the crash on start.` (schema changelog, section "${:int}.${:int}.${:int}" block 1)
 CHANGELOG.md:5: error[TLMD_159]: the items matching `TODO`: at most 0 are allowed; there is 1. When at the limit: Finish each TODO, or leave its change out of the release. (schema changelog, rule `todo`)
-CHANGELOG.md:6: error[TLMD_53]: `Removed: the old menu.` matches no rule of the block; declare it or set `units-open` (schema changelog, section "${:int}.${:int}.${:int}" block 1)
+CHANGELOG.md:6: error[TLMD_53]: `Removed: the old menu.` matches no rule of the block; an item of this kind reads `Added: a dark theme.`, or reads `Fixed: the crash on start.`; declare it or set `units-open` (schema changelog, section "${:int}.${:int}.${:int}" block 1)
 3 errors, 0 warnings
 [exit 1]
 ```
@@ -162,9 +162,9 @@ debug: true
 
 ```console
 $ tramlines validate --schema settings.yaml settings.md
-settings.md:8: error[TLMD_87]: `# TODO` matches no rule of the fence; declare it or set `lines-open` (schema settings, section "Settings" block 1)
+settings.md:8: error[TLMD_87]: `# TODO` matches no rule of the fence; a line of this kind reads `port = 8080`; declare it or set `lines-open` (schema settings, section "Settings" block 1)
 settings.md:8: error[TLMD_159]: the lines matching `^#`: at most 0 are allowed; there is 1. When at the limit: Explain a setting in the text before the block. (schema settings, rule `comment`)
-settings.md:9: error[TLMD_57]: `debug: true` matches no rule of the fence; the nearest fails at column 6: expected ` = `, found `: true`; a line of this kind reads port = 8080 (schema settings, section "Settings" block 1)
+settings.md:9: error[TLMD_57]: `debug: true` matches no rule of the fence; the nearest fails at column 6: expected ` = `, found `: true`; a line of this kind reads `port = 8080` (schema settings, section "Settings" block 1)
 3 errors, 0 warnings
 [exit 1]
 ```
@@ -228,6 +228,8 @@ tasks.yaml:11: error[TLMD_58]: the example `Urgent: pay the rent.` is taken by t
 ```
 
 Move the `Urgent` rule before the other, and the schema passes.
+
+A line rule reads each line of a fence as written, its markup too. A formatter of Markdown can lay out the content of a fence of JSON, YAML, or another language that it formats, as oxfmt writes `{"name": "web"}` as `{ "name": "web" }`. Write the line rules of such a fence in the form that the formatter writes, or keep the fence out of the formatter.
 
 ## Troubleshooting
 

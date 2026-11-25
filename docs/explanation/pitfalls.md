@@ -62,7 +62,7 @@ sections:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-pancakes.md:4: error[TL_74]: `flour, about 200 g or so` does not match `^[0-9]+ g [a-z]+$`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
+pancakes.md:4: error[TL_74]: `flour, about 200 g or so` does not match `^[0-9]+ g [a-z]+$`; an item of this kind reads `200 g flour` (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -89,7 +89,7 @@ sections:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-pancakes.md:4: error[TL_74]: `flour, about 200 g or so` fails at column 1: expected an `int` (`\d+`), found `flour, about 200 g or so`; an item of this kind reads 200 g flour (schema recipe, section "Ingredients" block 1)
+pancakes.md:4: error[TL_74]: `flour, about 200 g or so` fails at column 1: expected an `int` (`\d+`), found `flour, about 200 g or so`; an item of this kind reads `200 g flour` (schema recipe, section "Ingredients" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -151,7 +151,7 @@ sections:
 
 ```console
 $ tramlines validate --schema method.yaml pancakes.md
-pancakes.md:4: error[TLMD_53]: `Fry the batter.` matches no rule of the block; declare it or set `units-open` (schema method, section "Method" block 1)
+pancakes.md:4: error[TLMD_53]: `Fry the batter.` matches no rule of the block; an item of this kind reads `Step 1: whisk the eggs.`; declare it or set `units-open` (schema method, section "Method" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -214,7 +214,7 @@ sections:
 
 ```console
 $ tramlines validate --schema recipe.yaml pancakes.md
-pancakes.md:3: error[TLMD_69]: expected a prose block; found a bullet-list block (schema recipe, section "Ingredients" block 1)
+pancakes.md:3: error[TLMD_69]: expected a prose block; found a bullet-list block (schema recipe, section "Ingredients")
 recipe.yaml:3: error[TLMD_116]: the schema derives no scaffold: a section with no `blocks` holds one prose block, and the scaffold writes no text of its own; declare the block and its `example`
 2 errors, 0 warnings
 [exit 1]
@@ -228,7 +228,7 @@ A format can come from a file of shared formats, passed with `--formats`, or fro
 
 ## Copying markers from a scaffold
 
-A scaffold is the document that a new document starts from. It contains markers: an `only` marker before each part that some states need, and a `guidance` line before each part that has guidance. The markers guide the person who fills in the scaffold. A new document is the scaffold gated to its states. It holds the parts that its states need, with no `only` markers, and it keeps the guidance lines for you to read, act on, and delete. `tramlines new` prints it. A marker that you copy by hand, or a guidance line that you leave behind, stays in the document. The check then fails at the marker's line:
+A scaffold is the document that the examples of a schema make together. It contains markers: an `only` marker before each part that some states need, and a `guidance` line before each part that has guidance. A new document starts from its skeleton instead, which holds no marker, and `tramlines new` prints the guidance of each part apart from it. A marker that you copy by hand from a scaffold, or a guidance line that a document started from an older scaffold still holds, stays in the document. The check then fails at the marker's line:
 
 **`meeting.yaml`**
 

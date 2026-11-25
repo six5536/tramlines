@@ -17,6 +17,8 @@ A unit of a block matches none of the `rules` of the block ([TLMD_53][sokf:traml
 ### Message
 
 ```text
+<file>:<line>: error[TLMD_53]: `<unit>` matches no rule of the block; the nearest <failure>; a <unit> of this kind reads `<example>`; declare it or set `units-open` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_53]: `<unit>` matches no rule of the block; a <unit> of this kind reads `<example>`, or reads `<example>`; declare it or set `units-open` (schema <id>, <place of the rule>)
 <file>:<line>: error[TLMD_53]: `<unit>` matches no rule of the block; declare it or set `units-open` (schema <id>, <place of the rule>)
 ```
 
@@ -24,9 +26,11 @@ A unit of a block matches none of the `rules` of the block ([TLMD_53][sokf:traml
 
 The block declares `rules`, and these rules work as a grammar: every unit must go to a rule. No rule takes this unit, and the unit doesn't start to match any rule with a shape. A rule with only `select-pattern` and a count takes no unit. The engine therefore also reports a unit that only such a rule selects. When a unit partly matches a rule, the engine reports [TLMD_57](#tlmd_57) instead.
 
+A pattern gives no column at which a text stops matching it, so the engine finds the rule that the unit was meant to follow by its examples: the rule whose example begins as the unit does for longest, each read without its label. The message names why the unit fails that rule and gives the rule's example. Where the examples of several rules begin as the unit does for as long, or none begins as it does, the message gives the example of each of those rules, and where no rule has an example, it names only the unit.
+
 ### Fix
 
-Change the unit in the document so that a rule takes it, or remove it. If the block can contain units of this kind, add a rule for them in the schema. To accept any unit that no rule takes, set `units-open: true` on the block instead.
+Change the unit in the document so that a rule takes it, as the example in the message shows, or remove it. If the block can contain units of this kind, add a rule for them in the schema. To accept any unit that no rule takes, set `units-open: true` on the block instead.
 
 ### Example
 
@@ -56,7 +60,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:4: error[TLMD_53]: `Close it.` matches no rule of the block; declare it or set `units-open` (schema note, section "Steps" block 1)
+note.md:4: error[TLMD_53]: `Close it.` matches no rule of the block; an item of this kind reads `STEP Open the lid.`; declare it or set `units-open` (schema note, section "Steps" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -84,8 +88,8 @@ A unit or a line matches part of a rule and then stops, and no rule takes it ([T
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_57]: `<unit>` matches no rule of the block; the nearest <failure>; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
-<file>:<line>: error[TLMD_57]: `<unit>` matches no rule of the fence; the nearest <failure>; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_57]: `<unit>` matches no rule of the block; the nearest <failure>; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TLMD_57]: `<unit>` matches no rule of the fence; the nearest <failure>; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
@@ -128,7 +132,7 @@ host: example.com
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:5: error[TLMD_57]: `host: example.com` matches no rule of the fence; the nearest fails at column 5: expected `=`, found `: example.com`; a line of this kind reads port=80 (schema note, section "Config" block 1)
+note.md:5: error[TLMD_57]: `host: example.com` matches no rule of the fence; the nearest fails at column 5: expected `=`, found `: example.com`; a line of this kind reads `port=80` (schema note, section "Config" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -375,12 +379,14 @@ A rule under `rules` or `lines` declares a `max`, and neither binds a format nor
 ### Message
 
 ```text
-<file>:<line>: error[TLMD_235]: a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`
+<file>:<line>: error[TLMD_235]: the rule with `<key>` `<value>` has `max`, so it names what it counts: declare a `rule-id`, or bind a `format`
+<file>:<line>: error[TLMD_235]: the rule with `text` from the frontmatter `<frontmatter key>` has `max`, so it names what it counts: declare a `rule-id`, or bind a `format`
+<file>:<line>: error[TLMD_235]: the rule has `max`, so it names what it counts: declare a `rule-id`, or bind a `format`
 ```
 
 ### Cause
 
-The error is on the schema. Before the `when-at-limit` of each limit, a scaffold holds words that a host writes, and those words name the limit of a rule by the format that the rule binds, or else by its `rule-id`. A rule with neither leaves the words only the unit of the block, so words such as `At most 1 item.` read as a limit on every item of the block. A soft limit and a hard `max` of zero need the name as much as a hard count.
+The error is on the schema. Before the `when-at-limit` of each limit, a scaffold holds words that a host writes, and those words name the limit of a rule by the format that the rule binds, or else by its `rule-id`. A rule with neither leaves the words only the unit of the block, so words such as `At most 1 item.` read as a limit on every item of the block. A soft limit and a hard `max` of zero need the name as much as a hard count. The message names the rule by its `select-pattern`, or else by its `template`, `pattern`, or `text`, and a rule with none of them as "the rule".
 
 ### Fix
 
@@ -416,7 +422,7 @@ sections:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.yaml:9: error[TLMD_235]: a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`
+note.yaml:9: error[TLMD_235]: the rule with `select-pattern` `^wait` has `max`, so it names what it counts: declare a `rule-id`, or bind a `format`
 1 error, 0 warnings
 [exit 1]
 ```

@@ -4,6 +4,10 @@
 
 tramlines validates Markdown files against a schema that you write in YAML. A schema is a set of rules. The rules describe which frontmatter fields, headings, lists, and paragraphs a file must contain, and the form of each line. Each rule includes an example line. When a line is wrong, the error shows that example, so you can see what to write.
 
+## Status
+
+**Unstable.** tramlines is at a 0.x version, and its commands, options and file formats can change in any release. Its libraries, `tramlines-core` and `tramlines-md`, are at a 0.x version too, and their interface can change in any release.
+
 ## Features
 
 - Checks frontmatter, headings, lists, paragraphs, and individual lines
@@ -94,7 +98,7 @@ title: Groceries
 ```console
 $ tramlines validate --schema list.yaml shopping.md
 shopping.md:5: error[TLMD_165]: heading `Shopping` must equal the frontmatter `title`: `Groceries` (schema list, section "<title>")
-shopping.md:8: error[TL_74]: `Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads Milk x2 (schema list, section "<title>" block 1)
+shopping.md:8: error[TL_74]: `Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads `Milk x2` (schema list, section "<title>" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```

@@ -85,11 +85,11 @@ A line of the document doesn't match the shape that its rule or its format requi
 ### Message
 
 ```text
-<file>:<line>: error[TL_74]: `<text>` fails at column <n>: expected <expected>, found <found>; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
-<file>:<line>: error[TL_74]: `<text>` does not match `<pattern>`; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_74]: `<text>` fails at column <n>: expected <expected>, found <found>; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_74]: `<text>` does not match `<pattern>`; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
 <file>:<line>: error[TL_74]: `<text>` must read `<expected>` (schema <id>, <place of the rule>)
-<file>:<line>: error[TL_74]: `<text>` does not match the `<variant>` form: it <failure>; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
-<file>:<line>: error[TL_74]: `<text>` matches none of the forms <variants>[: each fails at column <n>]; a <unit> of this kind reads <example> (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_74]: `<text>` does not match the `<variant>` form: it <failure>; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_74]: `<text>` matches none of the forms <variants>[: each fails at column <n>]; a <unit> of this kind reads `<example>` (schema <id>, <place of the rule>)
 ```
 
 ### Cause
@@ -98,7 +98,7 @@ The rule declares a `template`, a `pattern`, or a `text`, or binds a format, and
 
 ### Fix
 
-Rewrite the line in the document to match the example. If the rule is wrong for documents of this kind, correct its shape in the schema.
+Rewrite the line in the document to match the example. If the rule is wrong for documents of this kind, correct its shape in the schema. `tramlines validate --fix` rewrites a paragraph or an item whose rule declares a `text` to that text, but only where the check is sure that the unit belongs to the rule: not where the blocks under the same heading hold another error that decides which position takes a block, not where the unit has the shape of another rule of the section, not in a run of paragraphs that one position takes whole because none of it passes, and not where an optional position after the rule, which took no block, would take the unit ([TLMD_279][sokf:tramlines:tramlines-md-spec#tlmd_279] to [TLMD_281][sokf:tramlines:tramlines-md-spec#tlmd_281], [TLMD_286][sokf:tramlines:tramlines-md-spec#tlmd_286]). Correct the other error first, and run `--fix` again.
 
 ### Example
 
@@ -130,7 +130,7 @@ This item doesn't:
 
 ```console
 $ tramlines validate --schema note.yaml note.md
-note.md:3: error[TL_74]: `buy milk` fails at column 1: expected `TODO `, found `buy milk`; an item of this kind reads TODO buy milk (schema note, section "Note" block 1)
+note.md:3: error[TL_74]: `buy milk` fails at column 1: expected `TODO `, found `buy milk`; an item of this kind reads `TODO buy milk` (schema note, section "Note" block 1)
 1 error, 0 warnings
 [exit 1]
 ```
@@ -158,7 +158,7 @@ A line of the document matches one of the `prohibited-patterns` of the schema or
 
 ```text
 <file>:<line>: error[TL_75]: `<span>` is refused: <message> (schema <id>)
-<file>:<line>: error[TL_75]: `<span>` is refused: <message>[ A <unit> of this kind reads <example>] (schema <id>, <place of the rule>)
+<file>:<line>: error[TL_75]: `<span>` is refused: <message>[ A <unit> of this kind reads `<example>`] (schema <id>, <place of the rule>)
 ```
 
 ### Cause
@@ -220,6 +220,9 @@ $ tramlines validate --schema note.yaml note.md
 
 <!-- sokf:links -->
 
+[sokf:tramlines:tramlines-md-spec#tlmd_279]: /knowledge/spec/tramlines-md-spec.md#tlmd_279
+[sokf:tramlines:tramlines-md-spec#tlmd_281]: /knowledge/spec/tramlines-md-spec.md#tlmd_281
+[sokf:tramlines:tramlines-md-spec#tlmd_286]: /knowledge/spec/tramlines-md-spec.md#tlmd_286
 [sokf:tramlines:tramlines-spec#tl_21]: /knowledge/spec/tramlines-spec.md#tl_21
 [sokf:tramlines:tramlines-spec#tl_74]: /knowledge/spec/tramlines-spec.md#tl_74
 [sokf:tramlines:tramlines-spec#tl_75]: /knowledge/spec/tramlines-spec.md#tl_75

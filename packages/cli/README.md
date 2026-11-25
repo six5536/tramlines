@@ -7,6 +7,10 @@ to write instead. Markdown is the first format. tramlines ships as prebuilt
 binaries for Linux, macOS, and Windows. Each release publishes them to
 npm.
 
+## Status
+
+**Unstable.** `tramlines` is at a 0.x version, and its commands, options and file formats can change in any release.
+
 ## Install
 
 ```sh

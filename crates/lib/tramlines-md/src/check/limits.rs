@@ -1,7 +1,7 @@
 //! `line-limit` and `prohibited-patterns`.
 
 use super::{At, Checker};
-use crate::grammar::refused_masked;
+use crate::grammar::{Quote, refused_quoting};
 
 /// The line limit; document-scope bans.
 // sokf-implements: TL_21
@@ -72,16 +72,37 @@ pub(super) fn check(c: &mut Checker<'_>) {
         // pattern quoted as code is not prose (LANG-1_AC-2): the bans read
         // each code span as backticks, and a failure quotes the line.
         let clean = c.doc.body.clean_line(file_line, line);
-        let masked = c.doc.body.mask_spans(file_line, &clean);
+        let written = c.doc.body.mask_spans(file_line, &clean);
+        // The bans read the reading of the line, each byte of a code span
+        // masked as the line as written masks it, and a failure quotes the
+        // line as written (TLMD_258).
+        // sokf-implements: TLMD_258
+        let read = c.doc.body.read_line(file_line, &clean);
+        let masked: Vec<u8> = read
+            .text
+            .bytes()
+            .enumerate()
+            .map(|(i, b)| match written.as_bytes().get(read.original(i)) {
+                Some(b'`') => b'`',
+                _ => b,
+            })
+            .collect();
+        let masked = String::from_utf8(masked).unwrap_or_else(|_| read.text.clone());
+        let at = |i: usize| read.original(i);
+        let quote = Quote {
+            text: &clean,
+            at: &at,
+        };
         // A document-wide ban guards no one rule, so its failure is the
         // span it matched and its pattern.
         // sokf-implements: TL_75
-        if let Some(reason) = refused_masked(
-            &clean,
+        if let Some(reason) = refused_quoting(
+            &read.text,
             &masked,
             &schema.core.prohibited_patterns,
             "line",
             None,
+            &quote,
         ) {
             c.located(key_line("prohibited-patterns"), |c| {
                 c.error(Some(file_line), "TL_75", reason);

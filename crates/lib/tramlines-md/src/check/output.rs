@@ -1,16 +1,23 @@
 //! What a schema check yields: the findings, the captured keys and their
 //! anchors, the repairs, and the gates.
 
+use std::borrow::Cow;
+
 use crate::{
     Finding,
-    grammar::{Condition, KeyDerivation, KeyScope},
+    grammar::{Condition, KeyDerivation, KeyScope, KeyText},
+    markdown::{self, id_of, slug},
 };
 
 /// A key a rule captured.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capture {
-    /// The key.
+    /// The key, as the rule reads it: in the reading of its unit where the
+    /// unit is prose or a heading (`TLMD_258`).
     pub key: String,
+    /// The key as the document writes it: the bytes of the unit's text
+    /// that `key` stands for, which the id of its anchor reads.
+    pub written: String,
     /// The line it is captured on.
     pub line: usize,
     /// The heading's slug, when a heading's `key` captured it.
@@ -36,6 +43,16 @@ pub struct Capture {
     pub spot: Spot,
     /// The prefix the key takes, where the capturing rule derives it.
     pub derives: Option<KeyDerivation>,
+    /// The id of the anchor that names the capture's key, which a link to
+    /// the key opens (`TLMD_101` to `TLMD_106`, `TLMD_287`): the id that
+    /// the capture which holds the key's anchor gives, the heading that
+    /// captures the key, a heading that pairs with it among them, else the
+    /// capture that defines it, else the key's first capture. A capture that
+    /// pairs names the key of its set. The check sets it after every key is
+    /// captured, also where the body holds no such anchor yet, where it is
+    /// the id that the repair writes, and on a scaffold; it is empty until
+    /// then, and where the key's slug is empty.
+    pub anchor: String,
 }
 
 /// Where a key's anchor goes (`TLMD_104` to `TLMD_109`).
@@ -47,6 +64,40 @@ pub enum Spot {
     Inline(usize, usize),
     /// On a line of its own before the block that starts on this line.
     Before(usize),
+}
+
+impl Capture {
+    /// The key as the comparison of two keys reads it (`TLMD_287`): as
+    /// written where a line of a fence or of an HTML block, which reads as
+    /// written, captured it, and else in its reading, with the text that
+    /// the document writes for it.
+    pub(crate) fn text(&self) -> KeyText {
+        KeyText::new(
+            &self.key,
+            &self.written,
+            matches!(self.spot, Spot::Before(_)),
+        )
+    }
+
+    /// The id of the key's anchor: the slug of the plain text that the key
+    /// renders as where a unit of prose or a heading captured it, and the
+    /// slug of the key itself where a line of a fence or of an HTML block,
+    /// which reads as written, did (`TLMD_101`). The plain text is that of
+    /// the key as written, where the key alone reads as it reads in its
+    /// unit, because the reading writes an emphasis inside a word `_x_`,
+    /// which renders as no emphasis, so `a*b*-1` gives `ab-1`. A key that
+    /// cuts a piece of markup in two reads otherwise alone, and its plain
+    /// text is that of its reading, which its twins share.
+    // sokf-implements: TLMD_101
+    // sokf-implements: MD-4_AC-19
+    pub fn id(&self) -> String {
+        let text = self.text();
+        if text.verbatim {
+            slug(&self.key)
+        } else {
+            id_of(text.spelt())
+        }
+    }
 }
 
 impl Spot {
@@ -82,15 +133,16 @@ pub struct Paired {
     pub by: usize,
 }
 
-/// The rules of a pairing as a finding names them: "rule `a`", "rule `a`
-/// or `b`", or "rule `a`, `b`, or `c`".
+/// The sets of keys of a pairing as a finding names them: "set `a`", "set
+/// `a` or `b`", or "set `a`, `b`, or `c`". A set is named by the `rule-id`
+/// of a section or a block, or by a `key-of`, which is no rule.
 pub(crate) fn rules_named(with: &[String]) -> String {
     let quoted: Vec<String> = with.iter().map(|r| format!("`{r}`")).collect();
     match quoted.as_slice() {
-        [] => "rule".to_string(),
-        [one] => format!("rule {one}"),
-        [a, b] => format!("rule {a} or {b}"),
-        [rest @ .., last] => format!("rule {}, or {last}", rest.join(", ")),
+        [] => "set".to_string(),
+        [one] => format!("set {one}"),
+        [a, b] => format!("set {a} or {b}"),
+        [rest @ .., last] => format!("set {}, or {last}", rest.join(", ")),
     }
 }
 
@@ -112,13 +164,18 @@ pub struct Repair {
 }
 
 impl Repair {
-    /// A heading of `level`.
+    /// A heading of `level`, its text written so that the parser reads it
+    /// back as `text`.
+    // sokf-implements: TLMD_274
     pub fn heading(line: usize, end_line: usize, level: u8, text: String) -> Self {
         Repair {
             line,
             end_line,
             prefix: format!("{} ", "#".repeat(usize::from(level))),
-            text,
+            text: match markdown::atx_written(&text) {
+                Cow::Borrowed(_) => text,
+                Cow::Owned(written) => written,
+            },
         }
     }
 }

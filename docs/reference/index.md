@@ -12,13 +12,13 @@
 - [Errors: keys and repairs][sokf:errors-keys-and-repairs] - The errors that tramlines reports for keys and their anchors, and for the text that a repair rewrites to match the frontmatter or the schema.
 - [Errors: markers][sokf:errors-keys-markers-scaffolds] - The errors that tramlines reports for the markers of a scaffold that a document keeps.
 - [Errors: labels][sokf:errors-labels] - The errors that tramlines reports for the labels that a schema declares and that the units of a document carry.
-- [Errors: lifecycle and ids][sokf:errors-lifecycle-and-ids] - The errors that tramlines reports for the lifecycle of a schema and for the id template.
+- [Errors: lifecycle and ids][sokf:errors-lifecycle-and-ids] - The errors that tramlines reports for the lifecycle of a schema, for the lifecycle keys of a document, and for the id template.
 - [Errors: limits][sokf:errors-limits] - The errors that tramlines reports for the form of a limit in a schema, and how to fix each one.
 - [Errors: lines and pairings][sokf:errors-lines-and-pairings] - The errors that tramlines reports for the lines of a code block and for rules that pair one unit with each key of another rule, and how to fix each one.
 - [Errors: lines and length][sokf:errors-lines] - The errors that tramlines reports for a line that fails its shape or a ban, and for a document that is too long.
 - [Errors: sections inside sections][sokf:errors-nested-sections] - The errors that tramlines reports for a section that declares a parent section, and how to fix each one.
 - [Errors: scaffolds][sokf:errors-scaffolds] - The errors that tramlines reports for the scaffold that a new document starts from, when a schema can't derive it or the scaffold fails the schema.
-- [Errors: shapes and templates][sokf:errors-schema-shapes] - The errors that tramlines reports for the shapes of the rules of a schema, and for the holes of its templates.
+- [Errors: shapes and templates][sokf:errors-schema-shapes] - The errors that tramlines reports for the shapes of the rules of a schema and for the holes of its templates, and the warning on a pattern that names a spelling of markup that the engine never reads.
 - [Errors: schema types and keys][sokf:errors-schema-types-keys-lifecycle] - The errors that tramlines reports for the types, the keys, the key derivations, and the counts of a schema, and how to fix each one.
 - [Errors: the schema][sokf:errors-schema] - The errors that tramlines reports for the YAML, the keys, the values and the regular expressions of a schema file, and how to fix each one.
 - [Errors: headings and sections][sokf:errors-sections] - The errors that tramlines reports for the headings of a document and the sections they open, and how to fix each one.

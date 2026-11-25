@@ -50,7 +50,7 @@ fn compile_schema(grammar: &Grammar, text: &str) -> Result<Schema, Vec<Finding>>
 
 <!-- /sokf:include -->
 
-2. Check a document. The function `Document::parse` reads the frontmatter and the body. The method `Schema::states` reads the lifecycle states from the frontmatter. The function `check_against` returns the findings, with the repairs and the anchors that the document needs. Each `Finding` holds a path, a line, a severity, the key of its criterion, and a message.
+2. Check a document. The function `Document::parse` reads the frontmatter and the body. The method `Schema::states` reads the lifecycle states from the frontmatter. The function `check_against` returns the findings, with the repairs and the anchors that the document needs. Each `Finding` holds a path, a line, a severity, the key of its criterion, and a message. Each `Capture` of `CheckOutput::captures` holds a key that the document captures, with its line, the key as the document writes it, and, in `anchor`, the id of the anchor that names the key: file each key under that id to resolve a link to the key as the check does, also for a capture that pairs with a key of another rule or that repeats it.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#check -->
 
@@ -127,7 +127,7 @@ fn repair(schema: &Schema, text: &str) -> String {
 
 <!-- /sokf:include -->
 
-4. Derive the scaffold of a new document. [How a schema derives its scaffold][sokf:explanation-scaffolds] explains what a scaffold contains.
+4. Start a new document. The function `derive` returns the scaffolds of a schema, which its examples make, and which `check_schema` checks. [How a schema derives its scaffold][sokf:explanation-scaffolds] explains what a scaffold contains, and why a new document starts from a skeleton instead.
 
 <!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#derive -->
 
@@ -136,6 +136,23 @@ fn repair(schema: &Schema, text: &str) -> String {
     // of lifecycle states, each with its frontmatter and its examples.
     let derived = derive(&schema, &NullHost).expect("the schema derives");
     let scaffold = &derived.scaffolds[0].document;
+```
+
+<!-- /sokf:include -->
+
+   Write a new document from its skeleton, which `skeleton` returns: the values that your program gives the document, such as its `id` and its `title`, by key, what the schema fixes, its states, and each required frontmatter key with no value, and no example and no guidance. The lines of the frontmatter that your host writes, `ScaffoldFront::leading` and `ScaffoldFront::trailing`, go into the skeleton as your host gives them, so a host that seeds a placeholder, such as a link to `target-id`, gives a skeleton none. Show the writer the guide that `guide_for` returns for the same values beside the document, because the guide is where the writer reads each part's guidance and example: each frontmatter key, section, and block has an `example`, the text that the scaffold for the document writes for it, as `derive_for` derives it. `skeleton` returns the refusals of the scaffold where the schema derives none.
+
+<!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#skeleton -->
+
+```rust
+    // A new document holds only what is true of it: the values that the
+    // host gives it, and what the schema fixes. The guide gives each part
+    // its guidance and its example, with the document's values in it.
+    let states = States::default();
+    let values = [("title".to_string(), "Shopping".to_string())].into();
+    let new = skeleton(&schema, &states, &NullHost, &values).expect("the schema derives");
+    let parts = guide_for(&schema, &states, &NullHost, &values);
+    let example = parts.sections[0].blocks[0].example.as_deref();
 ```
 
 <!-- /sokf:include -->
@@ -246,6 +263,40 @@ fn layer_formats(
 
 <!-- /sokf:include -->
 
+7. Read the headings of a document and the patterns of your program as the check reads them, if your program compares text of its own. The check reads each paragraph, item, row, and heading in one fixed spelling of its markup, which `Unit::reading` and `Heading::reading` hold beside the text as written. `match_headings` gives the section that the check matches each heading to, and how: by its exact text, its shape, a `renamed-from`, the value of the frontmatter (`MatchedBy::Frontmatter`), or its place where the section's heading is bound to a frontmatter key that the heading doesn't read as (`MatchedBy::Place`), which the check repairs or reports. The match can give a section a heading at another level, which the check reports, so compare the levels where your program needs a heading at its section's level. A pattern that reads the reading names markup in the fixed spelling, so warn about each run of it that `respelt` returns, as the check of a schema warns with [TLMD_264][sokf:errors-schema-shapes#tlmd_264].
+
+<!-- sokf:include /crates/lib/tramlines-md/tests/it/embed.rs#read-as-check -->
+
+```rust
+    // The sections that the headings hold, as the check reads them: a
+    // heading at its section's level that reads as the section's heading,
+    // as one of its `renamed-from`, or as the frontmatter value where the
+    // section's heading is bound to one, and not a heading that only
+    // stands in the place of a bound heading.
+    let states = schema.states(document.frontmatter.as_ref());
+    let matches = match_headings(document.view(), &schema, &states);
+    let held: Vec<usize> = document
+        .body
+        .headings
+        .iter()
+        .zip(&matches)
+        .filter_map(|(heading, found)| {
+            let found = (*found)?;
+            let level = schema.sections[found.section].level;
+            (heading.level == level && found.by != MatchedBy::Place).then_some(found.section)
+        })
+        .collect();
+    // A pattern of the program's own that reads `Unit::reading` never
+    // matches a run that the reading spells otherwise, outside a code span,
+    // a link's destination and title, and inline HTML.
+    let warnings: Vec<String> = respelt(r"^\*Note\*: ")
+        .into_iter()
+        .map(|(run, reading)| format!("the pattern names `{run}`, which reads `{reading}`"))
+        .collect();
+```
+
+<!-- /sokf:include -->
+
 A host also supplies the facts that lie outside a document. Implement the `Host` trait of the `check` module, in place of `NullHost`. A host can then own frontmatter keys, add a frontmatter format, resolve what an image or a region names, and spell markers in its own namespace. [How the grammar layers fit together][sokf:explanation-grammar-layers] explains what a host can change.
 
 ## Troubleshooting
@@ -263,6 +314,7 @@ A host also supplies the facts that lie outside a document. Implement the `Host`
 <!-- sokf:links -->
 
 [sokf:errors-formats-and-examples#tl_128]: /docs/reference/errors-formats-and-examples.md#tl_128
+[sokf:errors-schema-shapes#tlmd_264]: /docs/reference/errors-schema-shapes.md#tlmd_264
 [sokf:errors-units#tlmd_235]: /docs/reference/errors-units.md#tlmd_235
 [sokf:explanation-grammar-layers]: /docs/explanation/grammar-layers.md
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md

@@ -5,7 +5,7 @@
 - [How the grammar layers fit together][sokf:explanation-grammar-layers] - Why a schema is checked against three grammars merged into one, and what each one can add.
 - [What tramlines doesn't do][sokf:explanation-non-goals] - The things tramlines leaves out on purpose, why each is left out, and where that work belongs instead.
 - [Pitfalls in writing a schema][sokf:explanation-pitfalls] - The mistakes that schema authors make most often, why each one goes wrong, and the error or silence it causes.
-- [How a schema derives its scaffold][sokf:explanation-scaffolds] - Why the engine builds a starter document from every schema, what the starter contains, and why a starter that fails the check is an error in its schema.
+- [How a schema derives its scaffold][sokf:explanation-scaffolds] - Why the engine builds a scaffold from the examples of every schema and checks it, why a new document starts instead from a skeleton that holds no example, and what each one contains.
 - [Strict by default][sokf:explanation-strict-by-default] - Why tramlines requires every part that a schema declares and refuses every part that it doesn't, and how each relaxation loosens one rule at a time.
 
 <!-- sokf:links -->

@@ -6,7 +6,8 @@ use tramlines_core::grammar::{Scope, derivation, str_of};
 use super::MdLowerer;
 use crate::{
     Spanned,
-    grammar::{Heading, Shape, Text, has_hole},
+    grammar::{Heading, Shape, Text, has_hole, read},
+    text,
 };
 
 impl MdLowerer<'_> {
@@ -14,7 +15,8 @@ impl MdLowerer<'_> {
     /// the rule a unit takes, with its shape, key and example.
     // sokf-implements: TLMD_27
     pub(super) fn heading(&mut self, section: &Spanned) -> Heading {
-        let plain = |shape| Heading {
+        let plain = |shape: Shape| Heading {
+            read: shape.read_with(&read),
             shape,
             key: None,
             unique: Scope::Document,
@@ -32,8 +34,7 @@ impl MdLowerer<'_> {
                     node.line,
                     "TL_66",
                     format!(
-                        "heading `{s}` holds a hole: write `heading: {{ template: …, example: … }}`, since a template carries an example"
-                    ),
+                        "heading {s} holds a hole: write `heading: {{ template: …, example: … }}`, since a template carries an example", s = text::code(s)),
                 );
             }
             return plain(Shape::Text(Text::Literal(s.to_string())));
@@ -64,6 +65,7 @@ impl MdLowerer<'_> {
             self.check_key(node.line, k, Some(&shape), None);
         }
         Heading {
+            read: shape.read_with(&read),
             shape,
             key,
             unique: Scope::parse(str_of(node, "unique").as_deref()),

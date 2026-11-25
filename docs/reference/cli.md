@@ -20,7 +20,7 @@ Usage: tramlines <COMMAND>
 
 Commands:
   validate     Check a schema, then each document against it, repairing with --fix
-  new          Print the scaffold of a new document from a schema
+  new          Print a new document from a schema, and its guide on stderr
   info         Print the schema language, or the formats and types a schema sees
   completions  Print a shell completion script to stdout
   help         Print this message or the help of the given subcommand(s)
@@ -131,11 +131,11 @@ title: Groceries
 ```console
 $ tramlines validate --schema list.yaml shopping.md --github
 ::error file=shopping.md,line=5,title=TLMD_165::heading `Shopping` must equal the frontmatter `title`: `Groceries` (schema list, section "<title>")
-::error file=shopping.md,line=8,title=TL_74::`Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads Milk x2 (schema list, section "<title>" block 1)
+::error file=shopping.md,line=8,title=TL_74::`Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads `Milk x2` (schema list, section "<title>" block 1)
 2 errors, 0 warnings
 [exit 1]
 $ tramlines validate --schema list.yaml shopping.md --json
-{"errors":[{"path":"shopping.md","line":5,"key":"TLMD_165","message":"heading `Shopping` must equal the frontmatter `title`: `Groceries` (schema list, section \"<title>\")"},{"path":"shopping.md","line":8,"key":"TL_74","message":"`Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads Milk x2 (schema list, section \"<title>\" block 1)"}],"warnings":[],"fixes":[]}
+{"errors":[{"path":"shopping.md","line":5,"key":"TLMD_165","message":"heading `Shopping` must equal the frontmatter `title`: `Groceries` (schema list, section \"<title>\")"},{"path":"shopping.md","line":8,"key":"TL_74","message":"`Bread` fails at column 6: expected ` x`, found the end; an item of this kind reads `Milk x2` (schema list, section \"<title>\" block 1)"}],"warnings":[],"fixes":[]}
 [exit 1]
 $ tramlines validate --schema list.yaml shopping.md --json --query 'errors[].key'
 ["TLMD_165","TL_74"]
@@ -152,11 +152,11 @@ $ tramlines validate --schema list.yaml shopping.md --json --query 'errors[].key
 
 ## tramlines new
 
-`tramlines new` prints the scaffold of a schema: the document that a new document of the schema starts from. [Repair a document and start a new one][sokf:how-to-repair-and-start-documents] shows it at work.
+`tramlines new` prints a new document of a schema, its skeleton, which holds only what is true of it: its id and its title, the values that the schema fixes, its states, each required frontmatter key with no value where nothing gives one, and the headings and the texts that the schema fixes. It holds no example and no guidance. After it, on stderr, the command prints the guide of the document: each part at its states, in the order of the schema, whether it is optional, its guidance, and its example, the text that the scaffold for this document writes for the part. The guide leaves out an example that the document already holds. [Repair a document and start a new one][sokf:how-to-repair-and-start-documents] shows it at work, and [How a schema derives its scaffold][sokf:explanation-scaffolds] says why a new document holds no example.
 
 ```console
 $ tramlines new --help
-Print the scaffold of a new document from a schema
+Print a new document from a schema, and its guide on stderr
 
 Usage: tramlines new [OPTIONS] --schema <FILE>
 
@@ -168,22 +168,24 @@ Options:
       --id <ID>            The id, for a template with a `seq` hole or for no template
       --title <TEXT>       The title. Default: the words of the slug, or of the id
       --state <KEY=STATE>  A lifecycle key at a state, as KEY=STATE. Default: each dimension's first state
-      --json               One object with the id and the document instead of the document
+      --json               One object with the id, the document, and its guide instead of them
   -h, --help               Print help
 ```
 
 - `--texts <FILE>`: a file of the texts for the lead of each limit and the words of each label, as [The words of a limit](#the-words-of-a-limit) and [The words of a label](#the-words-of-a-label) describe.
-- `--state <KEY>=<STATE>`: the state of one lifecycle dimension, repeated for each dimension that you name. A dimension that you don't name takes its first state. The scaffold contains the parts that the states need, and no `only` marker.
+- `--state <KEY>=<STATE>`: the state of one lifecycle dimension, repeated for each dimension that you name. A dimension that you don't name takes its first state. The new document contains the parts that the states need, and no `only` marker.
 - `--slug <SLUG>`: fills the `slug` hole of the `id` template. A template with a `seq` hole needs the whole id from `--id`, because the number depends on the documents around the new one.
 - `--id <ID>`: the id, which must match the `id` template when the schema has one.
 - `--title <TEXT>`: the title. Without it, the title is the words of the slug, or of the id, when the schema declares `title`.
-- `--json`: one JSON object, with the `id` and the `document`, instead of the document.
+- `--json`: one JSON object, with the `id`, the `document`, and the `guide`, instead of the document and the guide. The `guide` is the guide that the engine returns, each part with its `example`. The object holds no `id` while the id is empty.
 
-The command rewrites each heading, paragraph, and item that the schema binds to the id or the title. It stops with exit code 2 if the new document fails the schema.
+Without `--id`, `--slug`, and `--title`, the new document leaves the `id` and the `title` empty where the schema declares them, unless the `id` template renders the id from the states alone. The check of the new document reports [TL_143][sokf:errors-frontmatter#tl_143] on each empty required key until its writer fills it in.
+
+The command writes each heading, paragraph, and item that the schema binds to the id or the title from them. Before it prints the new document, it derives the scaffold with the id and the title, and checks it against the schema. Where the scaffold fails, or the derivation can't write the id or the title where the schema binds them, such as a title `<div>` in a paragraph, no document with that id and that title can pass, so the command prints no document, writes the first error to stderr after `the new document fails the schema`, and stops with exit code 2. It also stops where `--title` names a title other than the `const` that the schema fixes.
 
 ### The words of a limit
 
-The guidance line of a part with a limit holds a lead before the limit's `when-at-limit`. The lead states the count of the limit and what it counts, in the `language` of the schema. The command has English words of its own, which serve `en` and a tag such as `en-GB`:
+The guidance of a part with a limit, in the guide of a new document and in a guidance line of the scaffold, holds a lead before the limit's `when-at-limit`. The lead states the count of the limit and what it counts, in the `language` of the schema. The command has English words of its own, which serve `en` and a tag such as `en-GB`:
 
 - A hard limit: `At most 9 items. Never leave out or merge content to stay within the count. When at the limit:`
 - A soft limit: `Usually up to 1 paragraph. Never leave out or merge content to stay within the count. When at the limit:`
@@ -191,7 +193,7 @@ The guidance line of a part with a limit holds a lead before the limit's `when-a
 - A line rule that binds the format `node`: ``At most 9 `node` lines. Never leave out or merge content to stay within the count. When at the limit:``
 - A unit rule with the `rule-id` `wait`: ``At most 1 `wait` item. Never leave out or merge content to stay within the count. When at the limit:``
 
-Where the schema declares no `language`, or the command has no words for its language, the line holds the limit in the syntax of the schema, such as `` `hard: 9`, `when-at-limit`: ``, before the `when-at-limit`.
+Where the schema declares no `language`, or the command has no words for its language, the guidance holds the limit in the syntax of the schema, such as `` `hard: 9`, `when-at-limit`: ``, before the `when-at-limit`.
 
 `--texts <FILE>` names a file of texts in another language, or in English to replace the command's own words. The file is YAML: a map from each language tag to its texts. It has the shape of sokf's file of texts, so that one file can serve both tools. Each language holds these texts:
 
@@ -244,11 +246,19 @@ de:
 $ tramlines new --schema note.yaml --texts texts.yaml
 # Notiz
 
-<!-- tramlines:guidance Meist bis zu 1 Absatz. An der Grenze: Jede Aufgabe gehört in die folgende Liste. -->
-Der Wasserkocher muss entkalkt werden.
+The guide of the new document: each part, its guidance, and its example.
 
-<!-- tramlines:guidance Höchstens 3 Punkte. An der Grenze: Weitere Aufgaben gehören in die nächste Notiz. -->
-- Aufgabe: den Wasserkocher entkalken.
+Section `# Notiz`:
+
+  Block 1 (prose):
+    Meist bis zu 1 Absatz. An der Grenze: Jede Aufgabe gehört in die folgende Liste.
+    Example:
+      Der Wasserkocher muss entkalkt werden.
+
+  Block 2 (bullet-list):
+    Höchstens 3 Punkte. An der Grenze: Weitere Aufgaben gehören in die nächste Notiz.
+    Example:
+      - Aufgabe: den Wasserkocher entkalken.
 ```
 
 ### The words of a label
@@ -284,10 +294,12 @@ With this file, a German schema accepts `[Mensch]` and `[KI]`, and `tramlines va
 # yaml-language-server: $schema=https://six5536.github.io/tramlines/tramlines-md.schema.json
 ```
 
-The JSON Schema checks the keys and the types of their values. The command checks the rest, such as the regular expressions, the examples, and the references between rules.
+The JSON Schema checks the keys and the types of their values, the syntax of a `language` tag subtag by subtag, as the command checks it, and that an entry of `rules` or `lines` with a `max` binds a `format` or declares a `rule-id`. The command checks the rest, such as the regular expressions, the examples, and the references between rules.
 
 <!-- sokf:links -->
 
+[sokf:errors-frontmatter#tl_143]: /docs/reference/errors-frontmatter.md#tl_143
+[sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:how-to-label-units]: /docs/how-to/label-units.md
 [sokf:how-to-repair-and-start-documents]: /docs/how-to/repair-and-start-documents.md
 [sokf:tramlines:tramlines-spec#tl_90]: /knowledge/spec/tramlines-spec.md#tl_90

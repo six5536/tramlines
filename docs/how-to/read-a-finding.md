@@ -69,7 +69,7 @@ Thin pancakes from Brittany.
 ```console
 $ tramlines validate --schema recipe.yaml crepes.md
 crepes.md: error[TLMD_18]: section `## Method` is missing (schema recipe, section "Method")
-crepes.md:12: error[TL_74]: `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads 200 g plain flour (schema recipe, section "Ingredients" block 1)
+crepes.md:12: error[TL_74]: `a pinch of salt` fails at column 1: expected an `int` (`\d+`), found `a pinch of salt`; an item of this kind reads `200 g plain flour` (schema recipe, section "Ingredients" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```

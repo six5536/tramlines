@@ -7,16 +7,21 @@
 //! a guidance line also spells a `-->` in them as `- ->`, so that the
 //! comment stays one comment.
 
+use std::collections::BTreeMap;
+
 use serde::{Serialize, Serializer};
 
-use super::deriver::push_unique;
+use super::{
+    deriver::{Examples, address},
+    scaffold,
+};
 use crate::{
     check::{self, Counts, Host, LimitFacts, LimitSubject, RuleName},
     grammar::{
         Block, FrontmatterConstraint, Label, Limit, LimitKind, Schema, Section, States, Unit,
         squash,
     },
-    markdown::BlockKind,
+    markdown::{self, BlockKind},
 };
 
 // sokf:begin guide
@@ -70,6 +75,10 @@ pub struct KeyGuide {
     /// key, where it writes the key, or `None` where the key has no
     /// guidance and no limit.
     pub text: Option<String>,
+    /// The line that the scaffold writes for the key, such as
+    /// `priority: medium`, without its `only` marker, or `None` where it
+    /// writes none.
+    pub example: Option<String>,
     /// The line of the key's rule in the schema.
     pub line: usize,
 }
@@ -82,6 +91,9 @@ pub struct PreambleGuide {
     /// The text of the guidance line that the scaffold writes before the
     /// preamble, or `None` where it writes none.
     pub text: Option<String>,
+    /// The text that the scaffold writes for the preamble, or `None` where
+    /// it writes none.
+    pub example: Option<String>,
     /// Each block that the states admit, in order.
     pub blocks: Vec<BlockGuide>,
     /// The line of the preamble in the schema.
@@ -110,6 +122,11 @@ pub struct SectionGuide {
     /// The text of the guidance line that the scaffold writes before the
     /// heading, or `None` where it writes none.
     pub text: Option<String>,
+    /// The text that the scaffold writes for the section: each occurrence,
+    /// from its heading, with the sections inside it and the section's
+    /// `examples`, or `None` where it writes none. A section inside a
+    /// repeating one gives the text of its first occurrence.
+    pub example: Option<String>,
     /// Each block of its body that the states admit, in order.
     pub blocks: Vec<BlockGuide>,
     /// The line of the section's rule in the schema.
@@ -144,6 +161,11 @@ pub struct BlockGuide {
     /// The text of the guidance line that the scaffold writes before the
     /// block, or `None` where it writes none.
     pub text: Option<String>,
+    /// The text that the scaffold writes for the block, every unit of it,
+    /// or `None` where it writes none. A block of a section that repeats,
+    /// or of an item, gives the text of its first occurrence, without the
+    /// indent of the item.
+    pub example: Option<String>,
     /// The blocks of a group, and the blocks inside the items of a list,
     /// that the states admit, in order.
     pub blocks: Vec<BlockGuide>,
@@ -210,6 +232,27 @@ fn kind_name<S: Serializer>(kind: &BlockKind, s: S) -> Result<S::Ok, S::Error> {
 // sokf:begin guide
 pub fn guide(schema: &Schema, states: &States, host: &dyn Host) -> Guide {
     // sokf:end guide
+    guide_for(schema, states, host, &BTreeMap::new())
+}
+
+/// The guide of `schema` at `states`, as `guide` returns it, for a document
+/// whose frontmatter holds `values`: each `example` is the text that
+/// `derive_for` writes for the part with those values, so that a key that
+/// derives from a value, such as a prefix of the frontmatter `code`, derives
+/// from the document's. Every `example` is `None` where the schema derives
+/// no scaffold at `states`.
+// sokf-implements: MD-13_AC-5
+// sokf-implements: MD-13_AC-6
+// sokf-implements: TLMD_310
+// sokf:begin guide
+pub fn guide_for(
+    schema: &Schema,
+    states: &States,
+    host: &dyn Host,
+    values: &BTreeMap<String, String>,
+) -> Guide {
+    // sokf:end guide
+    let ex = scaffold::examples(schema, states, host, values).unwrap_or_default();
     let mut frontmatter: Vec<KeyGuide> = schema
         .core
         .frontmatter
@@ -222,6 +265,7 @@ pub fn guide(schema: &Schema, states: &States, host: &dyn Host) -> Guide {
             guidance: c.guidance.clone(),
             limit: c.max.clone(),
             text: key_text(host, schema.core.language.as_deref(), key, c),
+            example: ex.keys.get(key).cloned(),
             line: c.common.line,
         })
         .collect();
@@ -232,6 +276,7 @@ pub fn guide(schema: &Schema, states: &States, host: &dyn Host) -> Guide {
         guidance: d.guidance.clone(),
         limit: None,
         text: d.guidance.as_deref().map(own_line),
+        example: ex.keys.get(&d.key).cloned(),
         line: d.line,
     }));
     Guide {
@@ -258,19 +303,26 @@ pub fn guide(schema: &Schema, states: &States, host: &dyn Host) -> Guide {
             .map(|p| PreambleGuide {
                 guidance: p.guidance.clone(),
                 text: p.guidance.as_deref().map(own_line),
-                blocks: blocks(schema, p.blocks.as_deref(), states, host),
+                example: ex.preamble.clone(),
+                blocks: blocks(schema, p.blocks.as_deref(), states, host, &ex),
                 line: p.common.line,
             }),
         sections: schema
             .sections
             .iter()
             .filter(|s| s.common.only.admits(states))
-            .map(|s| section(schema, s, states, host))
+            .map(|s| section(schema, s, states, host, &ex))
             .collect(),
     }
 }
 
-fn section(schema: &Schema, s: &Section, states: &States, host: &dyn Host) -> SectionGuide {
+fn section(
+    schema: &Schema,
+    s: &Section,
+    states: &States,
+    host: &dyn Host,
+    ex: &Examples,
+) -> SectionGuide {
     SectionGuide {
         heading: s.label(),
         level: s.level,
@@ -280,7 +332,8 @@ fn section(schema: &Schema, s: &Section, states: &States, host: &dyn Host) -> Se
         repeat: s.repeat,
         guidance: s.guidance.clone(),
         text: s.guidance.as_deref().map(own_line),
-        blocks: blocks(schema, s.blocks.as_deref(), states, host),
+        example: ex.sections.get(&address(s)).cloned(),
+        blocks: blocks(schema, s.blocks.as_deref(), states, host, ex),
         line: s.common.line,
     }
 }
@@ -292,18 +345,25 @@ fn blocks(
     list: Option<&[Block]>,
     states: &States,
     host: &dyn Host,
+    ex: &Examples,
 ) -> Vec<BlockGuide> {
     list.unwrap_or(&[])
         .iter()
         .filter(|b| b.common.only.admits(states) && b.hard_max() != Some(0))
-        .map(|b| block(schema, b, states, host))
+        .map(|b| block(schema, b, states, host, ex))
         .collect()
 }
 
-fn block(schema: &Schema, b: &Block, states: &States, host: &dyn Host) -> BlockGuide {
-    let mut inner = blocks(schema, b.blocks.as_deref(), states, host);
+fn block(
+    schema: &Schema,
+    b: &Block,
+    states: &States,
+    host: &dyn Host,
+    ex: &Examples,
+) -> BlockGuide {
+    let mut inner = blocks(schema, b.blocks.as_deref(), states, host, ex);
     for unit in b.units() {
-        inner.extend(blocks(schema, unit.blocks.as_deref(), states, host));
+        inner.extend(blocks(schema, unit.blocks.as_deref(), states, host, ex));
     }
     let limits = block_limits(b);
     let bans = block_bans(schema, b);
@@ -314,6 +374,7 @@ fn block(schema: &Schema, b: &Block, states: &States, host: &dyn Host) -> BlockG
         optional: b.optional_at(states, &schema.core.lifecycle),
         guidance: b.guidance.clone(),
         text: line_text(host, schema.core.language.as_deref(), b, &limits, &bans),
+        example: ex.blocks.get(&address(b)).cloned(),
         limits,
         labels: block_labels(b),
         bans,
@@ -384,6 +445,7 @@ fn block_limits(b: &Block) -> Vec<RuleLimit> {
 /// unit rules, of the formats that they bind, and of their line rules,
 /// each message once, in order.
 // sokf-implements: TLMD_195
+// sokf-implements: TLMD_271
 pub(super) fn block_bans(schema: &Schema, b: &Block) -> Vec<String> {
     fn unit_bans(schema: &Schema, u: &Unit, out: &mut Vec<String>) {
         let format = u.format_in(&schema.core.formats);
@@ -391,7 +453,7 @@ pub(super) fn block_bans(schema: &Schema, b: &Block) -> Vec<String> {
             .prohibited_patterns
             .iter()
             .chain(format.into_iter().flat_map(|f| f.prohibited.iter()));
-        push_unique(out, bans.map(|ban| ban.message.clone()));
+        push_messages(out, bans.map(|ban| ban.message.clone()));
         for line in u.lines.iter().flatten() {
             unit_bans(schema, line, out);
         }
@@ -401,6 +463,19 @@ pub(super) fn block_bans(schema: &Schema, b: &Block) -> Vec<String> {
         unit_bans(schema, u, &mut out);
     }
     out
+}
+
+/// `messages` added to `out`, each but one whose reading, squashed, is the
+/// reading of a message that `out` holds, because a writer reads such two
+/// as one rule (`TLMD_271`).
+pub(super) fn push_messages(out: &mut Vec<String>, messages: impl IntoIterator<Item = String>) {
+    let read = |m: &str| squash(&markdown::reading(&squash(m)).text).clone();
+    for m in messages {
+        let r = read(&m);
+        if !out.iter().any(|o| read(o) == r) {
+            out.push(m);
+        }
+    }
 }
 
 /// The text of a block's guidance line: its guidance, then the lead and
@@ -520,8 +595,9 @@ fn own_line(guidance: &str) -> String {
 }
 
 /// The texts joined by one space, each run of whitespace read as one
-/// space, as a guidance line holds them, or `None` where there are none.
-fn joined(texts: impl Iterator<Item = String>) -> Option<String> {
+/// space, as a guidance line holds them, or `None` where there are none:
+/// the text of a block's guidance line, a key's, and the opening's.
+pub(super) fn joined(texts: impl Iterator<Item = String>) -> Option<String> {
     let texts: Vec<String> = texts
         .map(|t| squash(&t).clone())
         .filter(|t| !t.is_empty())

@@ -7,8 +7,16 @@ use std::{cell::RefCell, collections::HashMap, sync::OnceLock};
 
 use regex::Regex;
 
-use super::types::{TypeDef, TypeRegistry, is_hole_name};
+use super::{
+    Quote,
+    types::{TypeDef, TypeRegistry, is_hole_name},
+};
 use crate::{Problem, text};
+
+/// The placeholder that stands for a hole while a format grammar reads the
+/// literals of a template whole: a private-use character, which is neither
+/// a space nor punctuation, so that it reads as a word does.
+pub const HOLE: char = '\u{E000}';
 
 /// One piece of a template.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +38,7 @@ impl Segment {
     /// The segment as a failure names what it expected.
     fn describe(&self) -> String {
         match self {
-            Segment::Literal(l) => format!("`{l}`"),
+            Segment::Literal(l) => text::code(l),
             Segment::Hole { ty, def, .. } => {
                 format!("{} `{ty}` ({})", text::article(ty), def.describe())
             }
@@ -61,20 +69,33 @@ pub struct Failure {
     /// lie past the fault: of two shapes, the text meant the one it
     /// follows furthest.
     pub reach: usize,
+    /// The index in `Template::segments` of the segment that the fault
+    /// names first, or the number of segments where the text runs on past
+    /// the end of the template.
+    pub segment: usize,
 }
 
 impl Failure {
     /// The failure as a finding says it: the column, one-based in
     /// characters, what was expected and what was found.
     pub fn describe(&self, text: &str) -> String {
-        let column = column(text, self.offset);
-        let rest = &text[self.offset.min(text.len())..];
+        self.quoted(&Quote::same(text))
+    }
+
+    /// As `describe`, for a text that a format grammar read in another
+    /// spelling: the column and the text found are those of `quote`, the
+    /// text as written, at the place of the fault.
+    pub fn quoted(&self, quote: &Quote<'_>) -> String {
+        let text = quote.text;
+        let offset = quote.offset(self.offset);
+        let column = column(text, offset);
+        let rest = &text[offset..];
         let found = if rest.is_empty() {
             "the end".to_string()
         } else if rest.chars().count() > 24 {
-            format!("`{}…`", rest.chars().take(23).collect::<String>())
+            text::code(&format!("{}…", rest.chars().take(23).collect::<String>()))
         } else {
-            format!("`{rest}`")
+            text::code(rest)
         };
         format!("column {column}: expected {}, found {found}", self.expected)
     }
@@ -87,6 +108,10 @@ pub struct Template {
     pub source: String,
     /// Its pieces, in order.
     pub segments: Vec<Segment>,
+    /// The pieces as the schema writes them, where a format grammar read
+    /// the template in another spelling through `read_with`, one for each
+    /// of `segments`; empty otherwise.
+    written: Vec<Segment>,
     /// The anchored regex it compiles to.
     regex: Regex,
     /// `prefixes[i]` matches the first `i` segments at the start of a text;
@@ -146,7 +171,10 @@ impl Template {
             let Some(end) = after.find('}') else {
                 return Err(Problem::new(
                     "TL_121",
-                    format!("template `{source}` has an unclosed `${{`"),
+                    format!(
+                        "template {source} has an unclosed `${{`",
+                        source = text::code(source)
+                    ),
                 ));
             };
             let inside = &after[..end];
@@ -161,13 +189,17 @@ impl Template {
                 return Err(Problem::new(
                     "TL_121",
                     format!(
-                        "template `{source}`: hole name `{name}` must be letters, digits and `_`, not starting with a digit"
+                        "template {source}: hole name `{name}` must be letters, digits and `_`, not starting with a digit",
+                        source = text::code(source)
                     ),
                 ));
             } else if names.iter().any(|n| n == name) {
                 return Err(Problem::new(
                     "TL_119",
-                    format!("template `{source}` names the hole `{name}` twice"),
+                    format!(
+                        "template {source} names the hole `{name}` twice",
+                        source = text::code(source)
+                    ),
                 ));
             } else {
                 names.push(name.to_string());
@@ -177,7 +209,10 @@ impl Template {
             let Some(def) = types.get(ty) else {
                 return Err(Problem::new(
                     "TL_120",
-                    format!("template `{source}`: no type `{ty}`"),
+                    format!(
+                        "template {source}: no type `{ty}`",
+                        source = text::code(source)
+                    ),
                 ));
             };
             if !literal.is_empty() {
@@ -195,16 +230,25 @@ impl Template {
         if !segments.iter().any(|s| matches!(s, Segment::Hole { .. })) {
             return Err(Problem::new(
                 "TL_25",
-                format!("template `{source}` has no hole; write it as `text`"),
+                format!(
+                    "template {source} has no hole; write it as `text`",
+                    source = text::code(source)
+                ),
             ));
         }
+        Template::of(source, segments)
+    }
+
+    /// The template of `segments`, compiled, whose source is `source`.
+    fn of(source: &str, segments: Vec<Segment>) -> Result<Template, Problem> {
         let body: String = segments.iter().map(Segment::regex).collect();
         let regex = compiled(&format!("^(?:{body})$")).map_err(|e| {
             Problem::new(
                 "TL_118",
                 format!(
-                    "template `{source}` does not compile: {}",
-                    super::regex::reason(&e)
+                    "template {source} does not compile: {}",
+                    super::regex::reason(&e),
+                    source = text::code(source)
                 ),
             )
         })?;
@@ -212,8 +256,80 @@ impl Template {
             source: source.to_string(),
             regex,
             segments,
+            written: Vec::new(),
             prefixes: OnceLock::new(),
         })
+    }
+
+    /// The template as a format grammar reads it: its literals and a
+    /// placeholder for each hole, `HOLE`, read whole through `read`, then
+    /// split again at the placeholders, so that a literal is read in the
+    /// context of the template. The template keeps its source and its
+    /// literals as written, which a failure quotes. `None` where the
+    /// reading keeps no placeholder for each hole, or leaves a literal
+    /// empty, or the template no longer compiles.
+    // sokf-implements: TL_141
+    pub fn read_with(&self, read: &dyn Fn(&str) -> String) -> Option<Template> {
+        let mut text = String::new();
+        for s in &self.segments {
+            match s {
+                Segment::Literal(l) => text.push_str(l),
+                Segment::Hole { .. } => text.push(HOLE),
+            }
+        }
+        let read = read(&text);
+        if read == text {
+            return Some(self.clone());
+        }
+        let mut parts = read.split(HOLE);
+        let mut segments = Vec::with_capacity(self.segments.len());
+        let mut literal = false;
+        for s in &self.segments {
+            match s {
+                Segment::Literal(_) => literal = true,
+                hole @ Segment::Hole { .. } => {
+                    let part = parts.next()?;
+                    if literal == part.is_empty() {
+                        return None;
+                    }
+                    if literal {
+                        segments.push(Segment::Literal(part.to_string()));
+                    }
+                    segments.push(hole.clone());
+                    literal = false;
+                }
+            }
+        }
+        let last = parts.next()?;
+        if parts.next().is_some() || literal == last.is_empty() {
+            return None;
+        }
+        if literal {
+            segments.push(Segment::Literal(last.to_string()));
+        }
+        let mut out = Template::of(&self.source, segments).ok()?;
+        out.written.clone_from(&self.segments);
+        Some(out)
+    }
+
+    /// Whether a reading changed literal `i`.
+    fn respelt(&self, i: usize) -> bool {
+        matches!(
+            (self.segments.get(i), self.written.get(i)),
+            (Some(Segment::Literal(l)), Some(Segment::Literal(w))) if w != l
+        )
+    }
+
+    /// Literal `i` from byte `from` on, quoted, as a failure names what it
+    /// expected: the literal as the schema writes it where a reading
+    /// changed it.
+    fn literal_shown(&self, i: usize, from: usize) -> String {
+        match (self.segments.get(i), self.written.get(i)) {
+            (Some(Segment::Literal(l)), Some(Segment::Literal(w))) if w != l => text::code(w),
+            (Some(Segment::Literal(l)), _) => text::code(&l[from.min(l.len())..]),
+            (Some(hole), _) => hole.describe(),
+            (None, _) => "the end".to_string(),
+        }
     }
 
     /// `prefixes[i]` matches the first `i` segments at the start of a text.
@@ -263,10 +379,11 @@ impl Template {
             .find(|&i| prefixes[i].is_match(text))
             .unwrap_or(0);
         let end_of = |i: usize| prefixes[i].find(text).map_or(0, |m| m.end());
-        let at = |offset: usize, expected: String, reach: usize| Failure {
+        let at = |offset: usize, expected: String, reach: usize, segment: usize| Failure {
             offset,
             expected,
             reach,
+            segment,
         };
         if k == n {
             let end = end_of(n);
@@ -277,7 +394,7 @@ impl Template {
             {
                 return f;
             }
-            return at(end, "the end".to_string(), end);
+            return at(end, "the end".to_string(), end, n);
         }
         let end = end_of(k);
         let prev = k.checked_sub(1).map(|p| &self.segments[p]);
@@ -299,14 +416,19 @@ impl Template {
             (Some(Segment::Hole { def, .. }), Segment::Literal(l))
                 if end == text.len() && !whole(def, &format!("{}{l}", &text[end_of(k - 1)..])) =>
             {
-                at(text.len(), format!("`{l}`"), text.len())
+                at(text.len(), self.literal_shown(k, 0), text.len(), k)
             }
             // A hole that ran to the end ate what the next segment wanted, so
             // the failure is where the hole began, naming both.
-            (Some(prev @ Segment::Hole { .. }), next) if end == text.len() => at(
+            (Some(Segment::Hole { .. }), _) if end == text.len() => at(
                 end_of(k - 1),
-                format!("{} then {}", prev.describe(), next.describe()),
+                format!(
+                    "{} then {}",
+                    self.literal_shown(k - 1, 0),
+                    self.literal_shown(k, 0)
+                ),
                 end,
+                k - 1,
             ),
             // A literal the text does not start to carry, after a hole: where
             // the literal comes later, the text between is the value the
@@ -317,16 +439,19 @@ impl Template {
                         .find(l.as_str())
                         .is_some_and(|i| !whole(def, &text[end_of(k - 1)..end + i])) =>
             {
-                at(end_of(k - 1), hole.describe(), end)
+                at(end_of(k - 1), hole.describe(), end, k - 1)
             }
             // A literal the text starts to carry fails where the two part,
             // so of two templates that differ inside a literal the one the
             // text follows further is the one it meant.
+            // A literal that a reading changed is quoted whole, as written,
+            // so the fault is where it starts.
             (_, Segment::Literal(l)) => {
                 let shared = common_prefix(l, &text[end..]);
-                at(end + shared, format!("`{}`", &l[shared..]), end + shared)
+                let offset = if self.respelt(k) { end } else { end + shared };
+                at(offset, self.literal_shown(k, shared), end + shared, k)
             }
-            (_, hole) => at(end, hole.describe(), end),
+            (_, hole) => at(end, hole.describe(), end, k),
         }
     }
 }
@@ -360,10 +485,27 @@ impl Template {
             .find(|&j| tail.is_char_boundary(j) && text.ends_with(&tail[..j]))
             .unwrap_or(0);
         let value = text.get(start..text.len() - carried)?;
+        // A tail that a reading changed is quoted whole, as written.
+        let written: String = self
+            .written
+            .get(h + 1..)
+            .unwrap_or(&[])
+            .iter()
+            .map(|s| match s {
+                Segment::Literal(l) => l.as_str(),
+                Segment::Hole { .. } => "",
+            })
+            .collect();
+        let expected = if self.written.is_empty() || written == tail {
+            text::code(&tail[carried..])
+        } else {
+            text::code(&written)
+        };
         whole(def, value).then(|| Failure {
             offset: text.len(),
-            expected: format!("`{}`", &tail[carried..]),
+            expected,
             reach: text.len(),
+            segment: h + 1,
         })
     }
 }
@@ -522,6 +664,40 @@ mod tests {
             tpl.failure("x").describe("x"),
             "column 2: expected ` `, found the end"
         );
+    }
+
+    // sokf-tests: TL_141
+    #[test]
+    fn a_template_read_again_matches_the_reading_and_quotes_as_written() {
+        // A reader that respells each `*` as `_`, as a format grammar can.
+        let read = |s: &str| s.replace('*', "_");
+        let written = t("*Note*: ${n:int} *x*");
+        let tpl = written
+            .read_with(&read)
+            .expect("the reading keeps each hole");
+        assert_eq!(tpl.source, "*Note*: ${n:int} *x*");
+        assert!(tpl.is_match("_Note_: 4 _x_"));
+        assert!(!tpl.is_match("*Note*: 4 *x*"));
+        // The failure quotes the literal as written, from where it starts,
+        // and names its segment.
+        let f = tpl.failure("_Nope_: 4 _x_");
+        assert_eq!((f.offset, f.segment), (0, 0));
+        assert_eq!(f.expected, "`*Note*: `");
+        // A quote gives the column and the text of the text as written.
+        let shown = "*Nope*: 4 *x*";
+        let at = |i: usize| i;
+        let quote = Quote {
+            text: shown,
+            at: &at,
+        };
+        assert_eq!(
+            f.quoted(&quote),
+            "column 1: expected `*Note*: `, found `*Nope*: 4 *x*`"
+        );
+        // A reading that changes nothing gives the template back.
+        assert_eq!(t("a ${x}").read_with(&read), Some(t("a ${x}")));
+        // A reading that drops a hole gives none.
+        assert_eq!(t("a ${x}").read_with(&|_: &str| "a".to_string()), None);
     }
 
     /// A template of literals and holes of simple types, a line rendered

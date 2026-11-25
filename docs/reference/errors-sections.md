@@ -162,11 +162,11 @@ A heading matches no section of the schema, and no open region allows it ([TLMD_
 
 ### Cause
 
-The document contains a heading that no section of the schema matches, outside the open region of any section that sets `headings-open` or `subheadings-open`.
+The document contains a heading that no section of the schema matches, outside the open region of any section that sets `headings-open` or `subheadings-open`. An undeclared heading that a region doesn't accept, one of a higher level after `headings-open` or one of the section's level or higher after `subheadings-open`, ends the region, so each undeclared heading under it is reported too.
 
 ### Fix
 
-Remove the heading from the document, or change it to a heading that the schema declares. If the heading belongs in documents of this kind, declare a section for it in the schema, or open a region for it with `headings-open` or `subheadings-open` on the section before it.
+Remove the heading from the document, or change it to a heading that the schema declares. If the heading belongs in documents of this kind, declare a section for it in the schema, or open a region for it with `headings-open` or `subheadings-open` on the section before it. A heading under an undeclared heading that ended a region needs that heading declared, or moved to the level that the region accepts.
 
 ### Example
 

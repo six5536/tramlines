@@ -3,7 +3,7 @@
 
 use regex::Regex;
 
-use super::{RegexCache, Segment, Shape, TypeRegistry, shape_of, template};
+use super::{Quote, RegexCache, Segment, Shape, TypeRegistry, shape_of, template};
 use crate::{Problem, Spanned, text};
 
 /// One shape of a variant format (grammar `format-variant`).
@@ -67,6 +67,30 @@ pub enum FormatMatch {
 }
 
 impl Format {
+    /// The format as a format grammar reads it: each shape read through
+    /// `read`, as `Shape::read_with` reads it, and the rest as it is.
+    // sokf-implements: TL_141
+    #[must_use]
+    pub fn read_with(&self, read: &dyn Fn(&str) -> String) -> Format {
+        Format {
+            shape: self.shape.as_ref().map(|s| s.read_with(read)),
+            variants: self
+                .variants
+                .iter()
+                .map(|(name, v)| {
+                    (
+                        name.clone(),
+                        FormatVariant {
+                            shape: v.shape.read_with(read),
+                            example: v.example.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            ..self.clone()
+        }
+    }
+
     /// Every example the format carries: its own, or each variant's.
     pub fn examples(&self) -> Vec<&str> {
         match &self.example {
@@ -157,11 +181,25 @@ impl Format {
     /// every offset of `text` stays where it was. A failure quotes the
     /// span as `text` holds it.
     pub fn check_masked(&self, text: &str, masked: &str, noun: &str) -> FormatMatch {
-        let (shape, example) = match self.matching_as(text, noun) {
+        self.check_quoting(text, masked, noun, &Quote::same(text))
+    }
+
+    /// As `check_masked`, for a text that a format grammar read in another
+    /// spelling: a failure quotes `quote`, the text as written.
+    pub fn check_quoting(
+        &self,
+        text: &str,
+        masked: &str,
+        noun: &str,
+        quote: &Quote<'_>,
+    ) -> FormatMatch {
+        let (shape, example) = match self.matching_quoting(text, noun, quote) {
             Ok(m) => m,
             Err(reason) => return FormatMatch::Fail(reason),
         };
-        if let Some(reason) = refused_masked(text, masked, &self.prohibited, noun, Some(example)) {
+        if let Some(reason) =
+            refused_quoting(text, masked, &self.prohibited, noun, Some(example), quote)
+        {
             return FormatMatch::Refused(reason);
         }
         FormatMatch::Ok(self.key.as_ref().and_then(|k| captured(shape, k, text)))
@@ -207,15 +245,25 @@ impl Format {
         text: &str,
         noun: &str,
     ) -> std::result::Result<(&Shape, &str), String> {
+        self.matching_quoting(text, noun, &Quote::same(text))
+    }
+
+    /// As `matching_as`, for a text that a format grammar read in another
+    /// spelling: a failure quotes `quote`, the text as written.
+    pub fn matching_quoting(
+        &self,
+        text: &str,
+        noun: &str,
+        quote: &Quote<'_>,
+    ) -> std::result::Result<(&Shape, &str), String> {
         if let Some(found) = self.shape_for(text) {
             return Ok(found);
         }
         if let Some(shape) = &self.shape {
-            let example = self.example.as_deref().unwrap_or("");
             return Err(format!(
-                "{}; {} {noun} of this kind reads {example}",
-                shape.failure(text),
-                text::article(noun)
+                "{}{}",
+                shape.failure_quoting(text, quote),
+                reads(noun, self.example.as_deref(), " or ")
             ));
         }
         let reach: Vec<usize> = self
@@ -234,28 +282,26 @@ impl Format {
         match at.as_slice() {
             [] => Err("has no variants to match".into()),
             [(name, v)] => Err(format!(
-                "does not match the `{name}` form: it {}; {} {noun} of this kind reads {}",
-                v.shape.failure(text),
-                text::article(noun),
-                v.example
+                "does not match the `{name}` form: it {}{}",
+                v.shape.failure_quoting(text, quote),
+                reads(noun, [v.example.as_str()], " or ")
             )),
             many => {
                 // A regex does not say where it fails; a template does.
                 let at = if best > 0 {
-                    format!(": each fails at column {}", template::column(text, best))
+                    format!(
+                        ": each fails at column {}",
+                        template::column(quote.text, quote.offset(best))
+                    )
                 } else {
                     String::new()
                 };
                 // Each form it names is one it may have meant, so each
                 // shows its example.
                 Err(format!(
-                    "matches none of the forms {}{at}; {} {noun} of this kind reads {}",
+                    "matches none of the forms {}{at}{}",
                     text::code_list(many.iter().map(|(n, _)| n), ", "),
-                    text::article(noun),
-                    many.iter()
-                        .map(|(_, v)| v.example.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" or ")
+                    reads(noun, many.iter().map(|(_, v)| v.example.as_str()), " or ")
                 ))
             }
         }
@@ -301,22 +347,43 @@ pub fn refused_masked(
     noun: &str,
     example: Option<&str>,
 ) -> Option<String> {
+    refused_quoting(text, masked, bans, noun, example, &Quote::same(text))
+}
+
+/// As `refused_masked`, for a `text` that a format grammar read in another
+/// spelling: the span quotes `quote`, the text as written, from the place
+/// of the start of the match to the place of its end.
+// sokf-implements: TL_75
+pub fn refused_quoting(
+    text: &str,
+    masked: &str,
+    bans: &[Prohibition],
+    noun: &str,
+    example: Option<&str>,
+    quote: &Quote<'_>,
+) -> Option<String> {
     bans.iter().find_map(|ban| {
         let found = ban.pattern.find(masked)?;
         let span = if text.len() == masked.len() {
-            let start = text.floor_char_boundary(found.start());
-            &text[start..text.ceil_char_boundary(found.end())]
+            let written = quote.text;
+            let start = quote.offset(found.start());
+            let end = written.ceil_char_boundary((quote.at)(found.end()).min(written.len()));
+            &written[start..end.max(start)]
         } else {
             found.as_str()
         };
         let message = ban.message.trim_end();
-        Some(match example {
+        Some(match example.filter(|e| !e.is_empty()) {
             Some(e) => {
                 let mut article = text::article(noun).to_string();
                 article[..1].make_ascii_uppercase();
-                format!("`{span}` is refused: {message} {article} {noun} of this kind reads {e}")
+                format!(
+                    "{} is refused: {message} {article} {noun} of this kind reads {}",
+                    text::code(span),
+                    text::code(e)
+                )
             }
-            None => format!("`{span}` is refused: {message}"),
+            None => format!("{} is refused: {message}", text::code(span)),
         })
     })
 }
@@ -462,4 +529,27 @@ pub(super) fn lower_format(
         return Err(problems);
     }
     Ok(format)
+}
+
+/// The examples that a failure shows, after the words that name the unit,
+/// each that is not empty as one code span (`TL_142`), joined by `sep`, and
+/// nothing where no example is left.
+pub(crate) fn reads<'a>(
+    noun: &str,
+    examples: impl IntoIterator<Item = &'a str>,
+    sep: &str,
+) -> String {
+    let shown: Vec<String> = examples
+        .into_iter()
+        .filter(|e| !e.is_empty())
+        .map(text::code)
+        .collect();
+    if shown.is_empty() {
+        return String::new();
+    }
+    format!(
+        "; {} {noun} of this kind reads {}",
+        text::article(noun),
+        shown.join(sep)
+    )
 }

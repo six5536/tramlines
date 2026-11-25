@@ -5,9 +5,10 @@
 
 use super::{
     Checker,
-    blocks::{check_unit, noun, reads, unit_noun},
+    blocks::{check_unit, noun, shape_failure_of, unit_noun},
     claim::at_unit,
-    short,
+    label::Read,
+    quoted,
 };
 use crate::{
     grammar::{Block as Rule, RuleCommon, Shape, Unit as UnitRule, squash},
@@ -138,13 +139,13 @@ fn apply_rules(
             .collect();
         let what = match (&guarded.select, &guarded.shape, &guarded.format) {
             (Some(s), _, _) | (None, Some(Shape::Pattern(s)), _) => {
-                format!("the {noun} matching `{}`", s.as_str())
+                format!("the {noun} matching {}", text::code(s.as_str()))
             }
             (None, Some(Shape::Template(t)), _) => {
-                format!("the {noun} of the template `{}`", t.source)
+                format!("the {noun} of the template {}", text::code(&t.source))
             }
             (None, Some(shape @ Shape::Text(_)), _) => {
-                format!("the {noun} reading `{}`", shape.label())
+                format!("the {noun} reading {}", text::code(&shape.label()))
             }
             (None, None, Some(name)) => format!("the {noun} of the format `{name}`"),
             (None, None, None) => format!("the block's {noun}"),
@@ -166,7 +167,14 @@ fn apply_rules(
             // `for-each-key-of`.
             // sokf-implements: TLMD_88
             // sokf-implements: TLMD_89
-            check_unit(c, &units[i], guarded, rule, section, judge[i] == Some(ri));
+            check_unit(
+                c,
+                &units[i],
+                guarded,
+                rule,
+                section,
+                judge[i].map(|j| &rules[j]),
+            );
         }
     }
     taken
@@ -226,8 +234,8 @@ fn count(
 /// silently, read without its label.
 fn satisfies_shape(c: &Checker<'_>, unit: &Unit, rule: &UnitRule, block: &Rule) -> bool {
     let read = c.read(unit, block, Some(rule));
-    rule.fits(&c.schema.core.formats, &read.squashed.text, |k| {
-        c.front_value(k)
+    rule.fits(c.schema.formats_of(rule), &read.squashed.text, |k| {
+        c.front_reading(k, rule)
     })
 }
 
@@ -260,9 +268,9 @@ fn untaken(
         let best = rules
             .iter()
             .filter(|r| r.is_production())
-            .map(|r| (r, c.read(unit, block, Some(r)).squashed.text))
-            .fold(None::<(&UnitRule, String, usize)>, |best, (r, read)| {
-                let n = reach(c, r, &read);
+            .map(|r| (r, c.read(unit, block, Some(r))))
+            .fold(None::<(&UnitRule, Read, usize)>, |best, (r, read)| {
+                let n = reach(c, r, &read.squashed.text);
                 match best {
                     Some((_, _, m)) if m >= n => best,
                     _ => Some((r, read, n)),
@@ -270,23 +278,26 @@ fn untaken(
             })
             .filter(|(_, _, n)| *n > 0)
             .map(|(r, read, _)| (r, read));
-        match best {
-            Some((r, read)) => {
-                // The column of the failure counts in the text without the
-                // label, which the finding quotes.
-                let text = read.clone();
-                let reason = shape_failure(c, r, &read, unit_is);
-                c.emit(
-                    &r.common,
-                    Some(unit.line),
-                    "TLMD_57",
-                    format!(
-                        "`{}` matches no rule of {whose}; the nearest {reason}",
-                        short(&text)
-                    ),
-                );
-            }
-            None => c.emit(
+        if let Some((r, read)) = best {
+            // The column of the failure counts in the text without the
+            // label, which the finding quotes as written.
+            let reason = shape_failure(c, r, &read, unit_is);
+            c.emit(
+                &r.common,
+                Some(unit.line),
+                "TLMD_57",
+                format!(
+                    "{} matches no rule of {whose}; the nearest {reason}",
+                    quoted(&read.shown.text)
+                ),
+            );
+        } else {
+            // No production reaches into the text, as none does whose
+            // shape is a pattern, so the finding names the form that
+            // the writer meant, by the examples, before the advice to
+            // the schema's author.
+            let meant = meant(c, unit, rules, block, unit_is);
+            c.emit(
                 common,
                 Some(unit.line),
                 if open == "lines-open" {
@@ -295,27 +306,131 @@ fn untaken(
                     "TLMD_53"
                 },
                 format!(
-                    "`{}` matches no rule of {whose}; declare it or set `{open}`",
-                    short(&text)
+                    "{} matches no rule of {whose}{meant}; declare it or set `{open}`",
+                    quoted(&text)
                 ),
-            ),
+            );
         }
         c.broke(unit);
     }
 }
 
-/// How far `text` follows `rule`'s shape before it fails.
-pub(super) fn reach(c: &Checker<'_>, rule: &UnitRule, text: &str) -> usize {
-    rule.reach(&c.schema.core.formats, text)
+/// The form that a unit which no production reaches into was meant to
+/// have, as the finding words it after the unit: the production whose
+/// example shares the longest beginning with the unit, both read without
+/// their labels, with why the unit fails it and its example; else, where
+/// several share the longest, or none shares a beginning, the example of
+/// each of them; and nothing where no production has an example.
+// sokf-implements: TLMD_273
+fn meant(c: &Checker<'_>, unit: &Unit, rules: &[UnitRule], block: &Rule, unit_is: &str) -> String {
+    let examples = |r: &UnitRule| -> Vec<String> {
+        let own: Vec<&str> = r.examples.iter().map(String::as_str).collect();
+        let list = if own.is_empty() {
+            r.format_in(c.schema.formats_of(r))
+                .map(|f| f.examples())
+                .unwrap_or_default()
+        } else {
+            own
+        };
+        list.iter()
+            .map(|e| {
+                c.schema
+                    .unlabelled(&c.labels, block, Some(r), &r.read_text(e))
+                    .0
+            })
+            .collect()
+    };
+    let productions: Vec<(&UnitRule, Read, Vec<String>)> = rules
+        .iter()
+        .filter(|r| r.is_production())
+        .map(|r| (r, c.read(unit, block, Some(r)), examples(r)))
+        .filter(|(_, _, e)| !e.is_empty())
+        .collect();
+    let shared = |read: &Read, e: &[String]| {
+        e.iter()
+            .map(|e| common_prefix(&read.squashed.text, e))
+            .max()
+            .unwrap_or(0)
+    };
+    let reach: Vec<usize> = productions.iter().map(|p| shared(&p.1, &p.2)).collect();
+    let most = reach.iter().copied().max().unwrap_or(0);
+    let nearest: Vec<&(&UnitRule, Read, Vec<String>)> = productions
+        .iter()
+        .zip(&reach)
+        .filter(|(_, n)| **n == most)
+        .map(|(p, _)| p)
+        .collect();
+    if let [(r, read, _)] = nearest.as_slice()
+        && most > 0
+    {
+        format!("; the nearest {}", shape_failure(c, r, read, unit_is))
+    } else {
+        let shown: Vec<String> = nearest
+            .iter()
+            .filter_map(|(r, _, _)| {
+                r.example().or_else(|| {
+                    r.format_in(c.schema.formats_of(r))
+                        .and_then(|f| f.examples().first().copied())
+                })
+            })
+            .filter(|e| !e.is_empty())
+            .map(text::code)
+            .collect();
+        if shown.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} {unit_is} of this kind reads {}",
+                text::article(unit_is),
+                shown.join(", or reads ")
+            )
+        }
+    }
 }
 
-/// Why `text` does not have `rule`'s shape, with the example it shows.
-fn shape_failure(c: &Checker<'_>, rule: &UnitRule, text: &str, unit_is: &str) -> String {
+/// The example a shape failure shows: the failure is built from the rule,
+/// and the example is the rule's one voice.
+// sokf-implements: CLI-7_AC-2
+// sokf-implements: TL_74
+pub(super) fn reads(what: &str, example: Option<&str>) -> String {
+    example
+        .filter(|e| !e.is_empty())
+        .map_or_else(String::new, |e| {
+            format!(
+                "; {} {what} of this kind reads {}",
+                text::article(what),
+                text::code(e)
+            )
+        })
+}
+
+/// The length in bytes of the longest beginning that `a` and `b` share,
+/// ending at a character of both.
+fn common_prefix(a: &str, b: &str) -> usize {
+    a.char_indices()
+        .zip(b.chars())
+        .find(|((_, x), y)| x != y)
+        .map_or_else(|| a.len().min(b.len()), |((i, _), _)| i)
+}
+
+/// How far `text` follows `rule`'s shape before it fails.
+pub(super) fn reach(c: &Checker<'_>, rule: &UnitRule, text: &str) -> usize {
+    rule.reach(c.schema.formats_of(rule), text)
+}
+
+/// Why the unit that `read` holds does not have `rule`'s shape, with the
+/// example it shows.
+fn shape_failure(c: &Checker<'_>, rule: &UnitRule, read: &Read, unit_is: &str) -> String {
+    let text = read.squashed.text.as_str();
     match (&rule.shape, &rule.format) {
-        (Some(shape), _) => format!("{}{}", shape.failure(text), reads(unit_is, rule.example())),
+        (Some(_), _) => format!(
+            "{}{}",
+            shape_failure_of(rule, read).unwrap_or_default(),
+            reads(unit_is, rule.example())
+        ),
         (None, Some(name)) => match rule
-            .format_in(&c.schema.core.formats)
-            .map(|f| f.matching_as(text, unit_is))
+            .format_in(c.schema.formats_of(rule))
+            .map(|f| read.quoting(|q| f.matching_quoting(text, unit_is, q)))
         {
             Some(Err(reason)) => reason,
             _ => format!("format `{name}`"),

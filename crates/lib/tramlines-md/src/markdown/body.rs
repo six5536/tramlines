@@ -5,7 +5,7 @@ use std::{borrow::Cow, ops::Range};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Anchor, Dialect, parse, slug};
+use super::{Anchor, Change, Dialect, Reading, apply, parse, plain_text, reading, slug};
 use crate::{RepoPath, text};
 
 /// One variant per grammar `block.kind` value.
@@ -31,7 +31,8 @@ pub enum BlockKind {
     Html,
     /// A horizontal rule.
     ThematicBreak,
-    /// Link reference definitions outside the generated block.
+    /// Link reference definitions at the top level of the body, outside
+    /// the generated block.
     References,
     /// A repeating sequence of blocks; matched by the checker, never parsed.
     Group,
@@ -105,6 +106,7 @@ impl BlockKind {
     }
 }
 
+// sokf:begin block-detail
 /// The per-kind facts grammar `block` keys test.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BlockDetail {
@@ -120,8 +122,11 @@ pub enum BlockDetail {
     },
     /// A table's header row.
     Table {
-        /// The header cells.
+        /// The header cells, as written.
         columns: Vec<String>,
+        /// The reading of each header cell (`TLMD_258`).
+        #[serde(default)]
+        readings: Vec<String>,
     },
     /// A region's open-marker target, as written.
     Region {
@@ -129,12 +134,13 @@ pub enum BlockDetail {
         target: String,
     },
     /// The headings inside a blockquote, which the quote does not read as
-    /// its paragraphs: the line of each, and the heading as written.
+    /// its paragraphs, each with its lines and its style.
     Quote {
         /// Each heading.
-        headings: Vec<(usize, String)>,
+        headings: Vec<Heading>,
     },
 }
+// sokf:end block-detail
 
 /// One part of a body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,12 +174,21 @@ impl Block {
     }
 }
 
+// sokf:begin unit
 /// A paragraph, an item, a row, or an image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unit {
     /// The text as written, lines joined by one space.
     pub text: String,
-    /// The line the unit starts on.
+    /// The reading of `text`, each byte mapped to a byte of `text`
+    /// (`TLMD_258`): the text itself for a unit that is not a paragraph, an
+    /// item, a table row, or a heading inside an item or a quote.
+    #[serde(default)]
+    pub reading: Reading,
+    /// The line the unit's own text starts on: for a list item whose first
+    /// paragraph starts below its marker, after a link reference definition
+    /// or the marker alone, the line of that paragraph (`TLMD_290`). An item
+    /// that opens with an HTML block keeps the line of its marker.
     pub line: usize,
     /// The line the unit's own text ends on: a paragraph's last line, an
     /// item's first paragraph's last line.
@@ -187,6 +202,7 @@ pub struct Unit {
     #[serde(default)]
     pub pieces: Vec<Piece>,
 }
+// sokf:end unit
 
 /// The start of one piece of a unit's text: a line of a paragraph or of a
 /// heading, or a table cell. The piece runs on unbroken in its line.
@@ -205,6 +221,7 @@ impl Unit {
     /// no pieces mapped.
     pub(crate) fn leaf(text: String, line: usize, end_line: usize) -> Self {
         Unit {
+            reading: Reading::written(&text),
             text,
             line,
             end_line,
@@ -216,11 +233,36 @@ impl Unit {
     /// The file line and byte column of `offset` in the text, anchors
     /// removed; `None` for a unit with no pieces.
     pub fn position(&self, offset: usize) -> Option<(usize, usize)> {
-        let piece = self.pieces.iter().rev().find(|p| p.offset <= offset)?;
-        Some((piece.line, piece.col + (offset - piece.offset)))
+        position(&self.pieces, offset)
+    }
+
+    /// Whether `offset` lies in the text that joins two pieces, the space
+    /// that joins two lines or the ` | ` that joins two cells, which no piece
+    /// covers: only spaces and pipes stand between it and the next piece.
+    pub(crate) fn in_joint(&self, offset: usize) -> bool {
+        self.pieces
+            .iter()
+            .find(|p| p.offset > offset)
+            .and_then(|next| self.text.get(offset..next.offset))
+            .is_some_and(|gap| !gap.is_empty() && gap.bytes().all(|b| b == b' ' || b == b'|'))
+    }
+
+    /// The file line and byte column of the first piece of the text at or
+    /// after `offset`, anchors removed; `None` where none starts there.
+    pub(crate) fn position_after(&self, offset: usize) -> Option<(usize, usize)> {
+        let piece = self.pieces.iter().find(|p| p.offset >= offset)?;
+        Some((piece.line, piece.col))
     }
 }
 
+/// The file line and byte column of `offset` in a text whose pieces are
+/// `pieces`; `None` where it has none.
+pub(super) fn position(pieces: &[Piece], offset: usize) -> Option<(usize, usize)> {
+    let piece = pieces.iter().rev().find(|p| p.offset <= offset)?;
+    Some((piece.line, piece.col + (offset - piece.offset)))
+}
+
+// sokf:begin heading
 /// A heading.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Heading {
@@ -228,7 +270,11 @@ pub struct Heading {
     pub level: u8,
     /// The text as written.
     pub text: String,
-    /// The slug of the heading (`TLMD_101`).
+    /// The reading of `text`, each byte mapped to a byte of `text`
+    /// (`TLMD_258`).
+    #[serde(default)]
+    pub reading: Reading,
+    /// The slug of the plain text of the heading (`TLMD_101`).
     pub slug: String,
     /// The line of the heading, or of a setext heading's first line.
     pub line: usize,
@@ -236,6 +282,32 @@ pub struct Heading {
     pub end_line: usize,
     /// Whether the heading is setext.
     pub setext: bool,
+}
+// sokf:end heading
+
+impl Heading {
+    /// A heading of `text`, with its reading and the slug of its plain
+    /// text, from `line` to `end_line`.
+    // sokf-implements: MD-3_AC-15
+    // sokf-implements: MD-3_AC-16
+    // sokf-implements: TLMD_101
+    pub(crate) fn new(
+        level: u8,
+        text: String,
+        reading: Reading,
+        (line, end_line): (usize, usize),
+        setext: bool,
+    ) -> Self {
+        Heading {
+            level,
+            reading,
+            slug: slug(&plain_text(&text)),
+            text,
+            line,
+            end_line,
+            setext,
+        }
+    }
 }
 
 // sokf:begin link-target
@@ -337,8 +409,9 @@ pub struct Body {
     pub footnote_refs: Vec<(String, usize)>,
     /// Footnote definitions: label and line.
     pub footnote_defs: Vec<(String, usize)>,
-    /// Link reference definitions outside the generated block: label,
-    /// destination and line.
+    /// The link reference definitions outside the generated block, those
+    /// in a list item or a quote among them, as comrak reads them: label,
+    /// destination as written, and the line of the label, in order.
     pub ref_defs: Vec<(String, String, usize)>,
     /// Lines carrying inline HTML other than a comment.
     pub inline_html: Vec<usize>,
@@ -361,6 +434,12 @@ pub struct Body {
     /// (`TLMD_107`).
     #[serde(default)]
     pub anchors: Vec<Anchor>,
+    /// Each change that the readings of the units and the headings make on
+    /// one line, in order: the line, the start and the end of the bytes
+    /// that it replaces in the line without its anchors, and what the
+    /// reading writes in their place.
+    #[serde(default)]
+    pub reading_changes: Vec<(usize, usize, usize, String)>,
     /// The line the body starts on.
     pub first_line: usize,
 }
@@ -372,21 +451,7 @@ impl Body {
     /// host that resolves a link to it needs it.
     // sokf-implements: MD-3_AC-8
     pub fn nested_headings(&self) -> Vec<Heading> {
-        let mut out: Vec<Heading> = headings_in(&self.blocks)
-            .into_iter()
-            .map(|(line, written)| {
-                let hashes = written.chars().take_while(|&c| c == '#').count();
-                let text = written[hashes..].trim().to_string();
-                Heading {
-                    level: u8::try_from(hashes).unwrap_or(6),
-                    slug: slug(&text),
-                    text,
-                    line,
-                    end_line: line,
-                    setext: false,
-                }
-            })
-            .collect();
+        let mut out = headings_in(&self.blocks);
         out.sort_by_key(|h| h.line);
         out
     }
@@ -421,6 +486,23 @@ impl Body {
             }
         }
         std::borrow::Cow::Owned(out)
+    }
+
+    /// `text`, the line numbered `line` without its anchors, in its reading:
+    /// each change that the readings of the units and the headings make on
+    /// the line applied, each byte mapped to its byte of `text`.
+    // sokf-implements: TLMD_111
+    pub fn read_line(&self, line: usize, text: &str) -> Reading {
+        let first = self.reading_changes.partition_point(|c| c.0 < line);
+        let changes: Vec<Change> = self.reading_changes[first..]
+            .iter()
+            .take_while(|c| c.0 == line)
+            .map(|(_, start, end, with)| Change {
+                range: *start..*end,
+                with: with.clone(),
+            })
+            .collect();
+        apply(text, &changes)
     }
 
     /// Whether byte `col` of `line` lies inside a code span.
@@ -517,14 +599,12 @@ pub(crate) fn mask_code<'a>(text: &'a str, code: &[std::ops::Range<usize>]) -> C
 }
 
 /// The headings inside `blocks` at any depth, through quotes and the
-/// blocks inside items, each by its line and as written.
-pub(super) fn headings_in(blocks: &[Block]) -> Vec<(usize, String)> {
+/// blocks inside items, each with its lines and its style.
+pub(super) fn headings_in(blocks: &[Block]) -> Vec<Heading> {
     let mut out = Vec::new();
     for b in blocks {
         match (&b.kind, &b.detail) {
-            (BlockKind::Heading, _) => {
-                out.extend(b.units.iter().map(|u| (u.line, u.text.clone())));
-            }
+            (BlockKind::Heading, _) => out.extend(b.units.iter().map(nested_heading)),
             (_, BlockDetail::Quote { headings }) => out.extend(headings.iter().cloned()),
             _ => {
                 for u in &b.units {
@@ -534,6 +614,22 @@ pub(super) fn headings_in(blocks: &[Block]) -> Vec<(usize, String)> {
         }
     }
     out
+}
+
+/// The heading that `unit`, a heading inside an item or a quote, holds. Its
+/// text starts with its hashes and a space, which give its level, and it is
+/// setext where it spans more than one line, because an ATX heading has
+/// one line.
+fn nested_heading(unit: &Unit) -> Heading {
+    let (hashes, text) = unit.text.split_once(' ').unwrap_or((&unit.text, ""));
+    let level = u8::try_from(hashes.len()).unwrap_or(6);
+    Heading::new(
+        level,
+        text.to_string(),
+        reading(text),
+        (unit.line, unit.end_line),
+        unit.end_line > unit.line,
+    )
 }
 
 #[cfg(test)]

@@ -97,7 +97,14 @@ pub(super) fn extent(
     // is what it took before a run was searched at all.
     // sokf-implements: TLMD_75
     if firm {
+        let at = c.save();
         check_plain(c, &prefix(&docs[di], upper), rule, section);
+        // The position keeps the first unit of the run (`TLMD_194`), and
+        // takes the others only because nothing passes: no repair of a
+        // fixed text writes over them (`TLMD_281`).
+        if let Some(second) = docs[di].units.get(1) {
+            c.drop_repairs_from(&at, second.line);
+        }
         commit(docs, di, upper);
         return Ok(1);
     }

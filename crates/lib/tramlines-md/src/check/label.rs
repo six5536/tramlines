@@ -2,11 +2,11 @@
 //! the unit's text without it, and the check holds it to what the rule
 //! declares and to the words that the host gives.
 
-use super::{Checker, Host, LabelFacts, LabelRepair, short};
+use super::{Checker, Host, LabelFacts, LabelRepair, quoted};
 use crate::{
     grammar::{
-        Block as Rule, Found, Label, Schema, Squashed, Unit as UnitRule, Words, carries_labels,
-        is_words, squash, without,
+        Block as Rule, Found, Label, Quote, Schema, Squashed, Unit as UnitRule, Words,
+        carries_labels, is_words, squash, without,
     },
     markdown::Unit,
 };
@@ -38,13 +38,36 @@ pub(crate) fn words_of(schema: &Schema, host: &dyn Host) -> Words {
     )
 }
 
-/// The squashed text of a unit as its rule reads it: without its label,
-/// and the label that it holds.
+/// The squashed text of a unit as its rule reads it: its reading without
+/// its label, the label that it holds, and the text as written that a
+/// finding quotes.
 pub(crate) struct Read {
-    /// The text without the label, each byte mapped to the unit's text.
+    /// The reading without the label, each byte mapped to the unit's text.
     pub squashed: Squashed,
     /// The label, and the byte of the unit's text where it starts.
     pub label: Option<(Found, usize)>,
+    /// The text as written, squashed and without the label, each byte
+    /// mapped to the unit's text, which a finding quotes (`TLMD_258`).
+    pub shown: Squashed,
+}
+
+impl Read {
+    /// The offset in `shown` of offset `i` of `squashed`: the first byte
+    /// of the text as written at or after the byte that `i` stands for.
+    pub(crate) fn shown_at(&self, i: usize) -> usize {
+        let at = self.squashed.original(i);
+        self.shown.map.partition_point(|&o| o < at)
+    }
+
+    /// `f` with the quote of the text as written, by which a failure
+    /// quotes what the unit holds where its reading differs.
+    pub(crate) fn quoting<R>(&self, f: impl FnOnce(&Quote<'_>) -> R) -> R {
+        let at = |i: usize| self.shown_at(i);
+        f(&Quote {
+            text: &self.shown.text,
+            at: &at,
+        })
+    }
 }
 
 impl Checker<'_> {
@@ -60,12 +83,21 @@ impl Checker<'_> {
     /// a unit of a block with no unit rule. A line of a fence holds no
     /// label.
     // sokf-implements: TLMD_248
+    // sokf-implements: TLMD_258
     pub(crate) fn read(&self, unit: &Unit, block: &Rule, rule: Option<&UnitRule>) -> Read {
-        let squashed = Squashed::new(&unit.text);
+        // Every rule reads the reading of the unit, mapped to its text.
+        let written = Squashed::new(&unit.text);
+        let reading = unit.reading.or_written(&unit.text);
+        let squashed = if reading.text == unit.text {
+            written.clone()
+        } else {
+            Squashed::mapped(&reading.text, &reading.map)
+        };
         if !self.reads_labels(block) {
             return Read {
                 squashed,
                 label: None,
+                shown: written,
             };
         }
         // Words in brackets that a link reference definition of the
@@ -76,13 +108,23 @@ impl Checker<'_> {
             .label_in(&self.labels, block, rule, &squashed.text)
             .filter(|found| !link(&found.words))
         {
-            Some(found) => Read {
-                squashed: without(&squashed, &found.at),
-                label: Some((found.clone(), squashed.original(found.at.start))),
-            },
+            Some(found) => {
+                // The label as written covers the bytes of the unit's text
+                // that the label of the reading stands for.
+                let start = squashed.original(found.at.start);
+                let end = squashed.original(found.at.end);
+                let lo = written.map.partition_point(|&o| o < start);
+                let hi = written.map.partition_point(|&o| o < end);
+                Read {
+                    squashed: without(&squashed, &found.at),
+                    label: Some((found.clone(), start)),
+                    shown: without(&written, &(lo..hi)),
+                }
+            }
             None => Read {
                 squashed,
                 label: None,
+                shown: written,
             },
         }
     }
@@ -118,8 +160,8 @@ impl Checker<'_> {
                     Some(unit.line),
                     "TLMD_249",
                     format!(
-                        "`{}` carries no label; its rule requires one: {listed}",
-                        short(&read.squashed.text)
+                        "{} carries no label; its rule requires one: {listed}",
+                        quoted(&read.shown.text)
                     ),
                 );
                 true
@@ -130,8 +172,8 @@ impl Checker<'_> {
                     Some(unit.line),
                     "TLMD_250",
                     format!(
-                        "`{}` carries the label `[{}]`, and its rule declares no `label`",
-                        short(&read.squashed.text),
+                        "{} carries the label `[{}]`, and its rule declares no `label`",
+                        quoted(&read.shown.text),
                         found.words
                     ),
                 );

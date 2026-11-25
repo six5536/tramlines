@@ -8,11 +8,16 @@ use regex::Regex;
 use tramlines_core::grammar::Scope;
 
 use super::{
-    Condition, CoreSchema, DerivationSource, Format, FormatRegistry, KeyDerivation, Label,
+    Condition, CoreSchema, DerivationSource, FormatRegistry, KeyDerivation, KeyText, Label,
     LifecycleDimension, Limit, Only, RuleCommon, RuleLookup, Shape, States, Words, captured,
     squash,
 };
-use crate::{Spanned, markdown::BlockKind};
+use crate::{
+    Spanned,
+    markdown::{self, BlockKind},
+};
+
+mod unit;
 
 /// Grammar `heading`: a section's heading as a unit rule, its shape and
 /// the key it captures (`TLMD_27`).
@@ -20,6 +25,9 @@ use crate::{Spanned, markdown::BlockKind};
 pub struct Heading {
     /// The shape: exact text, the frontmatter value, a template or a regex.
     pub shape: Shape,
+    /// The shape as read, which every match of a heading uses: its literal
+    /// text in the reading of markdown (`TLMD_259`).
+    pub read: Shape,
     /// The hole or named group whose capture is the section's key.
     pub key: Option<String>,
     /// `unique`: the scope of the key.
@@ -39,6 +47,9 @@ pub struct Section {
     pub heading: Heading,
     /// `renamed-from`.
     pub renamed_from: Vec<String>,
+    /// The reading of each `renamed-from`, which the match of a heading
+    /// compares.
+    pub renamed_read: Vec<String>,
     /// `rule-id`.
     pub rule_id: Option<String>,
     /// `level`.
@@ -150,10 +161,14 @@ pub struct Block {
     pub units_open: bool,
     /// `lang`.
     pub lang: Option<Lang>,
-    /// `fence`; absent means three.
+    /// `fence`: the least number of backticks of the fence that a
+    /// scaffold writes, which no check reads; absent means three.
     pub fence: usize,
     /// `columns`.
     pub columns: Option<Vec<String>>,
+    /// The reading of each of `columns`, which the header of a table is
+    /// compared with.
+    pub columns_read: Option<Vec<String>>,
     /// `columns-open`.
     pub columns_open: bool,
     /// `example-columns`: the header row of the scaffold of a table with
@@ -178,7 +193,9 @@ pub struct Block {
     /// `guidance`: what the example cannot say, written before the block.
     pub guidance: Option<String>,
     /// The block's position in the `blocks` list that declares it,
-    /// one-based, which a finding names where the block has no `rule-id`.
+    /// one-based, which a finding names where the block has no `rule-id`,
+    /// or 0 for the one prose block of a section that declares no
+    /// `blocks`, which a finding doesn't name.
     pub pos: usize,
 }
 
@@ -187,8 +204,19 @@ pub struct Block {
 pub struct Unit {
     /// The common keys.
     pub common: RuleCommon,
-    /// `text`, `template` or `pattern`: the unit's shape.
+    /// `text`, `template` or `pattern`: the unit's shape, as written.
     pub shape: Option<Shape>,
+    /// The shape as read, which every match uses: its literal text in the
+    /// reading of markdown where the rule reads prose, and the shape as
+    /// written where it reads the lines of a fence or a block of no prose.
+    pub read: Option<Shape>,
+    /// Whether the rule reads prose: a unit rule of a prose, list, table,
+    /// or blockquote block, whose units the engine reads in their reading,
+    /// with its format from `Schema::read_formats` (`TLMD_258`).
+    pub reads_prose: bool,
+    /// Whether the rule reads a table row, whose reading reads each cell
+    /// alone, so that its text of the schema reads cell by cell too.
+    pub reads_row: bool,
     /// `format`: the name.
     pub format: Option<String>,
     /// `key`: the hole or named group of the shape, or of the format's,
@@ -248,114 +276,6 @@ pub struct Unit {
     pub index: usize,
 }
 
-impl Unit {
-    /// The name that a key this rule captures is filed under: its
-    /// `key-of`, else the first of `around`, the `rule-id`s of its block,
-    /// its group, and its section, in that order. The rule's own
-    /// `rule-id` files nothing. The check, the derivation, and the
-    /// lookup of a reference all file a key through this.
-    // sokf-implements: TLMD_89
-    // sokf-implements: TLMD_236
-    pub(crate) fn files_under<'a>(&'a self, around: &[Option<&'a str>]) -> Option<&'a str> {
-        self.key_of.as_deref().or_else(|| nearest(around))
-    }
-
-    /// The `rule-id` that names the rule in a finding on its capture: its
-    /// own, else the first of `around`, as `files_under` reads them.
-    pub(crate) fn named_by<'a>(&'a self, around: &[Option<&'a str>]) -> Option<&'a str> {
-        self.rule_id.as_deref().or_else(|| nearest(around))
-    }
-
-    /// The most units or lines the rule may take or count: the count of a
-    /// hard `max`, and `None` for a soft `max` or no `max`, neither of
-    /// which bounds anything.
-    pub fn hard_max(&self) -> Option<usize> {
-        self.max.as_ref().and_then(Limit::hard)
-    }
-
-    /// The format the rule binds, as `formats` defines it.
-    pub(crate) fn format_in<'f>(&self, formats: &'f FormatRegistry) -> Option<&'f Format> {
-        formats.get(self.format.as_deref()?)
-    }
-
-    /// Whether the rule, or the format it binds as `formats` defines it,
-    /// bans any text.
-    pub(crate) fn bans_in(&self, formats: &FormatRegistry) -> bool {
-        !self.prohibited_patterns.is_empty()
-            || self
-                .format_in(formats)
-                .is_some_and(|f| !f.prohibited.is_empty())
-    }
-
-    /// The key the rule captures from the squashed `text`: its own `key` of
-    /// its own shape, or else the key of the shape of its format that
-    /// `text` takes.
-    pub(crate) fn key_in(&self, formats: &FormatRegistry, text: &str) -> Option<String> {
-        if let Some(shape) = &self.shape {
-            return Some(captured(shape, self.key.as_deref()?, text)?.key);
-        }
-        let format = self.format_in(formats)?;
-        let name = self.key.as_ref().or(format.key.as_ref())?;
-        let (shape, _) = format.shape_for(text)?;
-        Some(captured(shape, name, text)?.key)
-    }
-
-    /// Whether the squashed `text` has the rule's shape, its own or else its
-    /// format's. `value` gives the frontmatter value a `text` is bound to.
-    pub(crate) fn fits(
-        &self,
-        formats: &FormatRegistry,
-        text: &str,
-        value: impl Fn(&str) -> Option<String>,
-    ) -> bool {
-        match &self.shape {
-            Some(shape) => shape.matches(text, value),
-            None => self
-                .format_in(formats)
-                .is_some_and(|f| f.shape_for(text).is_some()),
-        }
-    }
-
-    /// How far `text` follows the rule's shape, its own or else its
-    /// format's, before it fails.
-    pub(crate) fn reach(&self, formats: &FormatRegistry, text: &str) -> usize {
-        match &self.shape {
-            Some(shape) => shape.reach(text),
-            None => self.format_in(formats).map_or(0, |f| f.reach(text)),
-        }
-    }
-
-    /// The first text of the rule's `example`, which a failure quotes as the
-    /// text of a valid unit.
-    pub fn example(&self) -> Option<&str> {
-        self.examples.first().map(String::as_str)
-    }
-
-    /// Whether the rule declares what a unit looks like, by its own shape
-    /// or a format's.
-    pub fn has_shape(&self) -> bool {
-        self.shape.is_some() || self.format.is_some()
-    }
-
-    /// Whether the rule only counts what its guard selects: a guard and a
-    /// count, and nothing that would check a unit (`TLMD_52` to `TLMD_57`).
-    pub fn is_counter(&self) -> bool {
-        self.select.is_some()
-            && !self.has_shape()
-            && self.key.is_none()
-            && self.prohibited_patterns.is_empty()
-            && self.blocks.is_none()
-            && self.lines.is_none()
-            && self.for_each_key_of.is_none()
-    }
-
-    /// Whether the rule is a production: a shape and no guard, taking the
-    /// units its shape matches (`TLMD_52` to `TLMD_57`).
-    pub fn is_production(&self) -> bool {
-        self.select.is_none() && self.has_shape()
-    }
-}
-
 /// Grammar `prohibited-heading`.
 #[derive(Debug, Clone)]
 pub struct ProhibitedHeading {
@@ -363,6 +283,8 @@ pub struct ProhibitedHeading {
     pub common: RuleCommon,
     /// `heading`.
     pub heading: String,
+    /// The reading of `heading`, which a heading is compared with.
+    pub read: String,
 }
 
 /// The scaffold a schema derives, the document a new one starts from: the
@@ -396,8 +318,28 @@ pub struct Schema {
     pub labels: Vec<String>,
     /// The keys a host's extension adds, as written, for the host to lower.
     pub extensions: BTreeMap<String, Spanned>,
+    /// The formats of `core.formats` as read, whose shapes match the reading
+    /// of prose (`TLMD_258`), which a rule that reads prose binds.
+    pub read_formats: FormatRegistry,
+    /// The formats of `core.formats` as a table row reads them, each cell
+    /// alone, which a rule of a table row binds (`TLMD_259`).
+    pub row_formats: FormatRegistry,
 }
 // sokf:end schema
+
+/// The formats that the rules of a schema bind, by name, as each rule reads
+/// a unit.
+#[derive(Debug, Default)]
+pub(crate) struct BoundFormats {
+    /// Those that a rule of prose other than a table row binds, which read
+    /// as a paragraph alone.
+    pub prose: HashSet<String>,
+    /// Those that a rule of a table row binds, which read cell by cell.
+    pub rows: HashSet<String>,
+    /// Those that a rule of the lines of a fence or of a block of no prose
+    /// binds, which read as written.
+    pub lines: HashSet<String>,
+}
 
 impl Schema {
     /// A schema that demands nothing: the fallback for a schema that did
@@ -411,6 +353,27 @@ impl Schema {
             sections_prohibited: vec![],
             labels: vec![],
             extensions: BTreeMap::new(),
+            read_formats: FormatRegistry::default(),
+            row_formats: FormatRegistry::default(),
+        }
+    }
+
+    /// The formats that `rule` binds a format from: those of `row_formats`
+    /// for a rule of a table row, those of `read_formats` for another rule
+    /// that reads prose, and those of `core.formats` as written for one
+    /// that reads the lines of a fence.
+    pub fn formats_of(&self, rule: &Unit) -> &FormatRegistry {
+        // A schema that a host builds without the registry that a rule
+        // reads its format from reads its formats as written.
+        let read = if rule.reads_row {
+            &self.row_formats
+        } else {
+            &self.read_formats
+        };
+        if rule.reads_prose && !read.entries.is_empty() {
+            read
+        } else {
+            &self.core.formats
         }
     }
 
@@ -533,6 +496,39 @@ impl Schema {
         })
     }
 
+    /// The formats that the rules of the schema bind, by how each rule
+    /// reads a unit.
+    pub(crate) fn bound_formats(&self) -> BoundFormats {
+        fn walk(blocks: Option<&[Block]>, out: &mut BoundFormats) {
+            for b in blocks.unwrap_or(&[]) {
+                walk(b.blocks.as_deref(), out);
+                let mut units: Vec<&Unit> = b.units().collect();
+                while let Some(u) = units.pop() {
+                    units.extend(u.lines.iter().flatten());
+                    walk(u.blocks.as_deref(), out);
+                    if let Some(name) = &u.format {
+                        let set = if u.reads_row {
+                            &mut out.rows
+                        } else if u.reads_prose {
+                            &mut out.prose
+                        } else {
+                            &mut out.lines
+                        };
+                        set.insert(name.clone());
+                    }
+                }
+            }
+        }
+        let mut out = BoundFormats::default();
+        for s in &self.sections {
+            walk(s.blocks.as_deref(), &mut out);
+        }
+        if let Some(p) = &self.preamble {
+            walk(p.blocks.as_deref(), &mut out);
+        }
+        out
+    }
+
     /// Every name that the schema declares: each `rule-id` and each
     /// `key-of`.
     pub(crate) fn declared_names(&self) -> HashSet<String> {
@@ -560,17 +556,16 @@ impl Schema {
     /// or the example of each unit rule, else its format's, else its
     /// block's. These are the parents that the example of a key deriving
     /// from the rule starts with (`TL_127`, `TLMD_205`).
-    pub(crate) fn example_keys(&self, id: &str) -> Vec<String> {
+    pub(crate) fn example_keys(&self, id: &str) -> Vec<KeyText> {
         let mut out = Vec::new();
         if let Some(p) = &self.preamble {
             self.example_keys_in(p.blocks.as_deref(), id, None, None, &mut out);
         }
         for s in &self.sections {
             if s.rule_id.as_deref() == Some(id)
-                && let (Some(key), Some(example)) = (&s.heading.key, &s.heading.example)
-                && let Some(got) = captured(&s.heading.shape, key, &squash(example))
+                && let Some(got) = s.example_key()
             {
-                out.push(got.key);
+                out.push(got);
             }
             self.example_keys_in(
                 s.blocks.as_deref(),
@@ -586,23 +581,34 @@ impl Schema {
     /// The examples of the parent that `kd` names, which the example of a
     /// key deriving through it starts with, in schema order and each once:
     /// the value that the scaffold at the first states writes for the
-    /// frontmatter key from the schema, or the keys of the examples of the
-    /// rule. Empty where the schema states no value of the parent, as for a
-    /// key whose value only the host seeds.
+    /// frontmatter key from the schema, read through `read`, as written
+    /// where `verbatim`, as the key that derives reads, or the keys of the
+    /// examples of the rule. Empty where the schema states no value of the
+    /// parent, as for a key whose value only the host seeds.
     // sokf-implements: TL_129
-    pub(crate) fn parent_examples(&self, kd: &KeyDerivation) -> Vec<String> {
-        let mut all = match &kd.source {
+    pub(crate) fn parent_examples(
+        &self,
+        kd: &KeyDerivation,
+        read: fn(&str) -> markdown::Reading,
+        verbatim: bool,
+    ) -> Vec<KeyText> {
+        let all = match &kd.source {
             DerivationSource::Rule(r) => self.example_keys(r),
             DerivationSource::From(k) => self
                 .core
                 .constraint(k)
                 .and_then(|c| c.scaffold_value(&States::default()))
+                .map(|v| KeyText::new(&squash(&read(&v).text), &v, verbatim))
                 .into_iter()
                 .collect(),
         };
-        let mut seen = HashSet::new();
-        all.retain(|p| seen.insert(p.clone()));
-        all
+        let mut out: Vec<KeyText> = Vec::new();
+        for key in all {
+            if !out.contains(&key) {
+                out.push(key);
+            }
+        }
+        out
     }
 
     /// `example_keys` under `blocks`, `group` and `section` being the ids
@@ -613,7 +619,7 @@ impl Schema {
         id: &str,
         group: Option<&str>,
         section: Option<&str>,
-        out: &mut Vec<String>,
+        out: &mut Vec<KeyText>,
     ) {
         let words = Words::keys_of(self);
         for b in blocks.unwrap_or(&[]) {
@@ -638,7 +644,7 @@ impl Schema {
                 if owner != Some(id) || derives_here {
                     continue;
                 }
-                let formats = &self.core.formats;
+                let formats = self.formats_of(u);
                 let texts: Vec<&str> = if !u.examples.is_empty() {
                     u.examples.iter().map(String::as_str).collect()
                 } else if let Some(f) = u.format_in(formats) {
@@ -646,11 +652,12 @@ impl Schema {
                 } else {
                     b.examples.iter().map(String::as_str).collect()
                 };
-                // An example's key is read without its label (TLMD_248).
+                // An example's key is read without its label (TLMD_248), in
+                // the reading of the rule.
                 out.extend(
-                    texts.into_iter().filter_map(|t| {
-                        u.key_in(formats, &self.unlabelled(&words, b, Some(u), t).0)
-                    }),
+                    texts
+                        .into_iter()
+                        .filter_map(|t| self.example_key(&words, b, u, t)),
                 );
             }
         }
@@ -698,7 +705,7 @@ impl Schema {
 }
 
 /// The first id of `around`, the ids around a rule, nearest first.
-fn nearest<'a>(around: &[Option<&'a str>]) -> Option<&'a str> {
+pub(super) fn nearest<'a>(around: &[Option<&'a str>]) -> Option<&'a str> {
     around.iter().find_map(|a| *a)
 }
 

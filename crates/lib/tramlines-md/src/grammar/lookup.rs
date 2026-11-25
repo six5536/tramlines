@@ -15,11 +15,11 @@ pub enum RuleLookup {
 }
 
 impl RuleLookup {
-    /// The refusal, for the key `what` that named rule `id`.
+    /// The refusal, for the key `what` that named the set `id`.
     pub fn message(self, what: &str, id: &str) -> String {
         match self {
-            RuleLookup::NoRule => format!("`{what}` names no rule `{id}`"),
-            RuleLookup::NoKey => format!("`{what}` names rule `{id}`, which captures no key"),
+            RuleLookup::NoRule => format!("`{what}` names no set `{id}`"),
+            RuleLookup::NoKey => format!("`{what}` names set `{id}`, which holds no key"),
             RuleLookup::NameOnly => format!(
                 "`{what}` names `{id}`, the `rule-id` of a unit rule, which holds no key: declare `key-of: {id}` on each rule whose keys it means, or name the `key-of` that the rule declares"
             ),

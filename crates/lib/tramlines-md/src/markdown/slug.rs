@@ -12,6 +12,13 @@ pub fn slug(heading: &str) -> String {
         .collect()
 }
 
+/// The slug of the plain text of `text`, a key or a heading: the id that
+/// its anchor or its heading has (`TLMD_101`).
+// sokf-implements: TLMD_101
+pub(crate) fn id_of(text: &str) -> String {
+    slug(&super::plain_text(text))
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;

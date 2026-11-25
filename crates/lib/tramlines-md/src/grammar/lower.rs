@@ -14,11 +14,12 @@ use tramlines_core::grammar::{
 
 use super::{
     Block, FormatRegistry, Grammar, Label, Lang, Preamble, ProhibitedHeading, RegexCache,
-    RuleCommon, Schema, Section, Unit, squash,
+    RuleCommon, Schema, Section, Unit, read, read_formats, read_row, reads_prose, squash,
 };
 use crate::{
     Finding, RepoPath, Severity, Spanned,
     markdown::{BlockKind, Dialect},
+    text,
 };
 
 /// The keys of `schema` the markdown format grammar adds.
@@ -102,6 +103,8 @@ pub fn lower(
         severity: Severity::Error,
         unloaded,
         units: 0,
+        prose: false,
+        row: false,
     };
     l.findings = findings;
     let schema = l.schema(yaml, formats);
@@ -120,6 +123,10 @@ struct MdLowerer<'a> {
     severity: Severity,
     unloaded: HashSet<String>,
     units: usize,
+    /// Whether the units of the block being lowered read prose.
+    prose: bool,
+    /// Whether the units of the block being lowered are table rows.
+    row: bool,
 }
 
 impl<'a> Deref for MdLowerer<'a> {
@@ -190,9 +197,9 @@ impl MdLowerer<'_> {
                         w[1].common.line,
                         "TLMD_21",
                         format!(
-                            "section `{}` skips a level after `{}`",
-                            w[1].label(),
-                            w[0].label()
+                            "section {} skips a level after {}",
+                            text::code(&w[1].label()),
+                            text::code(&w[0].label())
                         ),
                     );
                 }
@@ -202,9 +209,13 @@ impl MdLowerer<'_> {
             .map(|items| {
                 items
                     .iter()
-                    .map(|p| ProhibitedHeading {
-                        common: self.rule_common(p),
-                        heading: str_of(p, "heading").unwrap_or_default(),
+                    .map(|p| {
+                        let heading = str_of(p, "heading").unwrap_or_default();
+                        ProhibitedHeading {
+                            common: self.rule_common(p),
+                            read: read(&heading),
+                            heading,
+                        }
                     })
                     .collect()
             })
@@ -215,15 +226,15 @@ impl MdLowerer<'_> {
         for banned in &sections_prohibited {
             let declared = sections.iter().any(|s| {
                 s.common.only.overlaps(&banned.common.only)
-                    && s.heading.shape.matches(&squash(&banned.heading), |_| None)
+                    && s.heading.read.matches(&squash(&banned.read), |_| None)
             });
             if declared {
                 self.fail(
                     banned.common.line,
                     "TLMD_170",
                     format!(
-                        "`sections-prohibited` names `{}`, which a section declares",
-                        banned.heading
+                        "`sections-prohibited` names {}, which a section declares",
+                        text::code(&banned.heading)
                     ),
                 );
             }
@@ -231,6 +242,8 @@ impl MdLowerer<'_> {
         // References resolve last, once every rule id is known.
         let mut known = CORE_SCHEMA_KEYS.to_vec();
         known.extend(MD_SCHEMA_KEYS);
+        let row_formats = read_formats(&core.formats, read_row);
+        let read_formats = read_formats(&core.formats, read);
         let schema = Schema {
             core,
             preamble,
@@ -248,6 +261,8 @@ impl MdLowerer<'_> {
             // sokf-implements: TL_9
             // sokf-implements: MD-2_AC-6
             extensions: extensions(yaml, &known),
+            read_formats,
+            row_formats,
         };
         self.check_references(&schema);
         schema
@@ -282,6 +297,10 @@ impl MdLowerer<'_> {
             common,
             heading,
             renamed_from: list_of(node, "renamed-from"),
+            renamed_read: list_of(node, "renamed-from")
+                .iter()
+                .map(|r| read(r))
+                .collect(),
             rule_id: str_of(node, "rule-id"),
             level,
             optional: self.optional(node),
@@ -326,9 +345,8 @@ impl MdLowerer<'_> {
                     item.line,
                     "TLMD_181",
                     format!(
-                        "item {} of `examples` begins with `{first}`, but each occurrence begins with a heading of level {level}",
-                        i + 1
-                    ),
+                        "item {} of `examples` begins with {first}, but each occurrence begins with a heading of level {level}",
+                        i + 1, first = text::code(first)),
                 );
             }
             out.push(text.to_string());
@@ -398,6 +416,9 @@ impl MdLowerer<'_> {
             });
         let common = self.rule_common(node);
         let (examples, example_list) = self.examples_of(node);
+        // The unit rules of the block read prose where its units do.
+        let prose = std::mem::replace(&mut self.prose, reads_prose(kind));
+        let row = std::mem::replace(&mut self.row, kind == BlockKind::Table);
         let (each, sequence, rules, blocks) = self.inside(&common, |l| {
             (
                 node.get("each").map(|u| l.unit(u, UnitPos::Plain)),
@@ -408,6 +429,9 @@ impl MdLowerer<'_> {
                 l.blocks(node),
             )
         });
+        self.prose = prose;
+        self.row = row;
+        let columns = node.get("columns").and_then(Spanned::as_str_or_list);
         Block {
             common,
             kind,
@@ -421,7 +445,10 @@ impl MdLowerer<'_> {
             units_open: bool_of(node, "units-open"),
             lang,
             fence: usize_of(node, "fence").unwrap_or(3),
-            columns: node.get("columns").and_then(Spanned::as_str_or_list),
+            columns_read: columns
+                .as_ref()
+                .map(|c| c.iter().map(|name| read(name)).collect()),
+            columns,
             columns_open: bool_of(node, "columns-open"),
             example_columns: node
                 .get("example-columns")
@@ -516,7 +543,10 @@ impl MdLowerer<'_> {
             self.fail(
                 node.line,
                 "TLMD_235",
-                "a rule with `max` names what it counts: declare a `rule-id`, or bind a `format`",
+                format!(
+                    "{} has `max`, so it names what it counts: declare a `rule-id`, or bind a `format`",
+                    unnamed_rule(node)
+                ),
             );
         }
         let min = match usize_of(node, "min") {
@@ -541,6 +571,21 @@ impl MdLowerer<'_> {
         }
         let common = self.rule_common(node);
         let (examples, example_list) = self.examples_of(node);
+        // A rule of the lines of a fence reads each line as written, and so
+        // does its shape (TLMD_261).
+        let reads_prose = self.prose && pos != UnitPos::Line;
+        // A row reads cell by cell, as the parser reads it.
+        let reads_row = reads_prose && self.row;
+        let shape = self.shape(node);
+        let read_shape = shape.as_ref().map(|s| {
+            if reads_row {
+                s.read_with(&read_row)
+            } else if reads_prose {
+                s.read_with(&read)
+            } else {
+                s.clone()
+            }
+        });
         let (blocks, lines) = self.inside(&common, |l| {
             (
                 l.blocks(node),
@@ -550,7 +595,10 @@ impl MdLowerer<'_> {
         });
         Unit {
             common,
-            shape: self.shape(node),
+            shape,
+            read: read_shape,
+            reads_prose,
+            reads_row,
             format: str_of(node, "format"),
             key: str_of(node, "key"),
             key_optional: bool_of(node, "key-optional"),
@@ -633,6 +681,27 @@ fn ordered(node: &Spanned, key: &str) -> bool {
 /// The items of the sequence `key` of `node`, where it holds one.
 fn seq<'a>(node: &'a Spanned, key: &str) -> Option<&'a [Spanned]> {
     node.get(key).and_then(|s| s.as_seq())
+}
+
+/// A rule that has no name, as a finding on the schema names it: by its
+/// guard, else by its shape, such as "the rule with `select-pattern`
+/// `^Step`" or "the rule with `text` from the frontmatter `title`", and
+/// else as "the rule", which has neither.
+fn unnamed_rule(node: &Spanned) -> String {
+    ["select-pattern", "template", "pattern", "text"]
+        .into_iter()
+        .find_map(|key| {
+            node.get(key)
+                .and_then(Spanned::as_str)
+                .map(|v| format!("the rule with `{key}` {}", text::code(v)))
+        })
+        .or_else(|| {
+            node.get("text")
+                .and_then(|t| t.get("from"))
+                .and_then(Spanned::as_str)
+                .map(|k| format!("the rule with `text` from the frontmatter `{k}`"))
+        })
+        .unwrap_or_else(|| "the rule".to_string())
 }
 
 #[cfg(test)]

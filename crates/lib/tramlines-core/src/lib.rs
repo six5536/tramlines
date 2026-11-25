@@ -7,6 +7,9 @@
 //! lifecycle of a document; and the [`Finding`] a failure is reported as.
 //! A format crate, such as tramlines-md, adds what its documents hold.
 //!
+//! **This crate is unstable.** It is at a 0.x version, and its interface can
+//! change in any release.
+//!
 //! A host program uses a format crate, which re-exports what it needs from
 //! here. This crate alone reads a formats file and matches lines against
 //! its formats:

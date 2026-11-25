@@ -103,13 +103,14 @@ schema:
         type: boolean
         doc: >
           Set to `true` to accept undeclared headings of this level or deeper after this
-          section, up to the next declared heading. Only document-scope rules apply to
-          their bodies, and `sections-prohibited` still applies.
+          section, up to the next declared heading or the next heading of a higher level.
+          Only document-scope rules apply to their bodies, and `sections-prohibited` still
+          applies.
       subheadings-open:
         type: boolean
         doc: >
           Set to `true` to act as `headings-open` does, but only for undeclared headings
-          deeper than this level.
+          deeper than this level, so a heading of this level or higher ends the region.
       for-each-key-of:
         type: string-or-list
         format: rule-id
@@ -281,8 +282,8 @@ schema:
           is a tagged fence. A `blockquote` block is quoted paragraphs. An `image` block
           is a paragraph of images only. An `html` block is an HTML block. A
           `thematic-break` block is a horizontal rule. A `references` block is link
-          reference definitions outside the generated block. A `group` block is a
-          repeating sequence of blocks.
+          reference definitions at the top level of the body, outside the generated
+          block. A `group` block is a repeating sequence of blocks.
       optional:
         type: boolean-or-condition
         doc: >
@@ -346,7 +347,9 @@ schema:
         requires:
           kind: code
         doc: >
-          The minimum number of backticks in the fence. When absent, the minimum is three.
+          The least number of backticks of the fence that a scaffold writes, which no check
+          reads, so that a block whose content holds a fence of three gets a longer one. When
+          absent, the least is three.
       columns:
         type: list
         of: string
@@ -430,7 +433,12 @@ schema:
     doc: >
       A rule on one unit of a block: a paragraph, an item, a row, a line of a fence, or a
       repetition of a group. The engine matches a paragraph with its lines joined by one
-      space, and a line of a fence without its indent. It matches an item's own text.
+      space, and a line of a fence without its indent. It reads a paragraph, an item, a
+      row, and a heading in one fixed spelling of their markup, as it reads the shape:
+      each emphasis as `_x_`, each strong emphasis as `**x**`, each code span in its
+      shortest backticks, and each needless escape as the plain character. So a pattern
+      names markup in that spelling. A line of a fence reads as written. It matches an
+      item's own text.
       Anything more that the item contains, such as a nested list or a fence, must match
       the rule's `blocks`. A rule has at most one shape: `text`, `template`, `pattern`, or
       the `format` that it binds.

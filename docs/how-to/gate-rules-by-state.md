@@ -223,25 +223,47 @@ $ tramlines validate --schema issue.yaml tab.md
 0 errors, 0 warnings
 ```
 
-6. Start a new document with `tramlines new`. For each combination of states, the engine derives one scaffold, the document that a new document starts from. The command `tramlines validate` checks each scaffold. The command `tramlines new` prints the scaffold of the states that `--state` names. For each dimension that `--state` doesn't name, it takes the first state. The scaffold contains the parts that those states need, and a `guidance` line before each part that has guidance. Read each `guidance` line, act on it, and then delete it:
+6. Start a new document with `tramlines new`. For each combination of states, the engine derives one scaffold from the examples of the schema, and the command `tramlines validate` checks each scaffold. The command `tramlines new` prints the new document at the states that `--state` names. For each dimension that `--state` doesn't name, it takes the first state. The new document holds the parts that those states need and that the schema fixes, such as the heading `Outcome` of a closed issue, and each required key with no value. After it, the command prints the guide of those parts, each with its guidance and its example. Write each part as its guidance asks:
 
 ```console
 $ tramlines new --schema issue.yaml --state state=closed --state kind=feature
 ---
-title: The parser rejects a tab
-closed-on: 2026-09-30
-# tramlines:guidance Close the issue when its work is merged.
+title:
+closed-on:
 state: closed
 kind: feature
 ---
 
-# The parser rejects a tab
-
-A list item indented with a tab is read as a code block.
-
 ## Outcome
 
-The parser now reads a tab as four spaces.
+The guide of the new document: each part, its guidance, and its example.
+
+Frontmatter `title`:
+  Example:
+    title: The parser rejects a tab
+
+Frontmatter `closed-on`:
+  Example:
+    closed-on: 2026-09-30
+
+Frontmatter `state`:
+  Close the issue when its work is merged.
+
+Section `# <title>`:
+  Example:
+    # The parser rejects a tab
+
+    A list item indented with a tab is read as a code block.
+
+  Block 1 (prose):
+    Example:
+      A list item indented with a tab is read as a code block.
+
+Section `## Outcome`:
+
+  Block 1 (prose):
+    Example:
+      The parser now reads a tab as four spaces.
 ```
 
 7. To apply a rule under any of several conditions, give `only` a list of maps. The rule applies when the state of the document matches any map of the list, and each map matches as in step 2. To make a section or a block optional in some states and required in the others, give its `optional` a condition of the same form. In this schema, every bug and every closed issue includes a review. A bug includes a workaround, which is optional after the bug is closed:
@@ -330,8 +352,8 @@ The scaffold of a closed bug writes the workaround inside an `optional` region, 
 
 ## Troubleshooting
 
-- `TL_62`: a lifecycle key is missing. Add the key. See [TL_62][sokf:errors-frontmatter#tl_62].
-- `TL_108`: the value of a lifecycle key isn't one of its states. Set the key to one of the states that the message lists. See [TL_108][sokf:errors-frontmatter#tl_108].
+- `TL_62`: a lifecycle key is missing. Add the key. See [TL_62][sokf:errors-lifecycle-and-ids#tl_62].
+- `TL_108`: the value of a lifecycle key isn't one of its states. Set the key to one of the states that the message lists. See [TL_108][sokf:errors-lifecycle-and-ids#tl_108].
 - `TL_20`: a condition names a dimension or a state that the lifecycle doesn't declare. Fix the name. See [TL_20][sokf:errors-conditions#tl_20].
 - `TL_111`: a rule declares a condition, and the schema has no lifecycle. Declare the lifecycle. See [TL_111][sokf:errors-conditions#tl_111].
 - `TL_136`: a condition is an empty list, or a map lists no state for a dimension. Give the list a map, or the dimension a state. See [TL_136][sokf:errors-conditions#tl_136].
@@ -354,9 +376,9 @@ The scaffold of a closed bug writes the workaround inside an `optional` region, 
 [sokf:errors-conditions#tl_136]: /docs/reference/errors-conditions.md#tl_136
 [sokf:errors-conditions#tl_20]: /docs/reference/errors-conditions.md#tl_20
 [sokf:errors-examples#tl_69]: /docs/reference/errors-examples.md#tl_69
-[sokf:errors-frontmatter#tl_108]: /docs/reference/errors-frontmatter.md#tl_108
-[sokf:errors-frontmatter#tl_62]: /docs/reference/errors-frontmatter.md#tl_62
+[sokf:errors-lifecycle-and-ids#tl_108]: /docs/reference/errors-lifecycle-and-ids.md#tl_108
 [sokf:errors-lifecycle-and-ids#tl_112]: /docs/reference/errors-lifecycle-and-ids.md#tl_112
+[sokf:errors-lifecycle-and-ids#tl_62]: /docs/reference/errors-lifecycle-and-ids.md#tl_62
 [sokf:errors-lifecycle-and-ids#tl_95]: /docs/reference/errors-lifecycle-and-ids.md#tl_95
 [sokf:explanation-scaffolds]: /docs/explanation/scaffolds.md
 [sokf:explanation-strict-by-default]: /docs/explanation/strict-by-default.md

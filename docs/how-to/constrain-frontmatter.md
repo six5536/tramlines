@@ -98,7 +98,7 @@ The link checker follows every link in a document.
 ```console
 $ tramlines validate --schema requirements.yaml link-checker.md
 link-checker.md:3: error[TL_56]: id `req-7-link-checker` does not match the template `req-${:seq}-${:slug}` (schema requirements, key `id`)
-link-checker.md:4: error[TL_56]: `code` `Link` fails at column 1: expected a `code` (`[A-Z]{2,6}`), found `Link`; a value of this kind reads LINK (schema requirements, key `code`)
+link-checker.md:4: error[TL_56]: `code` `Link` fails at column 1: expected a `code` (`[A-Z]{2,6}`), found `Link`; a value of this kind reads `LINK` (schema requirements, key `code`)
 link-checker.md:5: error[TL_56]: `status` must be one of `draft`, `approved`; `final` is not (schema requirements, key `status`)
 link-checker.md:6: error[TL_57]: `homepages` must be a list (schema requirements, key `homepages`)
 link-checker.md:7: error[TL_56]: `tags` must be a slug; `Parsing` is not (schema requirements, key `tags`)

@@ -75,8 +75,8 @@ formats:
         template: '${id:tlmd-rule-id} [${:tlmd-property}]: FOR ANY ${}, the ${:tlmd-subject} SHALL ${}.'
         example: "TLMD_8 [invariant]: FOR ANY line, the engine SHALL report a span that is a substring of the line."
     prohibited-patterns:
-      - pattern: '\b([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
-        message: 'A criterion uses no weak modal verb, such as should, must, will, may, might, or can.'
+      - pattern: '\bSHALL\b.*\b(and|or|but)\s+((it|then|also)\s+)?([Ss]hould|[Mm]ust|[Ww]ill|[Mm]ay|[Mm]ight|[Cc]an)\b'
+        message: 'A criterion joins no weaker requirement to its response, such as `and may` or `or should`: its one requirement is the SHALL.'
       - pattern: '\bSHALL\b.*\bSHALL\b'
         message: 'A criterion holds one SHALL.'
       - pattern: '\b([Ff]ast|[Qq]uickly|[Ee]asy|[Ee]asily|[Uu]ser-friendly|[Aa]ppropriate|[Aa]s needed)\b'

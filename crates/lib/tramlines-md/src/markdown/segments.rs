@@ -6,7 +6,7 @@ use std::{fmt::Write as _, ops::Range};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Dialect, Marker, code};
+use super::{Dialect, Marker, code, link_definitions};
 
 /// A region as found on disk: the host's marker pair and what lies
 /// between.
@@ -28,9 +28,11 @@ pub struct Region {
 pub struct DefinitionBlock {
     /// The line of the marker.
     pub line: usize,
-    /// The reference definitions after it: label and destination.
+    /// The reference definitions after it, as comrak reads them, each one
+    /// over all its lines: label and destination as written.
     pub entries: Vec<(String, String)>,
-    /// Whether anything but a definition follows the marker.
+    /// Whether anything but a definition at the top level follows the
+    /// marker.
     pub trailing: bool,
     /// The text from the marker line to the end of the body.
     pub text: String,
@@ -137,19 +139,28 @@ fn finish(mut out: Segments, open: Option<&(String, usize, usize)>) -> Segments 
     out
 }
 
+/// The trailer whose marker is the first of `lines`, at file line `line`.
+/// Its definitions read as comrak reads them, so one whose destination or
+/// title a formatter moves to a later line is one entry.
+// sokf-implements: TLMD_268
+// sokf-implements: MD-3_AC-17
 fn definition(lines: &[&str], line: usize) -> DefinitionBlock {
-    let mut entries = Vec::new();
-    let mut trailing = false;
-    for l in &lines[1..] {
-        let t = l.trim();
-        if t.is_empty() {
-            continue;
-        }
-        match ref_def(t) {
-            Some((label, dest)) => entries.push((label, dest)),
-            None => trailing = true,
-        }
-    }
+    // A definition reads as one at the top level, whatever its indent, and
+    // one in a quote or an item is other content.
+    let after: Vec<&str> = lines[1..].iter().map(|l| l.trim_start()).collect();
+    let top: Vec<_> = link_definitions::read(&after)
+        .defs
+        .into_iter()
+        .filter(|d| after[d.first].starts_with('['))
+        .collect();
+    // Every line with text that no definition at the top level takes,
+    // a `>` alone among them, trails the trailer.
+    let taken = |i: usize| top.iter().any(|d| d.first <= i && i <= d.last);
+    let trailing = after
+        .iter()
+        .enumerate()
+        .any(|(i, l)| !l.trim().is_empty() && !taken(i));
+    let entries = top.into_iter().map(|d| (d.label, d.dest)).collect();
     let text: String = lines.iter().fold(String::new(), |mut out, l| {
         let _ = writeln!(out, "{l}");
         out
@@ -162,7 +173,8 @@ fn definition(lines: &[&str], line: usize) -> DefinitionBlock {
     }
 }
 
-/// Parse `[label]: destination`.
+/// Parse `[label]: destination` on one line, without the lines that a
+/// definition's destination or title can take after it.
 pub fn ref_def(line: &str) -> Option<(String, String)> {
     let t = line.trim();
     let rest = t.strip_prefix('[')?;
@@ -244,6 +256,52 @@ mod tests {
         let def = s.definition.unwrap();
         assert!(def.trailing);
         assert_eq!(def.entries.len(), 1);
+    }
+
+    // A definition of the trailer whose destination or title a formatter
+    // moves to a later line is one entry, and nothing trails it.
+    // sokf-tests: TLMD_14
+    // sokf-tests: TLMD_268
+    // sokf-tests: MD-3_AC-17
+    #[test]
+    fn a_wrapped_definition_of_the_trailer_is_one_entry() {
+        for after in [
+            "[host:a]: /k/a.md\n[host:b#c]: /k/b.md#c \"T\"\n",
+            "[host:a]:\n  /k/a.md\n[host:b#c]:\n  /k/b.md#c\n  \"T\"\n",
+            "[host:a]: /k/a.md\n\n[host:b#c]: /k/b.md#c\n\"T\"\n",
+            "    [host:a]: /k/a.md\n[host:b#c]: /k/b.md#c \"T\nU\"\n",
+        ] {
+            let s = segments(&format!("x\n\n<!-- host:links -->\n\n{after}"), 1);
+            let def = s.definition.unwrap();
+            assert!(!def.trailing, "{after:?}");
+            assert_eq!(
+                def.entries,
+                vec![
+                    ("host:a".to_string(), "/k/a.md".to_string()),
+                    ("host:b#c".to_string(), "/k/b.md#c".to_string())
+                ],
+                "{after:?}"
+            );
+        }
+        let s = segments("<!-- host:links -->\n[host:a]: <k a.md>\n", 1);
+        let def = s.definition.unwrap();
+        assert!(!def.trailing);
+        assert_eq!(
+            def.entries,
+            vec![("host:a".to_string(), "<k a.md>".to_string())]
+        );
+        // A label alone, a definition in a quote or an item, and a title
+        // that never closes trail the trailer.
+        for after in [
+            "[host:a]:\n",
+            "> [host:a]: /k/a.md\n",
+            "[host:a]: /k/a.md\n>\n",
+            "- [host:a]: /k/a.md\n",
+            "[host:a]: /k/a.md \"T\n",
+        ] {
+            let s = segments(&format!("<!-- host:links -->\n{after}"), 1);
+            assert!(s.definition.unwrap().trailing, "{after:?}");
+        }
     }
 
     // sokf-tests: TLMD_16

@@ -1,27 +1,16 @@
 //! Sections: headings matched to declared entries, order, levels, open
 //! regions, prohibited headings, bound headings, `renamed-from`, setext.
 
-use super::{At, Capture, Checker, Occurrence, Paired, Repair, Spot, claim};
-use crate::{
-    grammar::{Section, Shape, Text, captured, squash},
-    markdown::{Block, Heading},
+use super::{
+    At, Capture, Checker, Occurrence, Paired, Repair, Spot, claim,
+    headings::{Kind, inside, walk},
+    keys,
 };
-
-enum Kind {
-    Exact,
-    Renamed(String),
-    From(String),
-    /// Bound to a frontmatter key the document does not set.
-    Unbound(String),
-}
-
-/// The heading a section expects, as text, when it is exact.
-fn expected_text(section: &Section, c: &Checker<'_>) -> Option<String> {
-    match &section.heading.shape {
-        Shape::Text(t) => c.text_of(t),
-        _ => None,
-    }
-}
+use crate::{
+    grammar::{Section, Shape, Squashed, Text, captured, read},
+    markdown::{Block, Heading},
+    text,
+};
 
 fn label(level: u8, text: &str) -> String {
     format!("{} {text}", "#".repeat(usize::from(level)))
@@ -35,81 +24,6 @@ fn number(text: &str) -> Option<&str> {
         .split('.')
         .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
         .then_some(first)
-}
-
-/// Whether section `k` lies inside section `j`, at any depth.
-fn inside(parent_of: &[Option<usize>], mut k: usize, j: usize) -> bool {
-    while let Some(p) = parent_of[k] {
-        if p == j {
-            return true;
-        }
-        k = p;
-    }
-    false
-}
-
-// sokf-implements: TLMD_23
-fn find_match(
-    h: &Heading,
-    declared: &[&Section],
-    seen: &[usize],
-    pos: usize,
-    ordered: bool,
-    c: &Checker<'_>,
-) -> Option<(usize, Kind)> {
-    let order: Vec<usize> = (pos..declared.len()).chain(0..pos).collect();
-    for &j in &order {
-        if expected_text(declared[j], c).as_deref() == Some(h.text.as_str()) {
-            return Some((j, Kind::Exact));
-        }
-    }
-    // A template such as `${}` matches any heading, so only a section of the
-    // heading's own level is tried here. A section of another level is tried
-    // last, so that a heading at the wrong level is still claimed, and
-    // reported as being at the wrong level.
-    let shaped = |j: usize| {
-        !declared[j].is_exact()
-            && declared[j]
-                .heading
-                .shape
-                .matches(&squash(&h.text), |_| None)
-    };
-    for &j in &order {
-        if declared[j].level == h.level && shaped(j) {
-            return Some((j, Kind::Exact));
-        }
-    }
-    for &j in &order {
-        if declared[j].renamed_from.iter().any(|r| r == &h.text) {
-            let current = expected_text(declared[j], c).unwrap_or_else(|| declared[j].label());
-            return Some((j, Kind::Renamed(current)));
-        }
-    }
-    let candidates: Vec<usize> = if ordered {
-        pos.min(declared.len().saturating_sub(1))..pos + 1
-    } else {
-        0..declared.len()
-    }
-    .filter(|&j| j < declared.len())
-    .collect();
-    for j in candidates {
-        if let Shape::Text(Text::From(key)) = &declared[j].heading.shape
-            && seen[j] == 0
-            && declared[j].level == h.level
-        {
-            // A key the document does not set leaves the heading nothing
-            // to equal, and the heading still stands in its section's place.
-            let kind = match expected_text(declared[j], c) {
-                Some(expected) => Kind::From(expected),
-                None => Kind::Unbound(key.clone()),
-            };
-            return Some((j, kind));
-        }
-    }
-    order
-        .iter()
-        .find(|&&j| declared[j].level != h.level && shaped(j))
-        .map(|&j| (j, Kind::Exact))
 }
 
 /// A heading of a section that lies inside a parent: after an occurrence
@@ -138,8 +52,8 @@ fn placed(
             Some(h.line),
             "TLMD_166",
             format!(
-                "heading `{}` lies inside `{}`, which does not apply in this document's states",
-                label(h.level, &h.text),
+                "heading {} lies inside `{}`, which does not apply in this document's states",
+                text::code(&label(h.level, &h.text)),
                 section.parent.clone().unwrap_or_default()
             ),
         );
@@ -152,9 +66,9 @@ fn placed(
             Some(h.line),
             "TLMD_31",
             format!(
-                "heading `{}` lies outside every `{}` section; it belongs inside one",
-                label(h.level, &h.text),
-                label(parent.level, &parent.label())
+                "heading {} lies outside every {} section; it belongs inside one",
+                text::code(&label(h.level, &h.text)),
+                text::code(&label(parent.level, &parent.label()))
             ),
         );
         return false;
@@ -173,8 +87,9 @@ fn placed(
             Some(h.line),
             "TLMD_151",
             format!(
-                "heading `{}` occurs more than once under `{host_label}`",
-                label(h.level, &h.text)
+                "heading {} occurs more than once under {}",
+                text::code(&label(h.level, &h.text)),
+                text::code(&host_label)
             ),
         );
     }
@@ -187,8 +102,9 @@ fn placed(
             Some(host.line),
             "TLMD_36",
             format!(
-                "heading `{host_label}` carries no number for `{}` to extend",
-                label(h.level, &h.text)
+                "heading {} carries no number for {} to extend",
+                text::code(&host_label),
+                text::code(&label(h.level, &h.text))
             ),
         );
         return repeated;
@@ -203,8 +119,9 @@ fn placed(
             Some(h.line),
             "TLMD_35",
             format!(
-                "heading `{}` must be numbered `{want}.<n>`, under `{host_label}`",
-                label(h.level, &h.text)
+                "heading {} must be numbered `{want}.<n>`, under {}",
+                text::code(&label(h.level, &h.text)),
+                text::code(&host_label)
             ),
         );
     }
@@ -252,9 +169,9 @@ fn missing_inside(c: &mut Checker<'_>, section: &Section, j: usize, pj: usize) {
                 Some(host.line),
                 "TLMD_18",
                 format!(
-                    "section `{}` is missing under `{}`",
-                    label(section.level, &section.label()),
-                    label(host.level, &host.text)
+                    "section {} is missing under {}",
+                    text::code(&label(section.level, &section.label())),
+                    text::code(&label(host.level, &host.text))
                 ),
             );
         });
@@ -324,7 +241,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
             c.error(
                 Some(h.line),
                 "TLMD_138",
-                format!("heading `{}` is setext; write it as ATX", h.text),
+                format!("heading {} is setext; write it as ATX", text::code(&h.text)),
             );
             c.out
                 .repairs
@@ -338,7 +255,10 @@ pub(super) fn check(c: &mut Checker<'_>) {
     let ordered = schema.sections_ordered;
     let parent_of = c.parent_of.clone();
     let mut seen = vec![0usize; declared.len()];
-    let mut pos = 0usize;
+    // Each heading's section, from the walk that a host shares (TLMD_23).
+    // sokf-implements: MD-15_AC-2
+    let value = |key: &str| c.front_value(key);
+    let matches = walk(headings, &declared, &parent_of, ordered, &value);
     let mut region: Option<(u8, bool)> = None;
     // The section of the last heading that a declared section took.
     let mut last: Option<usize> = None;
@@ -347,7 +267,7 @@ pub(super) fn check(c: &mut Checker<'_>) {
         let next_line = headings.get(hi + 1).map_or(usize::MAX, |n| n.line);
         // The findings of the match of the heading start here.
         let reported = c.out.findings.len();
-        let found = find_match(h, &declared, &seen, pos, ordered, c);
+        let found = matches[hi].clone();
         // A heading at another level than its section declares is that
         // fault (TLMD_144), whatever level it skips to, and a subsection
         // outside every occurrence of its parent (TLMD_31) skips the level
@@ -367,9 +287,9 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 Some(h.line),
                 "TLMD_20",
                 format!(
-                    "heading `{}` is more than one level deeper than `{}`",
-                    label(h.level, &h.text),
-                    label(before.level, &before.text)
+                    "heading {} is more than one level deeper than {}",
+                    text::code(&label(h.level, &h.text)),
+                    text::code(&label(before.level, &before.text))
                 ),
             );
         }
@@ -386,20 +306,37 @@ pub(super) fn check(c: &mut Checker<'_>) {
             };
             if admitted {
                 for banned in &schema.sections_prohibited {
-                    if banned.heading == h.text && banned.common.only.admits(states) {
+                    // sokf-implements: TLMD_258
+                    if banned.read == h.reading.or_written(&h.text).text
+                        && banned.common.only.admits(states)
+                    {
                         c.emit(
                             &banned.common,
                             Some(h.line),
                             "TLMD_26",
-                            format!("heading `{}` is prohibited", label(h.level, &h.text)),
+                            format!(
+                                "heading {} is prohibited",
+                                text::code(&label(h.level, &h.text))
+                            ),
                         );
                     }
                 }
             } else {
+                // A heading that the region does not accept ends it: one of
+                // a higher level after `headings-open`, or one of the
+                // section's level or higher after `subheadings-open`, as such
+                // a heading ends a section in the outline, so the headings
+                // under it are undeclared too.
+                // sokf-implements: TLMD_24
+                // sokf-implements: TLMD_25
+                region = None;
                 c.error(
                     Some(h.line),
                     "TLMD_19",
-                    format!("heading `{}` is not declared", label(h.level, &h.text)),
+                    format!(
+                        "heading {} is not declared",
+                        text::code(&label(h.level, &h.text))
+                    ),
                 );
             }
             // The units of the body break their rules too while the
@@ -417,19 +354,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
         // reachable at the rule and not at the file.
         // sokf-implements: TL_73
         c.at = At::section(section);
+        // sokf-implements: MD-4_AC-20
         c.gate(&section.common, h.line);
-        // A repeating section is met again after its own subsections, which
-        // the schema lists between it and its next sibling.
-        // sokf-implements: TLMD_33
-        // Every entry after it that the walk has passed lies inside it; a
-        // repeating entry the walk rests on counts once it has been seen.
-        let passed = if seen.get(pos).is_some_and(|&n| n > 0) {
-            pos + 1
-        } else {
-            pos
-        };
-        let returns =
-            section.repeat && j < pos && (j + 1..passed).all(|k| inside(&parent_of, k, j));
         seen[j] += 1;
         let previous = last.replace(j);
         let repeated = if section.parent.is_some() {
@@ -443,8 +369,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 Some(h.line),
                 "TLMD_151",
                 format!(
-                    "heading `{}` occurs more than once",
-                    label(h.level, &h.text)
+                    "heading {} occurs more than once",
+                    text::code(&label(h.level, &h.text))
                 ),
             );
         }
@@ -460,7 +386,10 @@ pub(super) fn check(c: &mut Checker<'_>) {
             c.error(
                 Some(h.line),
                 "TLMD_22",
-                format!("heading `{}` is out of place; the sections are in the order the schema lists them", label(h.level, &h.text)),
+                format!(
+                    "heading {} is out of place; the sections are in the order the schema lists them",
+                    text::code(&label(h.level, &h.text))
+                ),
             );
         }
         let level = (h.level != section.level).then_some(c.out.findings.len());
@@ -471,24 +400,27 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 Some(h.line),
                 "TLMD_144",
                 format!(
-                    "heading `{}` must be level {}",
-                    label(h.level, &h.text),
+                    "heading {} must be level {}",
+                    text::code(&label(h.level, &h.text)),
                     section.level
                 ),
             );
-        }
-        if ordered {
-            let next = if section.repeat { j } else { j + 1 };
-            pos = if returns { next } else { pos.max(next) };
         }
         // The findings that the repair of the heading corrects: it rewrites
         // a renamed heading, or one bound to the frontmatter, to the text
         // of its section, at the section's level.
         let mut corrected = Vec::new();
+        // Whether the heading is not surely the bound heading, so that the
+        // blocks under it are not surely its section's either.
+        let mut doubtful = false;
         match kind {
-            Kind::Exact => {}
+            Kind::Exact(_) | Kind::Shaped => {}
             Kind::Renamed(current) => {
-                let message = format!("heading `{}` was renamed; it is now `{}`", h.text, current);
+                let message = format!(
+                    "heading {} was renamed; it is now {}",
+                    text::code(&h.text),
+                    text::code(&current)
+                );
                 corrected = rewrite_heading(c, section, h, level, ("TLMD_137", message), current);
             }
             Kind::From(expected) => {
@@ -496,12 +428,40 @@ pub(super) fn check(c: &mut Checker<'_>) {
                     Shape::Text(Text::From(k)) => k.clone(),
                     _ => String::new(),
                 };
+                // A required value that is empty is missing (`TL_143`), the
+                // one fault, and the heading stays as it stands.
+                // sokf-implements: TLMD_300
+                let missing = c.value_missing(&key);
                 let message = format!(
-                    "heading `{}` must equal the frontmatter `{key}`: `{expected}`",
-                    h.text
+                    "heading {} must equal the frontmatter `{key}`: {}",
+                    text::code(&h.text),
+                    text::code(&expected)
                 );
-                // sokf-implements: TLMD_165
-                corrected = rewrite_heading(c, section, h, level, ("TLMD_165", message), expected);
+                // A heading that an open region admits, or that stands beside
+                // another heading which reads as the value, can be other than
+                // the bound heading, so the check reports it and writes
+                // nothing.
+                // sokf-implements: TLMD_285
+                let admitted =
+                    region.is_some_and(
+                        |(at, deeper)| {
+                            if deeper { h.level > at } else { h.level >= at }
+                        },
+                    );
+                let value = read(&expected);
+                let elsewhere = headings
+                    .iter()
+                    .any(|o| o.line != h.line && o.reading.or_written(&o.text).text == value);
+                doubtful = admitted || elsewhere;
+                if doubtful && !missing {
+                    // sokf-implements: TLMD_165
+                    c.emit(&section.common, Some(h.line), "TLMD_165", message);
+                } else if !missing {
+                    // sokf-implements: TLMD_165
+                    // sokf-implements: TLMD_283
+                    corrected =
+                        rewrite_heading(c, section, h, level, ("TLMD_165", message), expected);
+                }
             }
             Kind::Unbound(key) => {
                 if c.unbound_is_own_fault(&key) {
@@ -510,8 +470,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                         Some(h.line),
                         "TLMD_168",
                         format!(
-                            "heading `{}` is bound to the frontmatter `{key}`, which is absent",
-                            label(h.level, &h.text)
+                            "heading {} is bound to the frontmatter `{key}`, which is absent",
+                            text::code(&label(h.level, &h.text))
                         ),
                     );
                 }
@@ -526,14 +486,20 @@ pub(super) fn check(c: &mut Checker<'_>) {
         } else {
             None
         };
+        let reading = h.reading.or_written(&h.text);
+        let squashed = Squashed::mapped(&reading.text, &reading.map);
         if let Some(name) = &section.heading.key
-            && let Some(got) = captured(&section.heading.shape, name, &squash(&h.text))
+            && let Some(got) = captured(&section.heading.read, name, &squashed.text)
         {
+            let at = keys::key_at(&section.heading.read, name, &squashed.text);
             // sokf-implements: MD-4_AC-11
+            // sokf-implements: MD-4_AC-18
             c.out.captures.push(Capture {
+                written: crate::grammar::written_key(&h.text, &reading, &squashed, at, &got.key),
                 key: got.key,
                 line: h.line,
                 heading_slug: Some(h.slug.clone()),
+                anchor: String::new(),
                 scope: section.heading.unique.clone(),
                 rule_id: section.rule_id.clone(),
                 rule_name: section.rule_id.clone(),
@@ -565,6 +531,11 @@ pub(super) fn check(c: &mut Checker<'_>) {
         }
         c.occurrences.push(occurrence);
         let body: Vec<&Block> = c.doc.body.blocks_between(h.line, next_line);
+        // A repair of a fixed text writes only where the check is sure of
+        // each claim of the body (TLMD_279, TLMD_280).
+        c.settled.clear();
+        let start = c.save();
+        c.body = section.blocks.as_deref().unwrap_or_default();
         claim::check_blocks(
             c,
             section.blocks.as_deref(),
@@ -573,6 +544,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
             Some(j),
             h.line,
         );
+        c.keep_sure_repairs(&start, &body, doubtful);
+        c.body = &[];
         c.at = At::default();
     }
 
@@ -606,8 +579,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                     None,
                     "TLMD_18",
                     format!(
-                        "section `{}` is missing",
-                        label(section.level, &section.label())
+                        "section {} is missing",
+                        text::code(&label(section.level, &section.label()))
                     ),
                 );
             });
@@ -630,6 +603,9 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 line: Some(p.common.line),
                 ..At::default()
             };
+            c.settled.clear();
+            let start = c.save();
+            c.body = p.blocks.as_deref().unwrap_or_default();
             claim::check_blocks(
                 c,
                 p.blocks.as_deref(),
@@ -638,6 +614,8 @@ pub(super) fn check(c: &mut Checker<'_>) {
                 None,
                 c.doc.body_line,
             );
+            c.keep_sure_repairs(&start, &pre, false);
+            c.body = &[];
             c.at = At::default();
         }
         _ => {

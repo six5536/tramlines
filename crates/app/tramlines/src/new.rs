@@ -1,31 +1,35 @@
-//! `tramlines new`: the scaffold of a schema at the states that the
-//! command line names, with its id and title filled.
+//! `tramlines new`: the skeleton of a new document at the states that the
+//! command line names, with its id and title, after the check of the
+//! scaffold for them, and the guide of its parts on stderr.
 
-use std::fmt::Write as _;
+use std::{collections::BTreeMap, fmt::Write as _};
 
 use serde_json::json;
 use tramlines_md::{
-    Locator, RepoPath, Severity, Yaml,
+    Locator, RepoPath, Severity,
     check::{CheckOptions, check_against},
-    derive::{derive_one, derived_title},
+    derive::{derive_for, derive_one, derived_title, guide_for, skeleton},
     document::Document,
     edit::{apply, line_edits},
     grammar::{Schema, States},
     markdown::Dialect,
-    text, yaml,
+    text,
 };
 
 use crate::{
     Stop,
     cli::NewArgs,
-    load,
+    guide, load,
     texts::{Texts, Words},
 };
 
-/// Print the scaffold, or one JSON object with its id and the scaffold.
+/// Print the skeleton of a new document, with its guide on stderr, or one
+/// JSON object with its id, the skeleton and the guide.
 // sokf-implements: CLI-12_AC-1
 // sokf-implements: CLI-12_AC-10
 // sokf-implements: CLI-12_AC-11
+// sokf-implements: CLI-12_AC-14
+// sokf-implements: CLI-12_AC-15
 pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     let engine = load::engine(args.formats.as_deref())?;
     let shown = args.schema.display().to_string();
@@ -33,13 +37,6 @@ pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     let texts = Texts::load(args.texts.as_deref())?;
     let host = Words(&texts);
     let states = states(&schema, &args.state)?;
-    let scaffold = derive_one(&schema, &states, &host).map_err(|refusals| {
-        let mut why = format!("{shown}: the schema derives no scaffold:");
-        for r in refusals {
-            let _ = write!(why, "\n  {shown}:{}: {}", r.line, r.what);
-        }
-        Stop::plain(why)
-    })?;
     let id = id(&schema, args, &states)?;
     // sokf-implements: CLI-12_AC-7
     // sokf-implements: CLI-12_AC-13
@@ -51,37 +48,89 @@ pub fn new(args: &NewArgs) -> Result<u8, Stop> {
     }
     // The title is the one `--title` names, else the words of the slug, or
     // of the id, where the schema declares a title.
-    let title = match (&args.title, &args.slug, &args.id) {
+    // An empty `--title` names no title, so the title comes from the slug or
+    // the id, as without the option.
+    let named = args.title.as_ref().filter(|t| !t.trim().is_empty());
+    let title = match (named, &args.slug, &args.id) {
         (Some(title), _, _) => Some(title.clone()),
         (None, Some(slug), _) if has_title => Some(derived_title(slug)),
         (None, None, Some(id)) if has_title => Some(derived_title(id)),
         _ => None,
     };
-    let mut document = strip_only(&scaffold);
-    if args.id.is_some() || args.slug.is_some() {
-        document = fill(&document, "id", id.as_deref().unwrap_or_default());
+    let mut values = BTreeMap::new();
+    if let Some(title) = named {
+        fixed(&schema, "title", title)?;
     }
-    if let Some(title) = &title {
-        document = fill(&document, "title", title);
+    for (key, value) in [("id", &id), ("title", &title)] {
+        if let Some(value) = value {
+            values.insert(key.to_string(), value.clone());
+        }
     }
-    let document = bind(
+    let refused = |refusals: Vec<tramlines_md::derive::Refusal>| {
+        let mut why = format!("{shown}: the schema derives no scaffold:");
+        for r in refusals {
+            let _ = write!(why, "\n  {shown}:{}: {}", r.line, r.what);
+        }
+        Stop::plain(why)
+    };
+    // The scaffold of the schema's own values tells a fault of the schema
+    // from a fault of the id or the title.
+    derive_one(&schema, &states, &host).map_err(refused)?;
+    // The scaffold with the id and the title is the proof that the schema,
+    // the id and the title fit together, so that the skeleton is a document
+    // that its writer can bring to pass.
+    // sokf-implements: CLI-12_AC-12
+    let scaffold = derive_for(&schema, &states, &host, &values).map_err(|refusals| {
+        let first = refusals.first();
+        Stop::plain(first.map_or_else(String::new, |r| {
+            format!(
+                "the new document fails the schema at line {} of the schema: [{}] {}",
+                r.line, r.criterion, r.what
+            )
+        }))
+    })?;
+    bind(
         &schema,
         &states,
         &host,
         &load::schema_id(&args.schema),
-        &document,
+        &strip_only(&scaffold),
     )?;
+    // sokf-implements: CLI-12_AC-8
+    // sokf-implements: CLI-12_AC-9
+    let document = skeleton(&schema, &states, &host, &values).map_err(refused)?;
+    let guide = guide_for(&schema, &states, &host, &values);
     if args.json {
         let mut one = json!({});
-        if let Some(id) = id.or_else(|| value_of(&document, "id")) {
+        // A skeleton holds an empty `id` until the command line names one.
+        if let Some(id) = id
+            .or_else(|| value_of(&document, "id"))
+            .filter(|id| !id.is_empty())
+        {
             one["id"] = json!(id);
         }
         one["document"] = json!(document);
+        one["guide"] = json!(guide);
         println!("{one}");
     } else {
         print!("{document}");
+        eprint!("{}", guide::text(&guide, &document));
     }
     Ok(0)
+}
+
+/// Refuse a value that `--title` names for `key` where the schema
+/// fixes the key by `const` to another value, which the new document can't
+/// hold.
+// sokf-implements: CLI-12_AC-16
+fn fixed(schema: &Schema, key: &str, value: &str) -> Result<(), Stop> {
+    let fixed = schema.core.constraint(key).and_then(|c| c.const_.as_ref());
+    match fixed {
+        Some(fixed) if fixed != value => Err(Stop::plain(format!(
+            "`{value}` is not `{fixed}`, the `{key}` that the schema fixes"
+        ))),
+        _ => Ok(()),
+    }
 }
 
 /// One state of each dimension: the state that `--state` names, else the
@@ -189,58 +238,6 @@ fn strip_only(scaffold: &str) -> String {
     text
 }
 
-/// The frontmatter line of `key` in `document` set to `value`; the line is
-/// added before the closing fence when the scaffold has none.
-fn fill(document: &str, key: &str, value: &str) -> String {
-    let lines: Vec<&str> = document.lines().collect();
-    let close = (lines.first() == Some(&"---"))
-        .then(|| {
-            lines
-                .iter()
-                .skip(1)
-                .position(|l| *l == "---")
-                .map(|i| i + 1)
-        })
-        .flatten();
-    let written = format!("{key}: {}", scalar(value));
-    let mut out: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
-    if let Some(close) = close {
-        let prefix = format!("{key}:");
-        match (1..close).find(|&i| {
-            lines[i]
-                .strip_prefix(&prefix)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
-        }) {
-            Some(i) => out[i] = written,
-            None => out.insert(close, written),
-        }
-    } else {
-        out.insert(0, "---".to_string());
-        out.insert(1, written);
-        out.insert(2, "---".to_string());
-        out.insert(3, String::new());
-    }
-    let mut text = out.join("\n");
-    text.push('\n');
-    text
-}
-
-/// A scalar as YAML: plain where it reads back as the same string, so
-/// that `2026` or `true` stays text, else double-quoted.
-fn scalar(value: &str) -> String {
-    let plain = !value.is_empty()
-        && !value.contains('#')
-        && yaml::parse(&format!("k: {value}\n"), 1)
-            .ok()
-            .and_then(|y| y.get("k").map(|v| v.value.clone()))
-            == Some(Yaml::Str(value.to_string()));
-    if plain {
-        value.to_string()
-    } else {
-        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-    }
-}
-
 /// The value of the frontmatter key `key` in `document`.
 fn value_of(document: &str, key: &str) -> Option<String> {
     let parsed = Document::parse(RepoPath::root(), document, &Dialect::default());
@@ -250,9 +247,10 @@ fn value_of(document: &str, key: &str) -> Option<String> {
         .and_then(tramlines_md::Spanned::scalar_text)
 }
 
-/// The filled scaffold with the headings and units that its frontmatter
-/// binds rewritten, checked against the schema as a scaffold. A value
-/// that the schema refuses stops the run.
+/// Check the scaffold for the id and the title against the schema as a
+/// scaffold, after the repairs of the headings and units that its
+/// frontmatter binds. A value that the schema refuses stops the run,
+/// because no document with it passes.
 // sokf-implements: CLI-12_AC-8
 // sokf-implements: CLI-12_AC-12
 fn bind(
@@ -261,7 +259,7 @@ fn bind(
     host: &Words<'_>,
     id: &str,
     document: &str,
-) -> Result<String, Stop> {
+) -> Result<(), Stop> {
     let check = |text: &str| {
         let parsed = Document::parse(RepoPath::root(), text, &Dialect::default());
         let out = check_against(
@@ -296,7 +294,7 @@ fn bind(
             f.message
         )));
     }
-    Ok(bound)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -310,36 +308,5 @@ mod tests {
             strip_only(doc),
             "---\nid: x-1\ndone: '2026-09-30'\n---\n\n## Outcome\n\n```markdown\n<!-- tramlines:only state=closed -->\n```\n"
         );
-    }
-
-    #[test]
-    fn fill_replaces_a_key() {
-        assert_eq!(
-            fill(
-                "---\nid: x-1\ntitle: Old\n---\n\n# Old\n",
-                "title",
-                "New words"
-            ),
-            "---\nid: x-1\ntitle: New words\n---\n\n# Old\n"
-        );
-    }
-
-    #[test]
-    fn fill_adds_a_key_the_scaffold_lacks() {
-        assert_eq!(
-            fill("---\nid: x-1\n---\n\n# Old\n", "title", "A: b"),
-            "---\nid: x-1\ntitle: \"A: b\"\n---\n\n# Old\n"
-        );
-        assert_eq!(fill("# Old\n", "id", "x-1"), "---\nid: x-1\n---\n\n# Old\n");
-    }
-
-    #[test]
-    fn a_value_that_yaml_reads_otherwise_is_quoted() {
-        assert_eq!(scalar("Tabs in lists"), "Tabs in lists");
-        assert_eq!(scalar("2026"), "\"2026\"");
-        assert_eq!(scalar("true"), "\"true\"");
-        assert_eq!(scalar("null"), "\"null\"");
-        assert_eq!(scalar("A: b"), "\"A: b\"");
-        assert_eq!(scalar("C# tips"), "\"C# tips\"");
     }
 }

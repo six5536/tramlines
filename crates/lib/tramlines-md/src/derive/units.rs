@@ -21,6 +21,12 @@ impl Deriver<'_> {
                 if rule.optional {
                     continue;
                 }
+                // A position after one that a skeleton leaves out would be
+                // read in its place, so the skeleton writes no later one.
+                // sokf-implements: TLMD_311
+                if !self.keeps(Some(rule)) {
+                    break;
+                }
                 // A position that repeats writes every text of its list, and
                 // any other position holds one unit.
                 let n = if rule.repeat {
@@ -41,6 +47,12 @@ impl Deriver<'_> {
                 .iter()
                 .filter(|r| !r.is_counter() || !r.examples.is_empty())
             {
+                // A skeleton writes no unit of a pairing: its text is an
+                // example with a key spliced in.
+                // sokf-implements: TLMD_307
+                if self.skeleton() && rule.for_each_key_of.is_some() {
+                    continue;
+                }
                 if let Some(paired) = self.paired_units(block, rule) {
                     for text in paired {
                         let bare = self.unlabel(block, Some(rule), text.clone()).0;
@@ -69,6 +81,9 @@ impl Deriver<'_> {
                 // A rule writes the units that its `min` demands, and the
                 // further texts of a list while the block has room for them.
                 let n = wanted(rule, block).saturating_sub(selected.len());
+                if !self.keeps(Some(rule)) {
+                    continue;
+                }
                 for i in 0..n {
                     if i >= rule.min && out.len() >= cap {
                         break;
@@ -80,11 +95,13 @@ impl Deriver<'_> {
             // A block whose guards demand nothing still holds the units the
             // block itself demands; the first rule writes them.
             let mut i = 0;
-            while out.len() < block.min {
+            while out.len() < block.min && self.keeps(rules.first()) {
                 let text = self.unit_of(block, rules.first(), i);
                 out.push(text);
                 i += 1;
             }
+        } else if self.skeleton() && (block.each.is_none() || !self.keeps(block.each.as_ref())) {
+            return out;
         } else if let Some(rule) = &block.each
             && let Some(paired) = self.paired_units(block, rule)
         {
@@ -103,7 +120,7 @@ impl Deriver<'_> {
                 out.push(text);
             }
         }
-        if out.is_empty() && block.kind != BlockKind::ThematicBreak {
+        if out.is_empty() && block.kind != BlockKind::ThematicBreak && !self.skeleton() {
             let text = self.unit_of(block, None, 0);
             out.push(text);
         }
@@ -211,9 +228,10 @@ impl Deriver<'_> {
             line,
             "TLMD_208",
             format!(
-                "the example row `{row}` has {}, and `example-columns` names {}",
+                "the example row {row} has {}, and `example-columns` names {}",
                 text::count(cells, "cell", "cells"),
                 text::count(header.len(), "column", "columns"),
+                row = text::code(row)
             ),
         );
     }

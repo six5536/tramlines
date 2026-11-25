@@ -231,7 +231,10 @@ pub enum RuleName<'a> {
 pub struct ScaffoldFront {
     /// The keys written first, in order, each with the value the host
     /// seeds it with. A value the schema fixes, by `const`, by the `id`
-    /// template or by `example`, wins over the seed.
+    /// template or by `example`, wins over the seed in a scaffold. In a
+    /// skeleton, which writes no example, only a `const` and an `id` that
+    /// its template renders from the states alone win over it, and a value
+    /// that the host gives for the document wins over all but a `const`.
     pub leading: Vec<(String, Option<String>)>,
     /// The lines written after every key, before the closing fence.
     pub trailing: Vec<String>,

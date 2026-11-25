@@ -1,6 +1,6 @@
 [package]
 name = "tramlines"
-description = "Checks documents against a tramlines schema, from the command line."
+description = "Checks documents against a tramlines schema, from the command line. Unstable: its commands, options and file formats can change in any release."
 version.workspace = true
 readme.workspace = true
 authors.workspace = true

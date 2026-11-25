@@ -8,10 +8,9 @@
 
 use std::collections::HashMap;
 
-use comrak::{
-    Arena,
-    nodes::{AstNode, NodeValue, Sourcepos},
-};
+use comrak::nodes::{AstNode, NodeValue, Sourcepos};
+
+use crate::markdown::link_definitions::only_definitions;
 
 /// How many lines of link reference definitions open each paragraph and
 /// setext heading of a parse, by the block's start.
@@ -91,24 +90,6 @@ fn count<'b>(block: &'b AstNode<'b>, lines: &[&str]) -> usize {
         }
     }
     found
-}
-
-/// Whether comrak reads `text` alone as link reference definitions inside
-/// containers, and nothing else.
-fn only_definitions(text: &str) -> bool {
-    let arena = Arena::new();
-    let root = comrak::parse_document(&arena, text, &super::options());
-    root.descendants().all(|n| {
-        matches!(
-            n.data().value,
-            NodeValue::Document
-                | NodeValue::BlockQuote
-                | NodeValue::List(_)
-                | NodeValue::Item(_)
-                | NodeValue::TaskItem(_)
-                | NodeValue::FootnoteDefinition(_)
-        )
-    })
 }
 
 /// A container of a block, as comrak reads it at the start of each line.

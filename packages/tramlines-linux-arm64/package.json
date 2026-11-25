@@ -1,7 +1,7 @@
 {
   "name": "@six5536/tramlines-linux-arm64",
-  "version": "0.5.0",
-  "description": "Prebuilt tramlines binary for linux-arm64.",
+  "version": "0.6.0",
+  "description": "Prebuilt tramlines binary for linux-arm64. Unstable: its commands, options and file formats can change in any release.",
   "keywords": [
     "cli",
     "command-line"

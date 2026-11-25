@@ -1,14 +1,14 @@
 //! Which block a position gets, and how much of a run it takes. A position
 //! is tried against a block and rolled back where it refuses it.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Range};
 
 pub(super) use super::trial::{Dropped, is_text_error};
 use super::{
     At, Checker,
     blocks::{check_plain, has_shape},
     divide::{self, extent, extents},
-    free, group, short,
+    free, group, quoted,
 };
 use crate::{
     grammar::{Block as Rule, RuleCommon, Unit as UnitRule},
@@ -21,12 +21,31 @@ use crate::{
 /// cloned.
 pub(super) type Docs<'a> = Vec<Cow<'a, Block>>;
 
+/// A position after the one tried, with what the walk that holds it reads
+/// of it: the walks of nested groups are one list of later positions, and
+/// a trial claims for each position as its own walk would.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Later<'r> {
+    /// The position's rule.
+    pub(super) rule: &'r Rule,
+    /// Whether the walk that holds the position divides a run of its kind
+    /// (`TLMD_78`): the walk around a group can take whole a run that the
+    /// walk inside it divides.
+    pub(super) divides: bool,
+    /// How many of the entries after this one belong to the same walk:
+    /// the positions after it that `reserve_for` reads (`TLMD_193`). A walk
+    /// in any order gives 0, because it divides no run and so reserves
+    /// nothing.
+    pub(super) own: usize,
+}
+
 /// What a claim knows of the walk around the position that it tries.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Around<'r> {
     /// The positions after the one tried, in order, which a group tries on
-    /// the opening of a failed repetition (`TLMD_71`).
-    pub(super) later: &'r [&'r Rule],
+    /// the opening of a failed repetition (`TLMD_71`). A walk in any order
+    /// gives the other free rules, none of which divides a run.
+    pub(super) later: &'r [Later<'r>],
     /// The kinds of block that the positions after it open, those after
     /// the sequence that holds it among them: a block of one of them waits
     /// for its position.
@@ -37,9 +56,6 @@ pub(super) struct Around<'r> {
     /// Whether the walk fixes the order of the blocks, so that a run may be
     /// divided (`TLMD_77`).
     pub(super) ordered: bool,
-    /// The kinds of a run that the walk divides, as its claims of the
-    /// later positions read them (`TLMD_78`).
-    pub(super) dividing: &'r [BlockKind],
 }
 
 impl<'a> Checker<'a> {
@@ -83,7 +99,7 @@ fn opens_with(rule: &Rule, kind: BlockKind, c: &Checker<'_>) -> bool {
 /// where it is no group and of that kind, else the position that an inner
 /// block that [`openers`] gives opens with, followed into a group that
 /// opens a group.
-fn opening<'r>(rule: &'r Rule, kind: BlockKind, c: &Checker<'_>) -> Option<&'r Rule> {
+pub(super) fn opening<'r>(rule: &'r Rule, kind: BlockKind, c: &Checker<'_>) -> Option<&'r Rule> {
     if rule.kind != BlockKind::Group {
         return (rule.kind == kind).then_some(rule);
     }
@@ -115,8 +131,11 @@ fn opens(rule: &Rule, c: &Checker<'_>) -> Vec<BlockKind> {
 }
 
 /// The kinds of block that the positions of `rules` can open.
-pub(super) fn opened(rules: &[&Rule], c: &Checker<'_>) -> Vec<BlockKind> {
-    rules.iter().flat_map(|r| opens(r, c)).collect()
+pub(super) fn opened<'r>(
+    rules: impl IntoIterator<Item = &'r Rule>,
+    c: &Checker<'_>,
+) -> Vec<BlockKind> {
+    rules.into_iter().flat_map(|r| opens(r, c)).collect()
 }
 
 /// The units at the end of the run at `docs[di]` that a later group takes
@@ -126,7 +145,13 @@ pub(super) fn opened(rules: &[&Rule], c: &Checker<'_>) -> Vec<BlockKind> {
 /// the shape of its opening position, none where the opening has no shape:
 /// a unit's own text says which position it belongs to, and no count does.
 // sokf-implements: TLMD_193
-fn reserve_for(c: &Checker<'_>, rules: &[&Rule], ri: usize, docs: &Docs<'_>, di: usize) -> usize {
+pub(super) fn reserve_for(
+    c: &Checker<'_>,
+    rules: &[&Rule],
+    ri: usize,
+    docs: &Docs<'_>,
+    di: usize,
+) -> usize {
     let kind = rules[ri].kind;
     let Some(next) = docs.get(di + 1) else {
         return 0;
@@ -150,6 +175,23 @@ fn reserve_for(c: &Checker<'_>, rules: &[&Rule], ri: usize, docs: &Docs<'_>, di:
                 .take_while(|u| shaped(c, std::slice::from_ref(u), opening) == Some(true))
                 .count()
         })
+}
+
+/// The block of `rule` that stands after `docs[di]` where no position after
+/// it, which open `later`, wants it: the block that the walk moves back to a
+/// required position that is no group, out of place (`TLMD_169`).
+// sokf-implements: TLMD_169
+pub(super) fn out_of_place(
+    c: &Checker<'_>,
+    docs: &Docs<'_>,
+    di: usize,
+    rule: &Rule,
+    later: &[BlockKind],
+) -> Option<usize> {
+    if c.block_optional(rule) || rule.kind == BlockKind::Group {
+        return None;
+    }
+    (di + 1..docs.len()).find(|&j| c.matches_rule(&docs[j], rule) && !later.contains(&docs[j].kind))
 }
 
 /// Whether a position of this kind claims its candidate whatever it
@@ -221,8 +263,8 @@ pub(super) fn unclaimed(c: &mut Checker<'_>, b: &Block, left_over: bool) {
             Some(first.line),
             "TLMD_50",
             format!(
-                "`{}` remains after the last {kind} position that takes the run",
-                short(&first.text)
+                "{} remains after the last {kind} position that takes the run",
+                quoted(&first.text)
             ),
         ),
         _ => c.error(Some(b.line), "TLMD_39", format!("unexpected {kind} block")),
@@ -244,6 +286,7 @@ fn default_prose() -> Rule {
         lang: None,
         fence: 3,
         columns: None,
+        columns_read: None,
         columns_open: false,
         example_columns: None,
         source_pattern: None,
@@ -254,7 +297,9 @@ fn default_prose() -> Rule {
         examples: Vec::new(),
         example_list: false,
         guidance: None,
-        pos: 1,
+        // The block that a section declares by declaring none has no
+        // place among blocks, so a finding names the section alone.
+        pos: 0,
     }
 }
 
@@ -271,7 +316,7 @@ pub(super) struct Outside<'r> {
     /// block order: each counts as one more position of the kind that it
     /// opens (`TLMD_78`), a block of that kind waits for it, and a group
     /// inside tries it before it keeps a needed repetition (`TLMD_71`).
-    pub(super) later: &'r [&'r Rule],
+    pub(super) later: &'r [Later<'r>],
     /// The kinds that those positions open.
     pub(super) after: Vec<BlockKind>,
 }
@@ -320,19 +365,19 @@ impl Checker<'_> {
                 || group_opens.contains(&kind)
                 || outside.after.contains(&kind)
         };
-        // The kinds of a run that this walk divides, which a group's trial
-        // of the positions after it reads as this walk would.
-        let mut dividing: Vec<BlockKind> = rules
-            .iter()
-            .map(|r| r.kind)
-            .chain(outside.after.iter().copied())
-            .collect();
-        dividing.retain(|&k| divides(k));
         let mut di = start;
         // The optional positions, no group among them, that took no block: a
         // block that fails a later position may be one of theirs out of place.
         let mut skipped: Vec<usize> = Vec::new();
+        // Whether each position took a block, and the repairs that it wrote,
+        // which an empty optional position after it can hold back (TLMD_286).
+        let mut took = vec![false; rules.len()];
+        let mut wrote: Vec<Range<usize>> = vec![0..0; rules.len()];
         for (ri, rule) in rules.iter().enumerate() {
+            let repairs_from = c.out.repairs.len();
+            // Whether the position took a block: a group that takes none
+            // counts as met, and takes no block.
+            let mut got = false;
             let mut count = 0;
             let mut refusal: Option<Dropped> = None;
             let mut answered = false;
@@ -340,12 +385,22 @@ impl Checker<'_> {
             // The kinds the positions after this one open, those after the
             // group that the sequence repeats among them: a block of one of
             // them waits for its position.
-            let mut later = opened(&rules[ri + 1..], c);
+            let mut later = opened(rules[ri + 1..].iter().copied(), c);
             later.extend(outside.after.iter().copied());
-            let later_rules: Vec<&Rule> = rules[ri + 1..]
+            // The positions after this one as each walk reads them: this
+            // walk for its own, the walk around the group for those after
+            // it, which a group's trial of the positions after it reads
+            // (TLMD_71).
+            let own = rules.len() - ri - 1;
+            let later_rules: Vec<Later<'_>> = rules[ri + 1..]
                 .iter()
-                .chain(outside.later)
-                .copied()
+                .enumerate()
+                .map(|(m, r)| Later {
+                    rule: r,
+                    divides: divides(r.kind),
+                    own: own - m - 1,
+                })
+                .chain(outside.later.iter().copied())
                 .collect();
             while di < docs.len() {
                 // A block a later position declares waits for it; one only a
@@ -363,11 +418,7 @@ impl Checker<'_> {
                         // against this position and leaves the walk.
                         // sokf-implements: TLMD_169
                         if count == 0
-                            && !c.block_optional(rule)
-                            && rule.kind != BlockKind::Group
-                            && let Some(j) = (di + 1..docs.len()).find(|&j| {
-                                c.matches_rule(&docs[j], rule) && !later.contains(&docs[j].kind)
-                            })
+                            && let Some(j) = out_of_place(c, docs, di, rule, &later)
                         {
                             let block = docs.remove(j);
                             // The block's findings name its position, as a
@@ -379,6 +430,7 @@ impl Checker<'_> {
                                 check_plain(c, &block, rule, section);
                             });
                             count += 1;
+                            got = true;
                         }
                         break;
                     }
@@ -410,7 +462,6 @@ impl Checker<'_> {
                     kinds: &later,
                     held: 0,
                     ordered: true,
-                    dividing: &dividing,
                 };
                 let claimed = claim(c, docs, di, rule, section, firm, divides(rule.kind), around);
                 c.reserve = 0;
@@ -465,6 +516,7 @@ impl Checker<'_> {
                         }
                         di += n;
                         count += 1;
+                        got = true;
                     }
                     Err(dropped) => {
                         // A released position advances nothing, so the block
@@ -504,8 +556,7 @@ impl Checker<'_> {
                 // still break its rules.
                 // sokf-implements: TLMD_66
                 if let Some(dropped) = refusal {
-                    c.out.findings.extend(dropped.findings);
-                    c.broken.extend(dropped.broken);
+                    c.report_refusal(dropped);
                 } else {
                     let (line, found) = match docs.get(di) {
                         Some(b) => (
@@ -537,10 +588,14 @@ impl Checker<'_> {
                     if stray {
                         c.broke_block(&docs[di]);
                         di += 1;
+                        got = true;
                     }
                 }
             }
+            took[ri] = got;
+            wrote[ri] = repairs_from..c.out.repairs.len();
         }
+        c.spare_for_empty(rules, &took, &wrote, &docs[start..], outside.later);
         di - start
     }
 }
@@ -598,7 +653,7 @@ fn owner(
 /// template, a pattern, or a format, or where there are no units.
 // sokf-implements: TLMD_224
 // sokf-implements: TLMD_225
-fn shaped(c: &Checker<'_>, units: &[Unit], rule: &Rule) -> Option<bool> {
+pub(super) fn shaped(c: &Checker<'_>, units: &[Unit], rule: &Rule) -> Option<bool> {
     let shapes: Vec<&UnitRule> = rule
         .units()
         .filter(|u| u.shape.is_some() || u.format.is_some())
@@ -618,7 +673,9 @@ fn shaped(c: &Checker<'_>, units: &[Unit], rule: &Rule) -> Option<bool> {
 // sokf-implements: TL_73
 pub(super) fn at_block(at: &At, rule: &Rule) -> At {
     let mut blocks = at.blocks.clone();
-    blocks.push(rule.pos);
+    if rule.pos > 0 {
+        blocks.push(rule.pos);
+    }
     At {
         region: at.region.clone(),
         blocks,

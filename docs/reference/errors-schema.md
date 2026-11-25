@@ -609,14 +609,19 @@ A regular expression in the schema, or the expression that a template compiles t
 <file>:<line>: error[TL_118]: template `<template>` does not compile: <reason>
 <file>:<line>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer: template `<template>` does not compile: <reason>
 <file>:<line>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the types `<type>`, `<type>` of this layer: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the types `<type>`, `<type>` of this layer: template `<template>` does not compile: <reason>
 <file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer and the type `<type>` of `<host file>`: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the types `<type>`, `<type>` of this layer and the type `<type>` of `<host file>`: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the type `<type>` of this layer and the types `<type>`, `<type>` of `<host file>`: template `<template>` does not compile: <reason>
+<file>: error[TL_118]: format `<format>`: the entry of the layer `<layer>` no longer compiles against the types `<type>`, `<type>` of this layer and the types `<type>`, `<type>` of `<host file>`: template `<template>` does not compile: <reason>
 ```
 
 ### Cause
 
 The command reads each regular expression in the Rust dialect. That dialect has no lookaround, such as `(?=…)` or `(?<!…)`, and no backreference, such as `\1`. A `pattern`, a `select-pattern`, a `source-pattern`, an entry of `prohibited-patterns`, or a type doesn't compile if it uses either of these or isn't a valid regular expression at all. The `<reason>` comes from the regular expression library. For a template or a pattern of a format, the message starts with ``format `<format>`: ``, and for a variant, with ``format `<format>`: variant `<variant>`: ``.
 
-A type of the schema can also break a format of a farther layer, such as the formats file. The format compiles again against the type of the schema, and a long type in a template with many holes can exceed the size limit of a regular expression. The error then lies on the schema, at the line of the type, and names the format, the layer of the format, and the type. The command checks no line against the format ([TL_140][sokf:tramlines:tramlines-spec#tl_140]). A program that embeds the engine with a pack layer reports the last form of the message: a type of a pack breaks a shared format, a type of the program's own formats file also differs from the shared type and leaves the format broken, and the error lies on the file of the pack and names the program's file.
+A type of the schema can also break a format of a farther layer, such as the formats file. The format compiles again against the type of the schema, and a long type in a template with many holes can exceed the size limit of a regular expression. The error then lies on the schema, at the line of the type, and names the format, the layer of the format, and the type. The command checks no line against the format ([TL_140][sokf:tramlines:tramlines-spec#tl_140]). A program that embeds the engine with a pack layer reports the forms with no line: on the file of a pack or of the program's own formats file, whose types are "of this layer". It reports the forms "of this layer and … of `<host file>`" where a type of a pack breaks a shared format, a type of the program's own formats file also differs from the shared type and leaves the format broken, and the error lies on the file of the pack and names the program's file.
 
 ### Fix
 

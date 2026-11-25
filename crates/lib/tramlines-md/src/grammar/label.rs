@@ -155,13 +155,14 @@ fn label_at(text: &str) -> Option<(&str, usize)> {
         .then_some((words, end + 3))
 }
 
-/// How long the box of a task item is that opens `text`, with the space
-/// after it, or 0 where it opens with none (`TLMD_246`).
+/// How long the box of a task item is that opens `text`, with the space or
+/// the tab after it, as GitHub reads a box, or 0 where it opens with none
+/// (`TLMD_246`).
 pub(crate) fn task_box(text: &str) -> usize {
-    ["[ ] ", "[x] ", "[X] "]
-        .iter()
-        .find(|b| text.starts_with(*b))
-        .map_or(0, |b| b.len())
+    match text.as_bytes() {
+        [b'[', b' ' | b'x' | b'X', b']', b' ' | b'\t', ..] => 4,
+        _ => 0,
+    }
 }
 
 /// `text` without the bytes `at`.
@@ -292,8 +293,7 @@ impl Schema {
         if words.is_empty() || !carries_labels(block.kind) {
             return None;
         }
-        let formats = &self.core.formats;
-        let key = |t: &str| rule.and_then(|r| r.key_in(formats, t));
+        let key = |t: &str| rule.and_then(|r| r.key_in(self.formats_of(r), t));
         Reader {
             words,
             item: matches!(block.kind, BlockKind::BulletList | BlockKind::NumberedList),

@@ -82,7 +82,7 @@ A second paragraph needs no label.
 
 ```console
 $ tramlines validate --schema issue.yaml issue.md
-issue.md:9: error[TL_74]: `[agent] [ ] WHEN a line holds a tab, the parser SHALL read …` does not match `^\[[ x]\] WHEN .+\.$`; an item of this kind reads [ ] [agent] WHEN a line holds a tab, the parser SHALL read it as a space. (schema issue, section "Criteria" block 1)
+issue.md:9: error[TL_74]: `[agent] [ ] WHEN a line holds a tab, the parser SHALL read …` does not match `^\[[ x]\] WHEN .+\.$`; an item of this kind reads `[ ] [agent] WHEN a line holds a tab, the parser SHALL read it as a space.` (schema issue, section "Criteria" block 1)
 issue.md:15: error[TLMD_249]: `D-2 The report names the line, because a writer looks for i…` carries no label; its rule requires one: `[human]` or `[agent]` (schema issue, section "Decisions" block 1)
 2 errors, 0 warnings
 [exit 1]
@@ -126,21 +126,35 @@ de:
     agent: KI
 ```
 
-7. Start a new document. The scaffold writes the label of each example where the rule requires a label, or where the rule allows one and the example carries one, in the words of the file that `--texts` names, or as its key:
+7. Start a new document. The new document holds the headings and no example, and the guide that the command prints after it gives the example of each part with its label, where the rule requires a label, or where the rule allows one and the example carries one, in the words of the file that `--texts` names, or as its key:
 
 ```console
 $ tramlines new --schema issue.yaml
 # Summary
 
-[agent] **Scope**: the parser reads one line at a time.
-
 ## Criteria
-
-- [ ] [agent] WHEN a line holds a tab, the parser SHALL read it as a space.
 
 ## Decisions
 
-- D-1 [human] The parser reads one line at a time, because a line is a unit.
+The guide of the new document: each part, its guidance, and its example.
+
+Section `# Summary`:
+
+  Block 1 (prose):
+    Example:
+      [agent] **Scope**: the parser reads one line at a time.
+
+Section `## Criteria`:
+
+  Block 1 (bullet-list):
+    Example:
+      - [ ] [agent] WHEN a line holds a tab, the parser SHALL read it as a space.
+
+Section `## Decisions`:
+
+  Block 1 (bullet-list):
+    Example:
+      - D-1 [human] The parser reads one line at a time, because a line is a unit.
 ```
 
 A program that embeds tramlines gives the words of each label through `Host::label_words`, and names the label of a new document through `Host::scaffold_label`, as [Embed the engine in a program][sokf:how-to-embed-the-engine] shows.

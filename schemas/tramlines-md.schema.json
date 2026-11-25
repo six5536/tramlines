@@ -15,7 +15,7 @@
     },
     "language": {
       "type": "string",
-      "pattern": "^(?:[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*|[Xx](?:-[A-Za-z0-9]{1,8})+)$",
+      "pattern": "^(?:(?:[A-Za-z]{2,3}(?:-[A-Za-z]{3}){0,3}|[A-Za-z]{4,8})(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*(?:-[0-9A-WY-Za-wy-z](?:-[A-Za-z0-9]{2,8})+)*(?:-[Xx](?:-[A-Za-z0-9]{1,8})+)?|[Xx](?:-[A-Za-z0-9]{1,8})+)$",
       "description": "The language of the schema's text, as a BCP 47 tag, such as `en` or `de`. The engine gives the tag to the host, which words each limit and each label in that language. The engine writes no words of its own: where the host gives none, it writes the limit in the syntax of the schema, and a label as its key."
     },
     "lifecycle": {
@@ -140,7 +140,7 @@
             "references",
             "group"
           ],
-          "description": "The kind of block. A `prose` block is paragraphs. A `bullet-list` or `numbered-list` block is items. A `table` block is a GFM table. A `code` block is a tagged fence. A `blockquote` block is quoted paragraphs. An `image` block is a paragraph of images only. An `html` block is an HTML block. A `thematic-break` block is a horizontal rule. A `references` block is link reference definitions outside the generated block. A `group` block is a repeating sequence of blocks."
+          "description": "The kind of block. A `prose` block is paragraphs. A `bullet-list` or `numbered-list` block is items. A `table` block is a GFM table. A `code` block is a tagged fence. A `blockquote` block is quoted paragraphs. An `image` block is a paragraph of images only. An `html` block is an HTML block. A `thematic-break` block is a horizontal rule. A `references` block is link reference definitions at the top level of the body, outside the generated block. A `group` block is a repeating sequence of blocks."
         },
         "optional": {
           "anyOf": [
@@ -216,7 +216,32 @@
         "rules": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/unit"
+            "allOf": [
+              {
+                "$ref": "#/$defs/unit"
+              },
+              {
+                "if": {
+                  "required": [
+                    "max"
+                  ]
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "format"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "rule-id"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
           },
           "description": "The grammar of the block's units, an alternative to `each` and `sequence`. An entry with a shape and no `select-pattern` is a production. A production takes the units that its shape matches, and each unit goes to the first such entry in order. An entry with a `select-pattern` takes the units that the guard selects and checks them. If it states only a guard and a count, it counts those units and takes nothing. An entry with neither takes every unit. `min` and a hard `max` bound what each entry took or counted. A unit that no entry takes is an error unless `units-open` is set. The engine reports it against the production that it follows furthest."
         },
@@ -240,7 +265,7 @@
         },
         "fence": {
           "type": "integer",
-          "description": "The minimum number of backticks in the fence. When absent, the minimum is three. Applies to a block of kind code."
+          "description": "The least number of backticks of the fence that a scaffold writes, which no check reads, so that a block whose content holds a fence of three gets a longer one. When absent, the least is three. Applies to a block of kind code."
         },
         "columns": {
           "type": "array",
@@ -1038,11 +1063,11 @@
         },
         "headings-open": {
           "type": "boolean",
-          "description": "Set to `true` to accept undeclared headings of this level or deeper after this section, up to the next declared heading. Only document-scope rules apply to their bodies, and `sections-prohibited` still applies."
+          "description": "Set to `true` to accept undeclared headings of this level or deeper after this section, up to the next declared heading or the next heading of a higher level. Only document-scope rules apply to their bodies, and `sections-prohibited` still applies."
         },
         "subheadings-open": {
           "type": "boolean",
-          "description": "Set to `true` to act as `headings-open` does, but only for undeclared headings deeper than this level."
+          "description": "Set to `true` to act as `headings-open` does, but only for undeclared headings deeper than this level, so a heading of this level or higher ends the region."
         },
         "for-each-key-of": {
           "anyOf": [
@@ -1153,7 +1178,7 @@
     },
     "unit": {
       "type": "object",
-      "description": "A rule on one unit of a block: a paragraph, an item, a row, a line of a fence, or a repetition of a group. The engine matches a paragraph with its lines joined by one space, and a line of a fence without its indent. It matches an item's own text. Anything more that the item contains, such as a nested list or a fence, must match the rule's `blocks`. A rule has at most one shape: `text`, `template`, `pattern`, or the `format` that it binds.",
+      "description": "A rule on one unit of a block: a paragraph, an item, a row, a line of a fence, or a repetition of a group. The engine matches a paragraph with its lines joined by one space, and a line of a fence without its indent. It reads a paragraph, an item, a row, and a heading in one fixed spelling of their markup, as it reads the shape: each emphasis as `_x_`, each strong emphasis as `**x**`, each code span in its shortest backticks, and each needless escape as the plain character. So a pattern names markup in that spelling. A line of a fence reads as written. It matches an item's own text. Anything more that the item contains, such as a nested list or a fence, must match the rule's `blocks`. A rule has at most one shape: `text`, `template`, `pattern`, or the `format` that it binds.",
       "properties": {
         "text": {
           "anyOf": [
@@ -1267,7 +1292,32 @@
         "lines": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/unit"
+            "allOf": [
+              {
+                "$ref": "#/$defs/unit"
+              },
+              {
+                "if": {
+                  "required": [
+                    "max"
+                  ]
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "format"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "rule-id"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
           },
           "description": "The grammar of the content lines of a code or `html` block, as `rules` is the grammar of a block's units. Each line, without its indent, is a unit of its own. Blank lines don't count. A line that no rule takes is an error unless `lines-open` is set. A rule here can't contain `lines` or `blocks`. A key captured from a line is filed under the line rule's `key-of`, or, where the rule declares none, under the enclosing block's `rule-id`. A rule that contains `lines` can also state an `example`. That example is the whole fence: the scaffold copies it, and these rules read its keys out of it."
         },

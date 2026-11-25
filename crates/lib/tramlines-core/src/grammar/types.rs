@@ -49,7 +49,7 @@ impl TypeDef {
     /// The type as a failure names it: its regex, or its choices.
     pub fn describe(&self) -> String {
         match self {
-            TypeDef::Regex(r) => format!("`{r}`"),
+            TypeDef::Regex(r) => text::code(r),
             TypeDef::Choices(c) => format!("one of {}", text::code_list(c, ", ")),
         }
     }
@@ -230,14 +230,18 @@ fn check_type_regex(re: &str) -> Result<(), (&'static str, String)> {
         return Err((
             "TL_109",
             format!(
-                "`{re}` holds a capture group; write `(?:…)`, since a template names its own groups"
+                "{re} holds a capture group; write `(?:…)`, since a template names its own groups",
+                re = text::code(re)
             ),
         ));
     }
     if has_anchor(re) {
         return Err((
             "TL_109",
-            format!("`{re}` holds an anchor; a template matches the whole line itself"),
+            format!(
+                "{re} holds an anchor; a template matches the whole line itself",
+                re = text::code(re)
+            ),
         ));
     }
     Ok(())

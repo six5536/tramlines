@@ -16,9 +16,10 @@ mod types;
 mod validate;
 
 pub use embedded::grammar_text;
+pub(crate) use format::reads;
 pub use format::{
     Captured, Format, FormatMatch, FormatVariant, Prohibition, captured, prohibitions, refused,
-    refused_as, refused_masked,
+    refused_as, refused_masked, refused_quoting,
 };
 pub use id_template::{IdTemplate, Token};
 pub use lower::{
@@ -32,7 +33,7 @@ pub use model::{
 };
 pub use regex::RegexCache;
 pub use registry::{BrokenFormat, FormatRegistry, FormatSource, PackLayer};
-pub use shape::{Shape, Squashed, has_hole, shape_of, squash, text_or_template};
-pub use template::{Failure, Segment, Template as LineTemplate};
+pub use shape::{Quote, Shape, Squashed, has_hole, shape_of, squash, text_or_template};
+pub use template::{Failure, HOLE, Segment, Template as LineTemplate};
 pub use types::{BUILT_INS, SLUG, TypeDef, TypeRegistry, is_hole_name};
 pub use validate::{validate_map, validate_schema};

@@ -1,7 +1,7 @@
 {
   "name": "@six5536/tramlines",
-  "version": "0.5.0",
-  "description": "Checks documents against a schema: the launcher of the prebuilt tramlines binary.",
+  "version": "0.6.0",
+  "description": "Checks documents against a schema: the launcher of the prebuilt tramlines binary. Unstable: its commands, options and file formats can change in any release.",
   "keywords": [
     "cli",
     "markdown",
@@ -32,11 +32,11 @@
     "registry": "https://registry.npmjs.org"
   },
   "optionalDependencies": {
-    "@six5536/tramlines-darwin-arm64": "0.5.0",
-    "@six5536/tramlines-darwin-x64": "0.5.0",
-    "@six5536/tramlines-linux-arm64": "0.5.0",
-    "@six5536/tramlines-linux-x64": "0.5.0",
-    "@six5536/tramlines-win32-x64": "0.5.0"
+    "@six5536/tramlines-darwin-arm64": "0.6.0",
+    "@six5536/tramlines-darwin-x64": "0.6.0",
+    "@six5536/tramlines-linux-arm64": "0.6.0",
+    "@six5536/tramlines-linux-x64": "0.6.0",
+    "@six5536/tramlines-win32-x64": "0.6.0"
   },
   "engines": {
     "node": ">=18"

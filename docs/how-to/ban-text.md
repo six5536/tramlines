@@ -74,8 +74,8 @@ TODO in a fence is fine
 ```console
 $ tramlines validate --schema changelog.yaml changelog.md
 changelog.md:3: error[TL_75]: `TODO` is refused: A finished changelog contains no TODO. (schema changelog)
-changelog.md:4: error[TL_75]: `various` is refused: An item names its change rather than calling it various. An item of this kind reads Fixed: the parser reads a tab as four spaces. (schema changelog, section "Changelog" block 1)
-changelog.md:5: error[TL_75]: `...` is refused: A change ends with a full stop, not with an ellipsis. An item of this kind reads Fixed: the parser reads a tab as four spaces. (schema changelog, section "Changelog" block 1)
+changelog.md:4: error[TL_75]: `various` is refused: An item names its change rather than calling it various. An item of this kind reads `Fixed: the parser reads a tab as four spaces.` (schema changelog, section "Changelog" block 1)
+changelog.md:5: error[TL_75]: `...` is refused: A change ends with a full stop, not with an ellipsis. An item of this kind reads `Fixed: the parser reads a tab as four spaces.` (schema changelog, section "Changelog" block 1)
 3 errors, 0 warnings
 [exit 1]
 ```
@@ -84,9 +84,12 @@ Each finding quotes the span that the pattern matched, and gives the message of 
 
 A ban reads each code span as a run of backticks of the same length, so it matches no word inside the code, but a ban on code itself still works. For example, the pattern `` ^` `` on the rule of a paragraph refuses a paragraph that begins with code.
 
+A ban reads the text in the fixed spelling of its markup, as a shape does: each emphasis as `_x_`, each strong emphasis as `**x**`, each code span in its shortest backticks, and each escape that changes nothing as the plain character. So the pattern `\*\*[^*]+\*\*` refuses bold in both spellings, `**x**` and `__x__`, and a pattern that names `*x*` or `__x__` matches nothing.
+
 ## Troubleshooting
 
 - `TL_75`: a line of the document matches a banned pattern. Rewrite the span that the message quotes. If the span is a name, not prose, quote it as code instead. See [TL_75][sokf:errors-lines#tl_75].
+- `TLMD_264`: a pattern names a spelling of markup that the engine never reads. Write it in the fixed spelling. See [TLMD_264][sokf:errors-schema-shapes#tlmd_264].
 - `TL_118`: a pattern isn't a valid regular expression in the Rust dialect. For example, the dialect has no lookarounds and no backreferences. See [TL_118][sokf:errors-schema#tl_118].
 
 ## See also
@@ -100,6 +103,7 @@ A ban reads each code span as a run of backticks of the same length, so it match
 
 [sokf:errors-lines#tl_75]: /docs/reference/errors-lines.md#tl_75
 [sokf:errors-schema#tl_118]: /docs/reference/errors-schema.md#tl_118
+[sokf:errors-schema-shapes#tlmd_264]: /docs/reference/errors-schema-shapes.md#tlmd_264
 [sokf:how-to-share-line-formats]: /docs/how-to/share-line-formats.md
 [sokf:reference-schema-keys#format]: /docs/reference/schema-keys.md#format
 [sokf:reference-schema-keys#schema]: /docs/reference/schema-keys.md#schema

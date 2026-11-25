@@ -10,7 +10,7 @@ use std::{fmt::Write as _, ops::Range};
 use crate::{
     Error, Result,
     check::{LabelRepair, Placement, Repair, Spot, heading_col},
-    markdown::{Body, Segments, gap, render_anchor},
+    markdown::{self, Body, Segments, gap, render_anchor},
 };
 
 // sokf:begin edit
@@ -203,54 +203,71 @@ fn relabel(
     cols: &[usize],
     at: &mut [(usize, &str)],
 ) -> String {
-    let mut here: Vec<(usize, &LabelRepair)> =
-        cols.iter().copied().zip(labels.iter().copied()).collect();
-    here.sort_by_key(|(col, _)| std::cmp::Reverse(*col));
-    here.dedup_by_key(|(col, _)| *col);
+    let here = cols.iter().copied().zip(labels.iter().copied()).collect();
+    rewrite_labels(&mut clean, here, |end, old, new| {
+        for (col, _) in at.iter_mut() {
+            if *col >= end {
+                *col = *col - old + new;
+            }
+        }
+    });
+    clean
+}
+
+/// `raw`, the text of `line` with its anchors, with each label of `labels`
+/// on the line rewritten where it stands: at its column, which counts no
+/// anchor, moved right past the anchors that stand before the label. A
+/// text of the form of an anchor inside a code span is text, which the
+/// column counts, as the parser reads it.
+fn relabel_raw(line: usize, raw: &str, labels: &[LabelRepair]) -> String {
+    let mut out = raw.to_string();
+    let here: Vec<&LabelRepair> = labels.iter().filter(|l| l.line == line).collect();
+    if here.is_empty() {
+        return out;
+    }
+    let code = markdown::code_spans_in(raw);
+    let here = here
+        .into_iter()
+        .filter_map(|l| past_anchors(raw, l.col, &code).map(|start| (start, l)))
+        .collect();
+    rewrite_labels(&mut out, here, |_, _, _| {});
+    out
+}
+
+/// `text` with the label of each of `here` rewritten where it starts, from
+/// the right, so that the starts before it hold, each start once; `moved`
+/// hears of each rewrite, by the end of the old label and the lengths of
+/// the old and the new one. A label that doesn't stand at its start is
+/// left as it is.
+fn rewrite_labels(
+    text: &mut String,
+    mut here: Vec<(usize, &LabelRepair)>,
+    mut moved: impl FnMut(usize, usize, usize),
+) {
+    here.sort_by_key(|(start, _)| std::cmp::Reverse(*start));
+    here.dedup_by_key(|(start, _)| *start);
     for (start, l) in here {
-        if !clean
+        if !text
             .get(start..)
             .is_some_and(|rest| rest.starts_with(&l.old))
         {
             continue;
         }
         let end = start + l.old.len();
-        clean.replace_range(start..end, &l.new);
-        for (col, _) in at.iter_mut() {
-            if *col >= end {
-                *col = *col - l.old.len() + l.new.len();
-            }
-        }
+        text.replace_range(start..end, &l.new);
+        moved(end, l.old.len(), l.new.len());
     }
-    clean
-}
-
-/// `raw`, the text of `line` with its anchors, with each label of `labels`
-/// on the line rewritten where it stands: at its column, which counts no
-/// anchor, moved right past the anchors that stand before the label.
-fn relabel_raw(line: usize, raw: &str, labels: &[LabelRepair]) -> String {
-    let mut out = raw.to_string();
-    let mut here: Vec<&LabelRepair> = labels.iter().filter(|l| l.line == line).collect();
-    here.sort_by_key(|l| std::cmp::Reverse(l.col));
-    here.dedup_by_key(|l| l.col);
-    for l in here {
-        let Some(start) = past_anchors(&out, l.col) else {
-            continue;
-        };
-        if out[start..].starts_with(&l.old) {
-            out.replace_range(start..start + l.old.len(), &l.new);
-        }
-    }
-    out
 }
 
 /// The byte of `raw` that stands at `col` of the line without its anchors:
-/// each anchor before it, or at it, moves it right.
-fn past_anchors(raw: &str, col: usize) -> Option<usize> {
+/// each anchor before it, or at it, moves it right. An anchor's form inside
+/// one of the code spans `code` is text.
+fn past_anchors(raw: &str, col: usize, code: &[Range<usize>]) -> Option<usize> {
     let (mut clean, mut i) = (0, 0);
     loop {
         let rest = raw.get(i..)?;
         if rest.starts_with("<a id=\"")
+            && !code.iter().any(|r| r.contains(&i))
             && let Some(end) = rest.find("\"></a>")
         {
             i += end + "\"></a>".len();
@@ -418,6 +435,29 @@ pub fn apply(text: &str, edits: &[Edit]) -> Result<String> {
 mod tests {
     use super::*;
     use crate::{RepoPath, document::Document, markdown::Dialect};
+
+    // A text of the form of an anchor in a code span is text, which the
+    // column of a label counts, and a real anchor before the label isn't.
+    // sokf-tests: TLMD_254
+    #[test]
+    fn a_label_is_rewritten_past_the_anchors_and_not_past_code() {
+        let repair = |line: &str| LabelRepair {
+            line: 1,
+            col: line.find("[human]").unwrap_or_default(),
+            old: "[human]".to_string(),
+            new: "[person]".to_string(),
+        };
+        let code = "- `<a id=\"x\"></a>` [human] The kettle.";
+        assert_eq!(
+            relabel_raw(1, code, &[repair(code)]),
+            "- `<a id=\"x\"></a>` [person] The kettle."
+        );
+        let anchored = "- <a id=\"x\"></a>[human] The kettle.";
+        assert_eq!(
+            relabel_raw(1, anchored, &[repair("- [human] The kettle.")]),
+            "- <a id=\"x\"></a>[person] The kettle."
+        );
+    }
 
     #[test]
     fn anchors_go_in_from_the_right() {

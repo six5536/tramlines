@@ -12,14 +12,14 @@ use comrak::{
 };
 
 use super::{
-    Block, BlockDetail, BlockKind, Body, Dialect, Heading, Link, Marker, Segments, Unit, anchor,
-    body, code, dialect,
+    Block, BlockDetail, BlockKind, Body, Dialect, Heading, Link, Marker, Piece, Reading, Segments,
+    Unit, anchor, body, code, dialect,
     link::{REF, target},
-    segments as seg, slug,
 };
 
 mod columns;
 mod definitions;
+mod references;
 mod text;
 
 pub(super) use columns::written_pos;
@@ -52,6 +52,8 @@ pub(super) fn options() -> Options<'static> {
     // reference names stays too, so that the code blocks it holds are read.
     options.parse.leave_footnote_definitions = true;
     options.parse.broken_link_callback = Some(Arc::new(KeepLabel));
+    // Each escape is a node of its own, which the reading tests (TLMD_260).
+    options.parse.escaped_char_spans = true;
     options
 }
 
@@ -82,6 +84,7 @@ pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Diale
 
     let mut p = Parser {
         dialect,
+        source: parsed,
         lines: &lines,
         defined: Defined::of(root, &lines),
         offset: first_line.saturating_sub(1),
@@ -91,6 +94,7 @@ pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Diale
             ..Body::default()
         },
         covered: Vec::new(),
+        opening: Vec::new(),
         depth: 0,
     };
     let blocks = p.group(root.children());
@@ -108,26 +112,37 @@ pub fn parse(body: &str, first_line: usize, segments: &Segments, dialect: &Diale
     p.body.headings.sort_by_key(|h| h.line);
     p.body.links.sort_by_key(|l| l.line);
     p.body.blocks.sort_by_key(|b| b.line);
+    p.body.reading_changes.sort();
     p.body
 }
 
-/// The byte ranges of `text`, one line parsed alone, such as a squashed
-/// example, that lie in a code span, in order: what a format's bans leave
-/// out of a unit.
+/// The byte ranges of `text`, one line parsed alone as a paragraph, such
+/// as a squashed example, that lie in a code span, in order: what a
+/// format's bans leave out of a unit. The line is parsed behind the lead
+/// of the reading, a private-use character and a space, so that a text
+/// that would start a block alone, such as `<div>` or `~~~`, reads as the
+/// text of a unit does.
 // sokf-implements: TLMD_111
 pub(crate) fn code_spans_in(text: &str) -> Vec<Range<usize>> {
+    const LEAD: &str = "\u{E000} ";
     if !text.contains('`') {
         return Vec::new();
     }
+    let source = format!("{LEAD}{text}");
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, text, &options());
+    let root = comrak::parse_document(&arena, &source, &options());
     let mut out: Vec<Range<usize>> = root
         .descendants()
         .filter_map(|n| {
             let ast = n.data();
             let sp = ast.sourcepos;
-            matches!(ast.value, NodeValue::Code(_))
-                .then(|| sp.start.column.saturating_sub(1)..sp.end.column.min(text.len()))
+            (matches!(ast.value, NodeValue::Code(_))
+                && sp.start.line == 1
+                && sp.start.column > LEAD.len())
+            .then(|| {
+                sp.start.column - 1 - LEAD.len()
+                    ..sp.end.column.saturating_sub(LEAD.len()).min(text.len())
+            })
         })
         .filter(|r| r.start < r.end)
         .collect();
@@ -243,6 +258,8 @@ fn facts(value: &NodeValue) -> Facts {
 
 struct Parser<'a> {
     dialect: &'a Dialect,
+    /// The text that comrak parses, whose lines are `lines`.
+    source: &'a str,
     lines: &'a [&'a str],
     /// The lines of the definitions that open each paragraph and heading.
     defined: Defined,
@@ -250,6 +267,10 @@ struct Parser<'a> {
     body: Body,
     /// Line ranges of leaf blocks, for finding reference definitions.
     covered: Vec<(usize, usize)>,
+    /// Line ranges of the definitions that open a paragraph, a setext
+    /// heading, or the first paragraph of an item, inside an item or a
+    /// quote, which `covered` holds too.
+    opening: Vec<(usize, usize)>,
     /// How many items and quotes the nodes being grouped lie inside: a
     /// heading is a heading of the document only at none.
     depth: usize,
@@ -305,6 +326,11 @@ impl<'a> Parser<'a> {
                 }
                 sp.start.line -= 1;
             }
+            let start = node.data().sourcepos.start.line;
+            if sp.start.line < start {
+                self.opening
+                    .push((self.offset + sp.start.line, self.offset + start - 1));
+            }
         }
         self.cover(sp);
     }
@@ -344,28 +370,30 @@ impl<'a> Parser<'a> {
                     // sokf-implements: TLMD_173
                     if self.depth > 0 {
                         let hashes = format!("{} ", "#".repeat(usize::from(level)));
-                        let pieces = pieces
+                        let pieces: Vec<Piece> = pieces
                             .into_iter()
-                            .map(|p| super::Piece {
+                            .map(|p| Piece {
                                 offset: p.offset + hashes.len(),
                                 ..p
                             })
                             .collect();
+                        let written = format!("{hashes}{text}");
                         let unit = Unit {
+                            reading: self.read(&written, &pieces),
                             pieces,
-                            ..Unit::leaf(format!("{hashes}{text}"), line, end_line)
+                            ..Unit::leaf(written, line, end_line)
                         };
                         blocks.push(Block::new(BlockKind::Heading, line, end_line, vec![unit]));
                         continue;
                     }
-                    self.body.headings.push(Heading {
+                    let reading = self.read(&text, &pieces);
+                    self.body.headings.push(Heading::new(
                         level,
-                        slug: slug::slug(&text),
                         text,
-                        line,
-                        end_line,
+                        reading,
+                        (line, end_line),
                         setext,
-                    });
+                    ));
                     continue;
                 }
                 Facts::Paragraph => {
@@ -379,6 +407,7 @@ impl<'a> Parser<'a> {
                     } else {
                         let (text, pieces) = self.mapped_text(sp);
                         let unit = Unit {
+                            reading: self.read(&text, &pieces),
                             pieces,
                             ..Unit::leaf(text, line, end_line)
                         };
@@ -484,8 +513,14 @@ impl<'a> Parser<'a> {
     /// A list item: its first paragraph is its text; the rest is nested.
     /// An item that opens with an HTML tag, which markdown reads as an
     /// HTML block, has the tag as its text, and the tag is its inline HTML.
+    // sokf-implements: TLMD_290
+    // sokf-implements: MD-3_AC-18
     fn item<'b>(&mut self, item: &'b AstNode<'b>) -> Unit {
         let line = self.line(item.data().sourcepos);
+        // The line where the item's first paragraph starts, below its
+        // marker where a definition or nothing but the marker stands on the
+        // marker's line.
+        let mut text_line = line;
         let mut text = String::new();
         let mut pieces = Vec::new();
         let mut end_line = line;
@@ -499,10 +534,16 @@ impl<'a> Parser<'a> {
                 let mut covers = first.data().sourcepos;
                 covers.start = item.data().sourcepos.start;
                 self.cover(covers);
+                if line < self.line(sp) {
+                    self.opening.push((line, self.line(sp) - 1));
+                }
                 (text, pieces) = self.mapped_text(sp);
+                text_line = self.line(sp);
                 end_line = self.end_line(sp);
                 children.next();
             } else if let Some(html) = leading_html(first) {
+                // An item that opens with an HTML block keeps the line of
+                // its marker, before which the anchor of its key goes.
                 self.cover(sp);
                 text = html;
                 end_line = self.end_line(sp);
@@ -510,9 +551,17 @@ impl<'a> Parser<'a> {
             }
         }
         let nested = self.nested(children);
+        // An item that opens with an HTML block has no pieces, and reads as
+        // written.
+        let reading = if pieces.is_empty() {
+            Reading::written(&text)
+        } else {
+            self.read(&text, &pieces)
+        };
         Unit {
             text,
-            line,
+            reading,
+            line: text_line,
             end_line,
             nested,
             pieces,
@@ -527,6 +576,7 @@ impl<'a> Parser<'a> {
         html_lines: Vec<usize>,
     ) -> Block {
         let mut columns = Vec::new();
+        let mut readings = Vec::new();
         let mut units = Vec::new();
         for row in table.children() {
             let (header, sp) = {
@@ -537,42 +587,55 @@ impl<'a> Parser<'a> {
                 (row.header, ast.sourcepos)
             };
             let row_line = self.line(sp);
-            let cells: Vec<(String, Vec<super::Piece>)> = row
+            // Each cell reads alone, as comrak reads a table (TLMD_258).
+            let cells: Vec<(String, Vec<Piece>, Reading)> = row
                 .children()
                 .map(|cell| {
                     if empty_cell(cell) {
-                        (String::new(), Vec::new())
+                        (String::new(), Vec::new(), Reading::written(""))
                     } else {
-                        self.mapped_text(cell.data().sourcepos)
+                        let (text, pieces) = self.mapped_text(cell.data().sourcepos);
+                        let reading = self.read(&text, &pieces);
+                        (text, pieces, reading)
                     }
                 })
                 .collect();
             if header {
-                columns = cells.into_iter().map(|(t, _)| t).collect();
+                (columns, readings) = cells.into_iter().map(|(t, _, r)| (t, r.text)).unzip();
             } else {
-                // The cells joined by ` | `, each piece moved by where its
-                // cell starts in the row's text.
+                // The cells joined by ` | `, each piece and each byte of a
+                // reading moved by where its cell starts in the row's text.
                 let mut text = String::new();
                 let mut pieces = Vec::new();
-                for (i, (cell, cell_pieces)) in cells.into_iter().enumerate() {
+                let mut reading = Reading::default();
+                for (i, (cell, cell_pieces, cell_reading)) in cells.into_iter().enumerate() {
                     if i > 0 {
+                        reading.map.extend(text.len()..text.len() + 3);
+                        reading.text.push_str(" | ");
                         text.push_str(" | ");
                     }
                     let base = text.len();
-                    pieces.extend(cell_pieces.into_iter().map(|p| super::Piece {
+                    pieces.extend(cell_pieces.into_iter().map(|p| Piece {
                         offset: base + p.offset,
                         ..p
                     }));
+                    let read = cell_reading.text.len();
+                    reading
+                        .map
+                        .extend(cell_reading.map[..read].iter().map(|o| base + o));
+                    reading.text.push_str(&cell_reading.text);
                     text.push_str(&cell);
                 }
+                reading.map.push(text.len());
                 units.push(Unit {
+                    reading,
                     pieces,
                     ..Unit::leaf(text, row_line, row_line)
                 });
             }
         }
         Block {
-            detail: BlockDetail::Table { columns },
+            detail: BlockDetail::Table { columns, readings },
             html_lines,
             ..Block::new(BlockKind::Table, line, end_line, units)
         }
@@ -661,58 +724,17 @@ impl<'a> Parser<'a> {
             })
             .collect()
     }
-
-    /// Reference definitions comrak consumed: lines outside every leaf block
-    /// that read `[label]: destination`, as `references` blocks.
-    fn reference_blocks(&mut self) {
-        let mut current: Option<Block> = None;
-        for (i, line) in self.lines.iter().enumerate() {
-            let file_line = self.offset + 1 + i;
-            let covered = self
-                .covered
-                .iter()
-                .any(|&(s, e)| s <= file_line && file_line <= e);
-            let def = if covered { None } else { seg::ref_def(line) };
-            match def {
-                Some((label, dest)) => {
-                    self.body.ref_defs.push((label, dest, file_line));
-                    let unit = Unit::leaf(line.trim().to_string(), file_line, file_line);
-                    match current.as_mut() {
-                        Some(b) => {
-                            b.units.push(unit);
-                            b.end_line = file_line;
-                        }
-                        None => {
-                            current = Some(Block::new(
-                                BlockKind::References,
-                                file_line,
-                                file_line,
-                                vec![unit],
-                            ));
-                        }
-                    }
-                }
-                None => {
-                    if (covered || !line.trim().is_empty())
-                        && let Some(b) = current.take()
-                    {
-                        self.body.blocks.push(b);
-                    }
-                }
-            }
-        }
-        if let Some(b) = current.take() {
-            self.body.blocks.push(b);
-        }
-    }
 }
 
-/// The text of an ATX heading line: leading hashes and a closing sequence
-/// removed.
-fn atx_text(line: &str) -> String {
+/// The text of an ATX heading line without its hashes and its closing run
+/// of `#`, which a space or a tab comes before or which is the whole text,
+/// as CommonMark reads it, so `# Learn C#` keeps its `#` (`TLMD_4`).
+// sokf-implements: TLMD_4
+pub(crate) fn atx_text(line: &str) -> String {
     let t = line.trim_start_matches('#').trim();
-    let t = t.trim_end_matches('#').trim_end();
-    t.to_string()
+    let rest = t.trim_end_matches('#');
+    let closes = rest.len() < t.len() && (rest.is_empty() || rest.ends_with([' ', '\t']));
+    if closes { rest.trim_end() } else { t }.to_string()
 }
 
 /// The images of a paragraph of images only, of the parse of `lines`,

@@ -85,8 +85,8 @@ Each relaxation is a key, and each loosens one rule for one part of the schema. 
 | `optional: true` | A declared part can be absent. | A section, a block, a frontmatter key, a position in a `sequence`. |
 | `repeat: true` | A declared part can occur more than once. | A section, a block, a position in a `sequence`. |
 | `frontmatter-open: true` | Undeclared frontmatter keys are accepted. | The schema. |
-| `headings-open: true` | Undeclared headings of the section's level or deeper can follow it. | A section. |
-| `subheadings-open: true` | Undeclared headings deeper than the section can follow it. | A section. |
+| `headings-open: true` | Undeclared headings of the section's level or deeper can follow it, up to a heading of a higher level. | A section. |
+| `subheadings-open: true` | Undeclared headings deeper than the section can follow it, up to a heading of its level or higher. | A section. |
 | `columns-open: true` | Further columns after the declared ones are accepted. | A `table` block. |
 | `units-open: true` | A unit that no rule under `rules` takes is accepted. | A block. |
 | `lines-open: true` | A line that no rule under `lines` takes is accepted. | A unit rule with `lines`. |
@@ -135,7 +135,7 @@ A declaration of `store` under `frontmatter`, with `optional: true`, is the narr
 
 ### An open region
 
-An open section accepts undeclared headings after it, up to the next declared heading. tramlines checks the bodies under those headings only against the rules that apply to the whole document, such as `prohibited-patterns` and `line-limit`. Use an open region for a part whose structure the schema can't predict, such as free notes, and keep it as small as you can. To ban particular headings inside an open region, list them under `sections-prohibited`.
+An open section accepts undeclared headings after it, up to the next declared heading or the next heading that it doesn't accept: a heading of a higher level after `headings-open`, or one of the section's own level or higher after `subheadings-open`. That heading ends the region, so tramlines reports it and each undeclared heading under it. tramlines checks the bodies under the headings that the region accepts only against the rules that apply to the whole document, such as `prohibited-patterns` and `line-limit`. Use an open region for a part whose structure the schema can't predict, such as free notes, and keep it as small as you can. To ban particular headings inside an open region, list them under `sections-prohibited`.
 
 ## Absence is strict too
 

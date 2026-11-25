@@ -30,7 +30,7 @@ pub struct Cli {
 pub enum Command {
     /// Check a schema, then each document against it, repairing with --fix.
     Validate(ValidateArgs),
-    /// Print the scaffold of a new document from a schema.
+    /// Print a new document from a schema, and its guide on stderr.
     New(NewArgs),
     /// Print the schema language, or the formats and types a schema sees.
     Info(InfoArgs),
@@ -112,7 +112,7 @@ pub struct NewArgs {
     /// A lifecycle key at a state, as KEY=STATE. Default: each dimension's first state.
     #[arg(long, value_name = "KEY=STATE", action = ArgAction::Append, value_parser = parse_state)]
     pub state: Vec<(String, String)>,
-    /// One object with the id and the document instead of the document.
+    /// One object with the id, the document, and its guide instead of them.
     #[arg(long)]
     pub json: bool,
 }

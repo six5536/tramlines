@@ -101,8 +101,8 @@ sections:
 
 ```console
 $ tramlines validate --schema meeting.yaml planning.md
-planning.md:4: error[TL_74]: `We talked about the budget` fails at column 1: expected `Decided: `, found `We talked about the bud…`; an item of this kind reads Decided: the release moves to 3 November. (schema meeting, rule `decisions`)
-planning.md:9: error[TL_74]: `sam` does not match `^[A-Z]\w+ [A-Z]\w+$`; an item of this kind reads Ana Silva (schema meeting, section "Attendees" block 1)
+planning.md:4: error[TL_74]: `We talked about the budget` fails at column 1: expected `Decided: `, found `We talked about the bud…`; an item of this kind reads `Decided: the release moves to 3 November.` (schema meeting, rule `decisions`)
+planning.md:9: error[TL_74]: `sam` does not match `^[A-Z]\w+ [A-Z]\w+$`; an item of this kind reads `Ana Silva` (schema meeting, section "Attendees" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```
@@ -149,7 +149,7 @@ sections:
 
 ```console
 $ tramlines validate --warnings --schema meeting.yaml planning.md
-planning.md:8: warning[TL_74]: `sam` does not match `^[A-Z]\w+ [A-Z]\w+$`; an item of this kind reads Ana Silva (schema meeting, section "Attendees" block 1)
+planning.md:8: warning[TL_74]: `sam` does not match `^[A-Z]\w+ [A-Z]\w+$`; an item of this kind reads `Ana Silva` (schema meeting, section "Attendees" block 1)
 0 errors, 1 warning
 ```
 

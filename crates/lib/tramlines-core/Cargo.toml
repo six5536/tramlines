@@ -1,6 +1,6 @@
 [package]
 name = "tramlines-core"
-description = "The format-neutral core of tramlines: the grammar a schema is written in, its shapes, formats and frontmatter rules, and the findings of a check."
+description = "The format-neutral core of tramlines: the grammar a schema is written in, its shapes, formats and frontmatter rules, and the findings of a check. Unstable: its interface can change in any release."
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

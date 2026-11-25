@@ -5,19 +5,23 @@
 
 use std::collections::BTreeMap;
 
-use super::{
-    Deriver,
-    text::{self, KeyReader},
-};
+use super::{Deriver, deriver::text_of, guide, text::KeyReader};
 use crate::{
     check,
-    grammar::{Block, RuleCommon, Section, Shape, Text, squash},
-    markdown::Dialect,
+    grammar::{Block, KeyText, RuleCommon, Section, Shape, Text, squash},
+    markdown::{self, Dialect},
+    text,
 };
 
-/// How a section's heading reads its key, where it declares one.
+/// How a section's heading reads its key, where it declares one: in its
+/// reading, through its shape as read, as the check reads it (`TLMD_259`).
 fn heading_reader(section: &Section) -> Option<KeyReader> {
-    KeyReader::of(&section.heading.shape, section.heading.key.as_deref()?)
+    KeyReader::of(
+        &section.heading.read,
+        section.heading.key.as_deref()?,
+        markdown::reading,
+        false,
+    )
 }
 
 /// One `guidance` line. A marker is recognised a line at a time, so the
@@ -42,16 +46,17 @@ impl Deriver<'_> {
         // sokf-implements: TLMD_115
         // sokf-implements: TLMD_118
         // sokf-implements: TLMD_195
-        let opening = self
-            .schema
-            .core
-            .guidance
-            .iter()
-            .cloned()
-            .chain(self.schema_bans())
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !opening.trim().is_empty() {
+        // sokf-implements: TLMD_271
+        if !self.plain()
+            && let Some(opening) = guide::joined(
+                self.schema
+                    .core
+                    .guidance
+                    .iter()
+                    .cloned()
+                    .chain(self.schema_bans()),
+            )
+        {
             out.push(guidance_line(&self.dialect, &opening));
             out.push(String::new());
         }
@@ -60,7 +65,11 @@ impl Deriver<'_> {
             && p.common.only.admits(self.states)
         {
             self.guidance(p.guidance.as_deref(), &mut out);
+            let start = out.len();
             self.blocks(p.blocks.as_deref(), &mut out);
+            if let Some(ex) = &mut self.examples {
+                ex.preamble = text_of(&out[start..]);
+            }
         }
         // A section with a `parent` is written inside each occurrence of
         // its parent, so the walk here leaves it to the parent.
@@ -69,6 +78,11 @@ impl Deriver<'_> {
         // sokf-implements: MD-7_AC-4
         // sokf-implements: TLMD_192
         for section in schema.sections.iter().filter(|s| s.parent.is_none()) {
+            // sokf-implements: MD-17_AC-4
+            // sokf-implements: TLMD_305
+            if section.optional_at(self.states, &self.schema.core.lifecycle) && self.skeleton() {
+                continue;
+            }
             if section.optional_at(self.states, &self.schema.core.lifecycle) && !self.in_optional {
                 self.optional_region(&mut out, |d, out| d.section(section, out));
             } else {
@@ -84,7 +98,7 @@ impl Deriver<'_> {
     // sokf-implements: MD-7_AC-3
     // sokf-implements: TLMD_119
     pub(super) fn guidance(&self, guidance: Option<&str>, out: &mut Vec<String>) {
-        if let Some(g) = guidance {
+        if let Some(g) = guidance.filter(|_| !self.plain()) {
             out.push(guidance_line(&self.dialect, g));
         }
     }
@@ -99,7 +113,8 @@ impl Deriver<'_> {
     }
 
     fn section(&mut self, section: &Section, out: &mut Vec<String>) {
-        if !section.common.only.admits(self.states) {
+        let optional = section.optional_at(self.states, &self.schema.core.lifecycle);
+        if !section.common.only.admits(self.states) || (optional && self.skeleton()) {
             return;
         }
         // An optional section is written where the derivation can write
@@ -108,14 +123,51 @@ impl Deriver<'_> {
         // inside offers nothing to write, the section is left out rather
         // than refused over, and the author is told which rule kept it out.
         // sokf-implements: TLMD_123
-        self.attempt(
-            section.optional_at(self.states, &self.schema.core.lifecycle),
-            out,
-            |d, out| d.write_one(section, out),
-        );
+        self.attempt(optional, out, |d, out| d.write_one(section, out));
     }
 
+    /// Write every occurrence of `section` that the derivation writes, and
+    /// record their text as the section's example, unless a refusal inside
+    /// it stands. An optional part inside it that is left out takes its
+    /// refusal back, so the section that the scaffold writes without the
+    /// part keeps its example.
     fn write_one(&mut self, section: &Section, out: &mut Vec<String>) {
+        let start = out.len();
+        let refused = self.refusals.len();
+        if self.skeleton() {
+            self.skeleton_section(section, out);
+        } else {
+            self.occurrences(section, out);
+        }
+        if self.refusals.len() == refused {
+            let lines = out[start..].to_vec();
+            self.record_section(section, &lines);
+        }
+    }
+
+    /// The section in a skeleton: written once where its heading is the
+    /// schema's text or the frontmatter value that the skeleton writes, and
+    /// not at all where its heading comes from an example, a template or a
+    /// pattern, or pairs with the keys of another rule, because none of its
+    /// parts can stand without its heading.
+    // sokf-implements: MD-17_AC-4
+    // sokf-implements: TLMD_305
+    fn skeleton_section(&mut self, section: &Section, out: &mut Vec<String>) {
+        if section.for_each_key_of.is_some() {
+            return;
+        }
+        let heading = match &section.heading.shape {
+            Shape::Text(Text::Literal(t)) => t.clone(),
+            Shape::Text(Text::From(key)) => match self.values.get(key) {
+                Some(v) => markdown::heading_text_of(v),
+                None => return,
+            },
+            _ => return,
+        };
+        self.write_section(section, &heading, out);
+    }
+
+    fn occurrences(&mut self, section: &Section, out: &mut Vec<String>) {
         // A section demanded once per key of another rule is written once
         // per key that rule captured, its heading spliced to carry the key.
         // The occurrence of each key after the first is the next text of
@@ -169,7 +221,7 @@ impl Deriver<'_> {
         let text = text.trim_matches(|c| c == '\n' || c == '\r');
         if let (Some(id), Some(reader)) = (&section.rule_id, heading_reader(section))
             && let Some(first) = text.lines().next()
-            && let Some(key) = text::capture_of(&reader, first.trim_start_matches('#').trim())
+            && let Some(key) = reader.key_text(&markdown::atx_text(first))
         {
             self.record(Some(id), Some(key));
         }
@@ -185,18 +237,22 @@ impl Deriver<'_> {
         // A section that reads its heading as a key records it, as the
         // checker does, so a rule deriving from it has a prefix to take.
         if let Some(reader) = heading_reader(section)
-            && let Some(key) = text::capture_of(&reader, heading)
+            && let Some(key) = reader.key_text(heading)
         {
             self.record(section.rule_id.as_ref(), Some(key));
         }
         self.guidance(section.guidance.as_deref(), out);
         self.marker(&section.common, out);
+        // sokf-implements: TLMD_274
         out.push(format!(
-            "{} {heading}",
-            "#".repeat(usize::from(section.level))
+            "{} {}",
+            "#".repeat(usize::from(section.level)),
+            markdown::atx_written(heading)
         ));
         out.push(String::new());
         match &section.blocks {
+            // A skeleton writes no example, so it needs none.
+            None if self.skeleton() => {}
             // An absent `blocks` means one prose block of one or more
             // paragraphs, which the schema gives no text for; `[]` means
             // an empty body. The scaffold writes no text of its own.
@@ -242,6 +298,8 @@ impl Deriver<'_> {
                 }
                 Some(false) => {}
                 None if child.optional_at(self.states, &self.schema.core.lifecycle)
+                    && self.skeleton() => {}
+                None if child.optional_at(self.states, &self.schema.core.lifecycle)
                     && !self.in_optional =>
                 {
                     self.optional_region(out, |d, out| d.section(child, out));
@@ -281,16 +339,20 @@ impl Deriver<'_> {
         match &section.heading.shape {
             Shape::Text(Text::Literal(t)) => Some(t.clone()),
             // sokf-implements: TLMD_155
-            Shape::Text(Text::From(key)) => self.values.get(key).cloned().or_else(|| {
-                self.refuse_on(
-                    section.common.line,
-                    "TLMD_155",
-                    format!(
-                        "a section takes its heading from `{key}`, which no frontmatter writes"
-                    ),
-                );
-                None
-            }),
+            Shape::Text(Text::From(key)) => self
+                .values
+                .get(key)
+                .map(|v| markdown::heading_text_of(v))
+                .or_else(|| {
+                    self.refuse_on(
+                        section.common.line,
+                        "TLMD_155",
+                        format!(
+                            "a section takes its heading from `{key}`, which no frontmatter writes"
+                        ),
+                    );
+                    None
+                }),
             shape => {
                 if let Some(e) = &section.heading.example {
                     Some(e.clone())
@@ -298,8 +360,8 @@ impl Deriver<'_> {
                     self.refuse(
                         section.common.line,
                         format!(
-                            "a section's heading `{}` varies and carries no `example`; write one",
-                            shape.label()
+                            "a section's heading {} varies and carries no `example`; write one",
+                            text::code(&shape.label())
                         ),
                     );
                     None
@@ -310,22 +372,22 @@ impl Deriver<'_> {
 
     /// The heading of a paired section, its own key spliced out for the
     /// key the rule it pairs with captured.
-    fn paired_heading(&mut self, section: &Section, key: &str) -> Option<String> {
+    fn paired_heading(&mut self, section: &Section, key: &KeyText) -> Option<String> {
         let example = self.heading(section)?;
         let Some(reader) = heading_reader(section) else {
             return Some(example);
         };
-        let spliced = text::respell(&reader, &example, key);
+        let spliced = reader.respell_key(&example, key);
         // sokf-implements: TLMD_154
         if spliced.is_none() {
             self.refuse_on(
                 section.common.line,
                 "TLMD_154",
                 format!(
-                    "a section demands one heading per key of {}, and its example `{example}` does not carry `{key}` where `{}` reads it",
+                    "a section demands one heading per key of {}, and its example {example} does not carry {} where `{}` reads it",
                     check::rules_named(section.for_each_key_of.as_deref().unwrap_or_default()),
-                    reader.name
-                ),
+                    text::code(&key.read),
+                    reader.name, example = text::code(&example)),
             );
         }
         spliced

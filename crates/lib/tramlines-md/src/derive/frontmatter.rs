@@ -4,9 +4,10 @@
 
 use super::{Deriver, guide};
 use crate::{
+    Yaml,
     grammar::{FmFormat, FrontmatterConstraint, squash},
     markdown::Dialect,
-    text,
+    text, yaml,
 };
 
 /// A scalar written plain where it reads back as itself, else quoted.
@@ -44,47 +45,86 @@ impl Deriver<'_> {
         for (key, seed) in &front.leading {
             // sokf-implements: MD-5_AC-7
             let constraint = self.schema.core.constraint(key);
-            let Some(value) = self.leading_value(key, constraint).or_else(|| seed.clone()) else {
+            let given = self.given_value(key, constraint);
+            let render = if given.is_some() {
+                given_scalar
+            } else {
+                scalar
+            };
+            let Some(value) = self.leading_choice(key, constraint, given, seed.as_ref()) else {
+                // sokf-implements: MD-17_AC-3
+                if self.skeleton() && constraint.is_some_and(|c| !c.optional) {
+                    out.push(format!("{key}:"));
+                    written.push(key.clone());
+                }
                 continue;
             };
             self.guidance_of(key, constraint, &mut out);
-            out.push(format!(
-                "{key}: {}{}",
-                scalar(&value),
-                self.gate_of(constraint)
-            ));
+            let line = format!("{key}: {}", render(&value));
+            self.record_key(key, &line);
+            out.push(format!("{line}{}", self.gate_of(constraint)));
             self.values.insert(key.clone(), value);
             written.push(key.clone());
         }
         let schema = self.schema;
         for (key, constraint) in &schema.core.frontmatter {
-            if written.contains(key) || !constraint.common.only.admits(self.states) {
+            // A value that the host gives is the document's, so it is
+            // written whatever the gate of its key, as `tramlines new
+            // --title` wrote it.
+            let given = self.given_value(key, Some(constraint));
+            if written.contains(key)
+                || (given.is_none() && !constraint.common.only.admits(self.states))
+            {
                 continue;
             }
-            let Some(value) = self.value_of(key, constraint) else {
+            let value = match &given {
+                Some(v) => Some(v.clone()),
+                None if self.skeleton() => (!constraint.optional)
+                    .then(|| self.prescribed(constraint))
+                    .flatten(),
+                None => self.value_of(key, constraint),
+            };
+            let Some(value) = value else {
+                // sokf-implements: MD-17_AC-3
+                if self.skeleton() && !constraint.optional {
+                    out.push(format!("{key}:"));
+                    written.push(key.clone());
+                }
                 continue;
             };
             written.push(key.clone());
             self.guidance_of(key, Some(constraint), &mut out);
-            let rendered = if constraint.list {
-                let one = scalar(&value);
-                let items = vec![one; constraint.min.unwrap_or(1).max(1)];
-                format!("[{}]", items.join(", "))
+            let render = if given.is_some() {
+                given_scalar
             } else {
-                scalar(&value)
+                scalar
             };
-            out.push(format!(
-                "{key}: {rendered}{}",
-                self.gate_of(Some(constraint))
-            ));
+            let rendered = if constraint.list {
+                let one = render(&value);
+                let n = if given.is_some() {
+                    1
+                } else {
+                    constraint.min.unwrap_or(1).max(1)
+                };
+                format!("[{}]", vec![one; n].join(", "))
+            } else {
+                render(&value)
+            };
+            let line = format!("{key}: {rendered}");
+            self.record_key(key, &line);
+            out.push(format!("{line}{}", self.gate_of(Some(constraint))));
             self.values.insert(key.clone(), value);
         }
         for dim in &self.schema.core.lifecycle {
             let state = dim.state_in(self.states).cloned().unwrap_or_default();
-            if let Some(g) = &dim.guidance {
+            if let Some(g) = &dim.guidance
+                && !self.plain()
+            {
                 out.push(guidance_comment(&self.dialect, g));
             }
-            out.push(format!("{}: {}", dim.key, scalar(&state)));
+            let line = format!("{}: {}", dim.key, scalar(&state));
+            self.record_key(&dim.key, &line);
+            out.push(line);
             self.values.insert(dim.key.clone(), state);
         }
         // sokf-implements: MD-5_AC-6
@@ -94,6 +134,78 @@ impl Deriver<'_> {
         }
         out.push("---".to_string());
         out
+    }
+
+    /// The value that a leading key of the host takes: the value that the
+    /// host gives for the document, else, in a scaffold, the value that the
+    /// schema fixes or the host's seed, and, in a skeleton, for a key that
+    /// isn't optional, the value that the schema prescribes or the seed.
+    fn leading_choice(
+        &mut self,
+        key: &str,
+        constraint: Option<&FrontmatterConstraint>,
+        given: Option<String>,
+        seed: Option<&String>,
+    ) -> Option<String> {
+        if given.is_some() {
+            return given;
+        }
+        if !self.skeleton() {
+            return self
+                .leading_value(key, constraint)
+                .or_else(|| seed.cloned());
+        }
+        // A skeleton writes an optional key only where the host gives the
+        // document its value.
+        if constraint.is_some_and(|c| c.optional) {
+            return None;
+        }
+        constraint
+            .and_then(|c| self.prescribed(c))
+            .or_else(|| seed.cloned())
+    }
+
+    /// The value of `key` that the host gives for the document, or the
+    /// `const` of the key where the schema fixes it, which no document can
+    /// change, or `None` where the host gives none.
+    // sokf-implements: MD-7_AC-18
+    // sokf-implements: MD-17_AC-3
+    // sokf-implements: TLMD_301
+    // sokf-implements: TLMD_304
+    fn given_value(&self, key: &str, constraint: Option<&FrontmatterConstraint>) -> Option<String> {
+        let given = self.given.get(key).filter(|v| !v.is_empty())?;
+        // A `const` wins over the host's value, which no document changes.
+        Some(
+            constraint
+                .and_then(|c| c.const_.clone())
+                .unwrap_or_else(|| given.clone()),
+        )
+    }
+
+    /// The value that the schema prescribes for a key of a skeleton, which
+    /// no example states: its `const`, or the `id` that its template renders
+    /// from the states alone, with no `slug` hole and no `seq` hole.
+    // sokf-implements: MD-17_AC-3
+    // sokf-implements: TLMD_304
+    fn prescribed(&self, c: &FrontmatterConstraint) -> Option<String> {
+        if let Some(v) = &c.const_ {
+            return Some(v.clone());
+        }
+        let t = c.id_template.as_ref()?;
+        if t.has_slug() || t.seq_width().is_some() {
+            return None;
+        }
+        t.render_with(1, None, self.states).ok()
+    }
+
+    /// Record `line`, the line that the derivation writes for `key`, where it
+    /// records examples.
+    fn record_key(&mut self, key: &str, line: &str) {
+        if let Some(ex) = &mut self.examples {
+            ex.keys
+                .entry(key.to_string())
+                .or_insert_with(|| line.to_string());
+        }
     }
 
     /// The `guidance` comment line a declared key's guidance takes, on
@@ -108,6 +220,9 @@ impl Deriver<'_> {
         constraint: Option<&FrontmatterConstraint>,
         out: &mut Vec<String>,
     ) {
+        if self.plain() {
+            return;
+        }
         let language = self.schema.core.language.as_deref();
         if let Some(g) = constraint.and_then(|c| guide::key_text(self.host, language, key, c)) {
             out.push(guidance_comment(&self.dialect, &g));
@@ -172,6 +287,20 @@ impl Deriver<'_> {
         };
         self.refuse(c.common.line, what);
         None
+    }
+}
+
+/// A value that the host gives for the document, written plain only where
+/// YAML reads it back as the same text, so that a title such as `2026`,
+/// `true` or `null` stays a text and never reads as no value.
+fn given_scalar(value: &str) -> String {
+    let text = yaml::parse(&format!("k: {value}\n"), 1)
+        .ok()
+        .and_then(|y| y.get("k").map(|v| v.value.clone()));
+    if !value.contains('#') && text == Some(Yaml::Str(value.to_string())) {
+        scalar(value)
+    } else {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
     }
 }
 

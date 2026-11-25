@@ -116,8 +116,8 @@ meeting.yaml:7: error[TL_97]: `format` names no format `action`
 
 ```console
 $ tramlines validate --schema meeting.yaml --formats formats.yaml meeting.md
-meeting.md:4: error[TL_74]: `A-2 [done]: send the invitations` does not match the `done` form: it fails at column 11: expected ` `, found `: send the invitations`; an item of this kind reads A-2 [done] 2026-09-30: send the invitations (schema meeting, section "Actions" block 1)
-meeting.md:5: error[TL_74]: `Ask Sam about the budget` matches none of the forms `open`, `done`; an item of this kind reads A-1 [open]: book the venue or A-2 [done] 2026-09-30: send the invitations (schema meeting, section "Actions" block 1)
+meeting.md:4: error[TL_74]: `A-2 [done]: send the invitations` does not match the `done` form: it fails at column 11: expected ` `, found `: send the invitations`; an item of this kind reads `A-2 [done] 2026-09-30: send the invitations` (schema meeting, section "Actions" block 1)
+meeting.md:5: error[TL_74]: `Ask Sam about the budget` matches none of the forms `open`, `done`; an item of this kind reads `A-1 [open]: book the venue` or `A-2 [done] 2026-09-30: send the invitations` (schema meeting, section "Actions" block 1)
 2 errors, 0 warnings
 [exit 1]
 ```

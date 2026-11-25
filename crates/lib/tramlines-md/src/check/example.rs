@@ -7,15 +7,22 @@
 //! example on an optional rule that no scaffold reaches, and the example a
 //! later edit to its rule left behind.
 
-use super::{At, Host, NullHost, label};
+use std::{borrow::Cow, ops::Range};
+
+use super::{
+    At, Host, NullHost,
+    derived::{derived, derived_unit},
+    label,
+};
 use crate::{
     Finding, Locator, RepoPath,
     grammar::{
-        Block, DerivationSource, FmFormat, Format, FormatMatch, FormatRegistry, FormatSource,
-        FrontmatterConstraint, KeyDerivation, Label, Schema, Section, Shape, Text, Unit, Words,
-        captured, carries_labels, refused_masked, squash,
+        Block, FmFormat, Format, FormatMatch, FormatRegistry, FormatSource, FrontmatterConstraint,
+        Label, Schema, Section, Shape, Squashed, Text, Unit, Words, captured, carries_labels, read,
+        read_row, refused_masked, row_code_spans, row_reading, squash,
     },
-    markdown::{self, BlockKind, is_slug, is_url},
+    markdown::{self, BlockKind, Reading, is_slug, is_url},
+    text,
 };
 
 /// What one example failed, as the reason alone.
@@ -95,10 +102,8 @@ pub(super) fn check_examples(
         };
         if let Some(text) = &section.heading.example {
             e.said_of(text, section.common.line, "TL_64", heading(section));
-            if let (Some(kd), Some(key)) = (&section.heading.key_derives_from, &section.heading.key)
-            {
-                let got = captured(&section.heading.shape, key, &squash(text)).map(|c| c.key);
-                let problem = derived(schema, kd, got);
+            if let (Some(kd), Some(_)) = (&section.heading.key_derives_from, &section.heading.key) {
+                let problem = derived(schema, kd, section.example_key(), markdown::reading);
                 e.said_of(text, section.common.line, "TL_127", problem);
             }
         }
@@ -119,14 +124,26 @@ pub(super) fn check_examples(
     // checked on that file, with `check_formats`; its failed examples still
     // stand for the scaffold.
     // sokf-implements: MD-6_AC-8
+    // A format's example reads as the rules that bind the format read a
+    // unit: as prose, in its reading, against the format as read, as a row,
+    // cell by cell, or as a line of a fence, as written (TLMD_259).
+    let bound = schema.bound_formats();
     for (name, (format, source)) in &schema.core.formats.entries {
+        let reads: Vec<Reads> = [
+            (bound.prose.contains(name), Reads::Prose),
+            (bound.rows.contains(name), Reads::Row),
+            (bound.lines.contains(name), Reads::Lines),
+        ]
+        .into_iter()
+        .filter_map(|(bound, reads)| bound.then_some(reads))
+        .collect();
         let own = matches!(source, FormatSource::Schema(_));
         let layer = if own {
             String::new()
         } else {
             format!(" ({})", source.label())
         };
-        for (criterion, message, text, line) in format_examples(name, format, &layer) {
+        for (criterion, message, text, line) in format_failures(name, format, &layer, &reads) {
             let at = if own { line } else { schema.core.line };
             if let Some(text) = text.filter(|t| !t.is_empty()) {
                 e.failed.texts.push(text);
@@ -155,24 +172,104 @@ pub fn check_formats(
         .iter()
         .filter(|(_, (_, s))| s == source)
         .flat_map(|(name, (format, _))| {
-            format_examples(name, format, "")
-                .into_iter()
-                .map(|(criterion, message, _, line)| {
+            // A file of formats names no rule that binds them, so an example
+            // fails only where it fails both as prose and as a line.
+            format_failures(name, format, "", &[]).into_iter().map(
+                |(criterion, message, _, line)| {
                     Finding::error(path.clone(), Some(line), criterion, message)
-                })
+                },
+            )
         })
+        .chain(super::spelling::check_formats(registry, source, path))
         .collect()
+}
+
+/// How a rule that binds a format reads a unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reads {
+    /// A rule of prose other than a table row: in its reading, as a
+    /// paragraph alone.
+    Prose,
+    /// A rule of a table row: in its reading, cell by cell.
+    Row,
+    /// A rule of the lines of a fence: as written.
+    Lines,
+}
+
+impl Reads {
+    /// A text as such a rule reads it, with the map of its bytes.
+    fn reading(self, text: &str) -> Reading {
+        match self {
+            Reads::Prose => markdown::reading(text),
+            Reads::Row => row_reading(text),
+            Reads::Lines => Reading::written(text),
+        }
+    }
+
+    /// The format as such a rule reads it: its shapes as read, or as
+    /// written for a line of a fence.
+    fn format(self, format: &Format) -> Cow<'_, Format> {
+        match self {
+            Reads::Prose => Cow::Owned(format.read_with(&read)),
+            Reads::Row => Cow::Owned(format.read_with(&read_row)),
+            Reads::Lines => Cow::Borrowed(format),
+        }
+    }
+
+    /// The code spans of `text`, an example as such a rule reads it: those
+    /// of each cell alone for a row, those of the text as one line for other
+    /// prose, and none for a line of a fence, whose backticks are text.
+    fn code_spans(self, text: &str) -> Vec<Range<usize>> {
+        match self {
+            Reads::Row => row_code_spans(text),
+            Reads::Prose => markdown::code_spans_in(text),
+            Reads::Lines => Vec::new(),
+        }
+    }
+}
+
+/// One failure of an example of a format: its criterion, its message, the
+/// text of the example, and the line of the format or of its variant.
+type FormatFailure = (&'static str, String, Option<String>, usize);
+
+/// The failures of the examples of the format `name`, as each rule that
+/// binds it reads them, `reads`, each against the format as that rule reads
+/// it, one failure for each message, or, where no rule is known to bind it,
+/// its failures as prose only where it fails as a line too.
+fn format_failures(
+    name: &str,
+    format: &Format,
+    layer: &str,
+    reads: &[Reads],
+) -> Vec<FormatFailure> {
+    let failures = |r: Reads| format_examples(name, &r.format(format), layer, r);
+    if reads.is_empty() {
+        let failed = failures(Reads::Prose);
+        return if failed.is_empty() || failures(Reads::Lines).is_empty() {
+            Vec::new()
+        } else {
+            failed
+        };
+    }
+    let mut failed: Vec<FormatFailure> = Vec::new();
+    for &r in reads {
+        for f in failures(r) {
+            if !failed.iter().any(|g| g.1 == f.1) {
+                failed.push(f);
+            }
+        }
+    }
+    failed
 }
 
 /// The failures of the examples of the format `name`: each criterion, its
 /// message, the text of an example that failed its shape, and the line of
 /// the format, or of the variant whose example it is. `layer` names a
 /// farther layer in the message.
-fn format_examples(
-    name: &str,
-    format: &Format,
-    layer: &str,
-) -> Vec<(&'static str, String, Option<String>, usize)> {
+fn format_examples(name: &str, format: &Format, layer: &str, reads: Reads) -> Vec<FormatFailure> {
+    // The example as the rules read it, mapped to the example as written,
+    // which a failure quotes.
+    let read_line = |text: &str| written(text, &reads.reading(text));
     let mut out = Vec::new();
     let line_of = |variant: Option<&str>| {
         variant
@@ -191,37 +288,44 @@ fn format_examples(
             .collect(),
     };
     for (own, line) in examples {
-        let text = squash(line);
-        // A format names no kind of block, so its example reads as a line
-        // of prose, whose code spans its bans leave out.
+        let quoted = read_line(line);
+        let text = quoted.squashed.text.clone();
+        // The bans leave out the code spans of the example as the rule
+        // reads it: of a paragraph or of a row, and none of a line of a
+        // fence.
         // sokf-implements: TLMD_111
-        let code = markdown::code_spans_in(&text);
-        let checked = format.check_masked(&text, &markdown::mask_code(&text, &code), "line");
+        let code = reads.code_spans(&text);
+        let masked = markdown::mask_code(&text, &code);
+        let checked = quoted.quoting(|q| format.check_quoting(&text, &masked, "line", q));
         let problem = match (own, checked) {
             (Some((vi, shape)), _) if !shape.matches(&text, |_| None) => Some(format!(
-                "the example `{line}` of variant `{vi}` of format `{name}`{layer} does not match its own variant: it {}",
-                shape.failure(&text)
+                "the example {} of variant `{vi}` of format `{name}`{layer} does not match its own variant: it {}", text::code(line),
+                quoted.quoting(|q| shape.failure_quoting(&text, q))
             )),
             // The failure of a format shows its examples, which here are
             // the one that failed, so the example check leaves them out.
             (_, FormatMatch::Fail(reason) | FormatMatch::Refused(reason)) => {
-                let reason = reason
-                    .rsplit_once("; a line of this kind reads ")
-                    .map_or(reason.as_str(), |(why, _)| why);
-                Some(format!("the example `{line}` of format `{name}`{layer} {reason}"))
+                let reason = without_example(&reason);
+                Some(format!("the example {} of format `{name}`{layer} {reason}", text::code(line)))
             }
             // The example speaks for the key as well as the shape, so one
             // that captures no key fails its format.
             // sokf-implements: TL_65
             (_, FormatMatch::Ok(None)) => format.key.as_ref().map(|key| {
                 format!(
-                    "the example `{line}` of format `{name}`{layer} carries no key: the format captures `{key}`"
+                    "the example {} of format `{name}`{layer} carries no key: the format captures `{key}`", text::code(line)
                 )
             }),
             (_, FormatMatch::Ok(Some(_))) => None,
         };
         if let Some(message) = problem {
-            out.push(("TL_65", message, Some(text), line_of(own.map(|(vi, _)| vi))));
+            let failed = squash(line);
+            out.push((
+                "TL_65",
+                message,
+                Some(failed),
+                line_of(own.map(|(vi, _)| vi)),
+            ));
         }
     }
     // Each variant's example tells it from the others, so a line is the
@@ -230,7 +334,7 @@ fn format_examples(
     // sokf-implements: TL_43
     // sokf-implements: TLMD_58
     for (i, (vi, variant)) in format.variants.iter().enumerate() {
-        let text = squash(&variant.example);
+        let text = read_line(&variant.example).squashed.text;
         if !variant.shape.matches(&text, |_| None) {
             continue;
         }
@@ -384,7 +488,8 @@ impl Examples<'_> {
                     r.is_production() && has_shape(self.schema, &self.labels, block, r, text)
                 }) {
                     let problem = Some(format!(
-                        "the example `{text}` is taken by the rule at line {} first, so this rule takes nothing: order the rules from the narrowest",
+                        "the example {} is taken by the rule at line {} first, so this rule takes nothing: order the rules from the narrowest",
+                        text::code(text),
                         rules[earlier].common.line
                     ));
                     // The finding is about the later rule, so it names it.
@@ -417,7 +522,7 @@ fn examples_of(schema: &Schema, rule: &Unit) -> Vec<String> {
     }
     rule.format
         .as_ref()
-        .and_then(|n| schema.core.formats.get(n))
+        .and_then(|n| schema.formats_of(rule).get(n))
         .map(|f| vec![f.first_example().to_string()])
         .unwrap_or_default()
 }
@@ -425,8 +530,8 @@ fn examples_of(schema: &Schema, rule: &Unit) -> Vec<String> {
 /// Whether `text`, an example of a unit of `block`, has `rule`'s shape,
 /// its own or its format's, read without its label in `words`.
 fn has_shape(schema: &Schema, words: &Words, block: &Block, rule: &Unit, text: &str) -> bool {
-    let (bare, _) = schema.unlabelled(words, block, Some(rule), text);
-    rule.fits(&schema.core.formats, &bare, |_| None)
+    let (bare, _) = schema.unlabelled(words, block, Some(rule), &rule.read_text(text));
+    rule.fits(schema.formats_of(rule), &bare, |_| None)
 }
 
 impl Examples<'_> {
@@ -461,15 +566,18 @@ impl Examples<'_> {
         let listed = self.labels.listed();
         match (block.label_of(rule), found) {
             (Some(Label::Required), None) => Some(format!(
-                "the example `{text}` carries no label, and its rule requires one: {listed}"
+                "the example {} carries no label, and its rule requires one: {listed}",
+                text::code(text)
             )),
             (None, Some(f)) => Some(format!(
-                "the example `{bare}` carries the label `[{}]`, and its rule declares no `label`",
+                "the example {} carries the label `[{}]`, and its rule declares no `label`",
+                text::code(bare),
                 f.words
             )),
             (Some(_), Some(f)) if !self.labels.accepts(&f.words) => Some(format!(
-                "the label `[{}]` of the example `{bare}` is none of the labels of the schema: {listed}",
-                f.words
+                "the label `[{}]` of the example {} is none of the labels of the schema: {listed}",
+                f.words,
+                text::code(bare)
             )),
             _ => None,
         }
@@ -479,12 +587,18 @@ impl Examples<'_> {
     /// holds it, read without its label, and then its label.
     fn unit(&self, block: &Block, rule: &Unit, text: &str, lines: bool) -> Problem {
         if lines {
-            return unit(self.schema, rule, text, &squash(text), lines);
+            return unit(self.schema, rule, text, &squash(text), None, lines);
         }
-        let (bare, found) = self.label_of(block, Some(rule), text);
-        // A failure quotes the text that its column counts in.
+        // An example reads as its rule reads a unit (TLMD_259).
+        let (bare, found) = self.label_of(block, Some(rule), &rule.read_text(text));
+        // A failure quotes the text that its column counts in: the example
+        // as written, mapped from its reading, or, where it carries a
+        // label, the reading without it.
         let shown = if found.is_some() { bare.as_str() } else { text };
-        unit(self.schema, rule, shown, &bare, lines)
+        let quote = found
+            .is_none()
+            .then(|| written(text, &rule.reading_of(text)));
+        unit(self.schema, rule, shown, &bare, quote.as_ref(), lines)
             .or_else(|| self.label_problem(block, Some(rule), text, &bare, found.as_ref()))
     }
 }
@@ -494,28 +608,45 @@ impl Examples<'_> {
 /// passes over stands for a unit the rule never reads. `lines` says that
 /// the example stands for a line of a fence or of an HTML block. `bare` is
 /// the example squashed, without its label, which the rule reads.
-fn unit(schema: &Schema, rule: &Unit, text: &str, bare: &str, lines: bool) -> Problem {
+fn unit(
+    schema: &Schema,
+    rule: &Unit,
+    text: &str,
+    bare: &str,
+    quote: Option<&label::Read>,
+    lines: bool,
+) -> Problem {
     let squashed = bare.to_string();
     if let Some(select) = &rule.select
         && !select.is_match(&squashed)
     {
         return Some(format!(
-            "the example `{text}` does not match `select-pattern` `{}`, so this rule would not govern it",
-            select.as_str()
+            "the example {} does not match `select-pattern` {}, so this rule would not govern it",
+            text::code(text),
+            text::code(select.as_str())
         ));
     }
-    if let Some(shape) = &rule.shape
+    if let Some(shape) = rule.matcher()
         && !matches!(shape, Shape::Text(Text::From(_)))
         && !shape.matches(&squashed, |_| None)
     {
-        return Some(format!("the example `{text}` {}", shape.failure(&squashed)));
+        // A text quotes the literal as the schema writes it.
+        let written = rule.shape.as_ref().filter(|s| matches!(s, Shape::Text(_)));
+        let failure = match (written, quote) {
+            (Some(text), _) => text.failure(&squashed),
+            (None, Some(q)) => q.quoting(|q| shape.failure_quoting(&squashed, q)),
+            (None, None) => shape.failure(&squashed),
+        };
+        return Some(format!("the example {} {failure}", text::code(text)));
     }
     // The example stands for a unit, so the bans of its rule and of its
     // format leave out its code spans, as a unit's do; a line holds none.
     // sokf-implements: TLMD_111
-    let format = rule.format_in(&schema.core.formats);
-    let code = if lines || !rule.bans_in(&schema.core.formats) {
+    let format = rule.format_in(schema.formats_of(rule));
+    let code = if lines || !rule.bans_in(schema.formats_of(rule)) {
         Vec::new()
+    } else if rule.reads_row {
+        row_code_spans(&squashed)
     } else {
         markdown::code_spans_in(&squashed)
     };
@@ -523,16 +654,27 @@ fn unit(schema: &Schema, rule: &Unit, text: &str, bare: &str, lines: bool) -> Pr
     if let Some(reason) =
         refused_masked(&squashed, &masked, &rule.prohibited_patterns, "line", None)
     {
-        return Some(format!("the example `{text}` is refused: {reason}"));
+        return Some(format!(
+            "the example {} is refused: {reason}",
+            text::code(text)
+        ));
     }
     if let Some(name) = &rule.format {
         match format.map(|f| (f, f.check_masked(&squashed, &masked, "line"))) {
-            Some((_, FormatMatch::Fail(reason) | FormatMatch::Refused(reason))) => {
-                return Some(format!("the example `{text}` {reason}"));
+            // The failure shows the format's example, which the finding
+            // names already where it is the rule's.
+            Some((f, FormatMatch::Fail(reason) | FormatMatch::Refused(reason))) => {
+                let reason = if f.examples().contains(&text) {
+                    without_example(&reason)
+                } else {
+                    &reason
+                };
+                return Some(format!("the example {} {reason}", text::code(text)));
             }
             Some((f, FormatMatch::Ok(None))) if f.key.is_some() && !rule.key_optional => {
                 return Some(format!(
-                    "the example `{text}` carries no key: the format `{name}` captures `{}`",
+                    "the example {} carries no key: the format `{name}` captures `{}`",
+                    text::code(text),
                     f.key.clone().unwrap_or_default()
                 ));
             }
@@ -541,51 +683,24 @@ fn unit(schema: &Schema, rule: &Unit, text: &str, bare: &str, lines: bool) -> Pr
     }
     if let Some(k) = &rule.key
         && !rule.key_optional
-        && let Some(shape) = &rule.shape
+        && let Some(shape) = rule.matcher()
         && captured(shape, k, &squashed).is_none()
     {
-        return Some(format!("the example `{text}` captures no `key` `{k}`"));
+        return Some(format!(
+            "the example {} captures no `key` `{k}`",
+            text::code(text)
+        ));
     }
     None
 }
 
-/// The example `text` of a unit of `block` that `rule` governs against
-/// the rule's `key-derives-from`, read without its label in `words`.
-fn derived_unit(schema: &Schema, words: &Words, block: &Block, rule: &Unit, text: &str) -> Problem {
-    let kd = rule.key_derives_from.as_ref()?;
-    let (bare, _) = schema.unlabelled(words, block, Some(rule), text);
-    derived(schema, kd, rule.key_in(&schema.core.formats, &bare))
-}
-
-/// The key of an example, `key`, against the example of the parent that
-/// `kd` names: the key starts with the value that the scaffold writes for
-/// the frontmatter key from the schema, or with a key of the example of
-/// the rule, followed by the separator. The scaffold splices its prefix in
-/// there, so an example that starts with another contradicts its schema. A
-/// key the example does not carry is a fault of its own, and a parent whose
-/// value the schema does not state has no example to start with.
-fn derived(schema: &Schema, kd: &KeyDerivation, key: Option<String>) -> Problem {
-    let key = key?;
-    let sep = &kd.separator;
-    let parents = schema.parent_examples(kd);
-    let of = match &kd.source {
-        DerivationSource::From(k) => {
-            format!("the value that the scaffold writes for the frontmatter `{k}`")
-        }
-        DerivationSource::Rule(r) => format!("a key of the example of rule `{r}`"),
-    };
-    if parents.is_empty()
-        || kd
-            .prefix_of(&key, parents.iter().map(String::as_str))
-            .is_some()
-    {
-        return None;
-    }
-    let named: Vec<String> = parents.iter().map(|p| format!("`{p}`")).collect();
-    Some(format!(
-        "the key `{key}` of the example does not start with {}, {of}, followed by the separator `{sep}`",
-        named.join(" or ")
-    ))
+/// `reason`, the failure of a format, without the example of the format
+/// that it ends with, where a finding names that example already.
+fn without_example(reason: &str) -> &str {
+    reason
+        .rsplit_once("; a line of this kind reads ")
+        .or_else(|| reason.rsplit_once(" A line of this kind reads "))
+        .map_or(reason, |(why, _)| why)
 }
 
 /// The unit rules of `block` that would take the block's own `example`:
@@ -601,17 +716,28 @@ fn consumers(block: &Block) -> Vec<&Unit> {
         .collect()
 }
 
+/// `text`, an example as written, and `reading`, its reading, as a check
+/// reads a unit: squashed, the reading mapped to the text, by which a
+/// failure quotes the example as written.
+fn written(text: &str, reading: &Reading) -> label::Read {
+    label::Read {
+        squashed: Squashed::mapped(&reading.text, &reading.map),
+        label: None,
+        shown: Squashed::new(text),
+    }
+}
+
 /// A section's example against its heading's shape.
 fn heading(section: &Section) -> Problem {
     let text = section.heading.example.as_ref()?;
-    let shape = &section.heading.shape;
-    if matches!(shape, Shape::Text(_)) || shape.matches(&squash(text), |_| None) {
+    let shape = &section.heading.read;
+    let quote = written(text, &markdown::reading(text));
+    let read = quote.squashed.text.as_str();
+    if matches!(shape, Shape::Text(_)) || shape.matches(read, |_| None) {
         return None;
     }
-    Some(format!(
-        "the example `{text}` {}",
-        shape.failure(&squash(text))
-    ))
+    let failure = quote.quoting(|q| shape.failure_quoting(read, q));
+    Some(format!("the example {} {failure}", text::code(text)))
 }
 
 /// A frontmatter constraint's example against that constraint. The two
@@ -622,7 +748,7 @@ fn frontmatter(key: &str, constraint: &FrontmatterConstraint) -> Problem {
     if let Some(c) = &constraint.const_
         && c != text
     {
-        return said(format!("is not the `const` `{c}`"));
+        return said(format!("is not the `const` {c}", c = text::code(c)));
     }
     if let Some(shape) = &constraint.shape
         && constraint.id_template.is_none()
@@ -633,7 +759,7 @@ fn frontmatter(key: &str, constraint: &FrontmatterConstraint) -> Problem {
     if let Some(values) = &constraint.enum_
         && !values.contains(text)
     {
-        return said(format!("is not one of `{}`", values.join("`, `")));
+        return said(format!("is not one of {}", text::code_list(values, ", ")));
     }
     match constraint.format {
         Some(FmFormat::Slug) if !is_slug(text) => return said("is not a slug".into()),

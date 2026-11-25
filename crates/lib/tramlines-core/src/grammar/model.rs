@@ -247,10 +247,10 @@ pub enum DerivationSource {
 }
 
 impl KeyDerivation {
-    /// The source as a finding names it: ``rule `x` `` or ``the frontmatter `x` ``.
+    /// The source as a finding names it: ``set `x` `` or ``the frontmatter `x` ``.
     pub fn source_label(&self) -> String {
         match &self.source {
-            DerivationSource::Rule(r) => format!("rule `{r}`"),
+            DerivationSource::Rule(r) => format!("set `{r}`"),
             DerivationSource::From(k) => format!("the frontmatter `{k}`"),
         }
     }

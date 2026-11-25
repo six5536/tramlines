@@ -3,7 +3,7 @@
 //! checker of a format records with what it knows of where it is.
 
 use crate::{
-    Spanned,
+    Spanned, Yaml,
     grammar::{Condition, CoreSchema, FmFormat, FrontmatterConstraint, RuleCommon, States, squash},
     text::{self, is_slug, is_url},
 };
@@ -162,6 +162,19 @@ pub fn check(
                     );
                 }
             }
+            // A required key with no value, such as the empty key of a
+            // skeleton, still lacks what the schema requires of it, and
+            // the value fails no other rule, because it holds none.
+            // sokf-implements: TL_143
+            Some(v) if !constraint.optional && holds_no_value(v) => {
+                c.gate(&constraint.common, v.line);
+                c.emit(
+                    &constraint.common,
+                    Some(v.line),
+                    "TL_143",
+                    format!("frontmatter key `{key}` is missing its value"),
+                );
+            }
             Some(v) => {
                 c.gate(&constraint.common, v.line);
                 check_value(&mut c, key, constraint, v);
@@ -181,7 +194,7 @@ pub fn check(
                 c.error(
                     Some(value.line),
                     "TL_55",
-                    format!("frontmatter key `{key}` is not declared"),
+                    format!("frontmatter key {} is not declared", text::code(key)),
                 );
             }
         }
@@ -201,9 +214,10 @@ pub fn check(
                         Some(v.line),
                         "TL_108",
                         format!(
-                            "`{}` must be one of {}; `{text}` is not",
+                            "`{}` must be one of {}; {text} is not",
                             dim.key,
-                            text::code_list(&dim.states, ", ")
+                            text::code_list(&dim.states, ", "),
+                            text = text::code(&text)
                         ),
                     );
                 }
@@ -211,6 +225,16 @@ pub fn check(
         }
     }
     c.events
+}
+
+/// Whether a frontmatter value holds nothing: a null, as an empty key, `~`
+/// and `null` read, or a string of only whitespace (`TL_143`).
+pub fn holds_no_value(value: &Spanned) -> bool {
+    match &value.value {
+        Yaml::Null => true,
+        Yaml::Str(s) => s.trim().is_empty(),
+        _ => false,
+    }
 }
 
 fn check_value(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, value: &Spanned) {
@@ -284,6 +308,7 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
         c.emit(common, line, "TL_57", format!("`{key}` must be a scalar"));
         return;
     };
+    let shown = text::code(&text);
     if let Some(expected) = &constraint.const_
         && &text != expected
     {
@@ -291,7 +316,10 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
             common,
             line,
             "TL_56",
-            format!("`{key}` must be `{expected}`; it is `{text}`"),
+            format!(
+                "`{key}` must be {expected}; it is {shown}",
+                expected = text::code(expected)
+            ),
         );
     }
     // The `id` template is also the one a new document is filled with, and fixes the
@@ -306,12 +334,9 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
             line,
             "TL_56",
             format!(
-                "`{key}` `{text}` {}{}",
+                "`{key}` {shown} {}{}",
                 shape.failure(&squashed),
-                constraint
-                    .example
-                    .as_deref()
-                    .map_or_else(String::new, |e| format!("; a value of this kind reads {e}"))
+                crate::grammar::reads("value", constraint.example.as_deref(), " or ")
             ),
         );
     }
@@ -323,7 +348,7 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
             line,
             "TL_56",
             format!(
-                "`{key}` must be one of {}; `{text}` is not",
+                "`{key}` must be one of {}; {shown} is not",
                 text::code_list(allowed, ", ")
             ),
         );
@@ -342,13 +367,13 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
             common,
             line,
             "TL_56",
-            format!("`{key}` must be an absolute URL; `{text}` is not"),
+            format!("`{key}` must be an absolute URL; {shown} is not"),
         ),
         Some(FmFormat::Slug) if !is_slug(&text) => c.emit(
             common,
             line,
             "TL_56",
-            format!("`{key}` must be a slug; `{text}` is not"),
+            format!("`{key}` must be a slug; {shown} is not"),
         ),
         Some(FmFormat::Url | FmFormat::Slug) | None => {}
     }
@@ -362,7 +387,7 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
                 line,
                 "TL_56",
                 format!(
-                    "id `{text}` does not match the template `{}`",
+                    "id {shown} does not match the template `{}`",
                     template.source
                 ),
             );
@@ -378,7 +403,7 @@ fn check_scalar(c: &mut Fm<'_>, key: &str, constraint: &FrontmatterConstraint, v
                     common,
                     line,
                     "TL_59",
-                    format!("id `{text}` holds `{held}` for `{name}`, but `{name}` is `{state}`"),
+                    format!("id {shown} holds `{held}` for `{name}`, but `{name}` is `{state}`"),
                 );
             }
         }
